@@ -402,21 +402,26 @@ class DriverTest extends TestCase
 
     public function testgetInsertedIdForSequenceShouldReturnInsertedIdForSequence()
     {
-        NativeFunctionMock::override('pg_query', function ($connection, $query) use (&$outerQuery): void {
-            $outerQuery = $query;
-        });
+        NativeFunctionMock::override(
+            'pg_query_params',
+            function ($connection, $query, $params) use (&$outerQuery, &$outerParams): void {
+                $outerQuery = $query;
+                $outerParams = $params;
+            }
+        );
 
         NativeFunctionMock::override('pg_fetch_row', [4]);
 
         $driver = new Driver();
 
         $this->assertSame(4, $driver->getInsertedIdForSequence('sequenceName'));
-        $this->assertSame("SELECT currval('sequenceName')", $outerQuery);
+        $this->assertSame('SELECT currval($1)', $outerQuery);
+        $this->assertSame(['sequenceName'], $outerParams);
     }
 
     public function testgetInsertedIdForSequenceWithWrongSequenceShouldThrowAnException()
     {
-        NativeFunctionMock::override('pg_query', false);
+        NativeFunctionMock::override('pg_query_params', false);
         NativeFunctionMock::override('pg_last_error', 'A PGSQL error');
 
         $driver = new Driver();
@@ -426,7 +431,7 @@ class DriverTest extends TestCase
             function () use ($driver): void {
                 $driver->getInsertedIdForSequence('sequenceName');
             },
-            "A PGSQL error (Query: SELECT currval('sequenceName'))"
+            'A PGSQL error (Query: SELECT currval($1))'
         );
     }
 
