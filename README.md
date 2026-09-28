@@ -1,3 +1,7 @@
+> **⚠️ This repository is no longer actively maintained.**
+> The project is now maintained on the internal GitLab of CCM Benchmark, and new versions (4.0.0 and later) are published there only.
+> Pull requests are still welcome here: interesting ones will be ported.
+
 # Ting - PHP Datamapper
 
 Ting is a simple DataMapper implementation for PHP. It runs with MySQL and PostgreSQL and is
