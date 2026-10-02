@@ -26,6 +26,9 @@
         "doctrine/cache": "^1.6",
         "symfony/property-access": "^6.0 || ^7.0"
     },
+    "replace": {
+        "ccmbenchmark/ting": "self.version"
+    },
     "require-dev": {
         "ext-pgsql": "*",
         "ext-mysqli": "*",
