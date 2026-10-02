@@ -27,4 +27,4 @@ If your feature needs a BC Break, we strongly encourage you to discuss it throug
 [1]: http://www.php-fig.org/psr/psr-2/
 [2]: http://docs.atoum.org/fr/latest/
 [3]: http://semver.org/
-[4]: https://bitbucket.org/ccmbenchmark/ting/issues
+[4]: https://github.com/xavierleune/ting/issues

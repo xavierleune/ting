@@ -1,5 +1,5 @@
 {
-    "name": "ccmbenchmark/ting",
+    "name": "xavierleune/ting",
     "description": "Ting : a lightweight datamapper",
     "homepage": "http://tech.ccmbg.com/ting/",
     "keywords": [
@@ -14,8 +14,8 @@
         "pgsql"
     ],
     "support": {
-        "issues": "https://bitbucket.org/ccmbenchmark/ting/issues",
-        "source": "https://bitbucket.org/ccmbenchmark/ting",
+        "issues": "https://github.com/xavierleune/ting/issues",
+        "source": "https://github.com/xavierleune/ting",
         "docs": "http://tech.ccmbg.com/ting/doc/en/"
     },
     "type": "library",

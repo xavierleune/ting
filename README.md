@@ -1,6 +1,6 @@
-> **⚠️ This repository is no longer actively maintained.**
-> The project is now maintained on the internal GitLab of CCM Benchmark, and new versions (4.0.0 and later) are published there only.
-> Pull requests are still welcome here: interesting ones will be ported.
+> **ℹ️ This is a fork of [ccmbenchmark/ting](https://github.com/ccmbenchmark/ting).**
+> The upstream project is no longer maintained publicly. Development continues here as `xavierleune/ting`.
+> PHP namespaces (`CCMBenchmark\Ting\...`) are unchanged, so switching from `ccmbenchmark/ting` only requires updating the package name in your `composer.json`.
 
 # Ting - PHP Datamapper
 
@@ -15,7 +15,7 @@ It has some distinctive features and design choices :
 * Simple to use, simple to extend
 
 You can read this few examples, or go to the [Documentation](http://tech.ccmbg.com/ting/doc/)
-or see more [samples](https://bitbucket.org/ccmbenchmark/ting/src/).
+or see more [samples](https://github.com/xavierleune/ting/tree/main/sample).
 
 ## Retrieve object by ID
 
@@ -64,4 +64,4 @@ or see more [samples](https://bitbucket.org/ccmbenchmark/ting/src/).
 
 ## More :
 * [Documentation](http://tech.ccmbg.com/ting/doc/)
-* [Issues](https://github.com/ccmbenchmark/ting/issues)
+* [Issues](https://github.com/xavierleune/ting/issues)
