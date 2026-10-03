@@ -1,0 +1,1260 @@
+<?php
+
+/***********************************************************************
+ *
+ * Ting - PHP Datamapper
+ * ==========================================
+ *
+ * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
+ *
+ ***********************************************************************
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+ * implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ *
+ **********************************************************************/
+
+namespace CCMBenchmark\Ting\Tests\Unit\Repository;
+
+use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Driver\Pgsql\Result as PgsqlResult;
+use CCMBenchmark\Ting\MetadataRepository;
+use CCMBenchmark\Ting\Repository\Hydrator;
+use CCMBenchmark\Ting\Repository\Metadata;
+use CCMBenchmark\Ting\Serializer\DateTime;
+use CCMBenchmark\Ting\Serializer\Json;
+use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
+use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TestCase;
+use CCMBenchmark\Ting\UnitOfWork;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\MockObject\MockObject;
+use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\model\City;
+use tests\fixtures\model\CityRepository;
+use tests\fixtures\model\PrimaryOnMultiField;
+
+// Partial mocks of fake results only replace fetch_fields: they carry no expectation
+#[AllowMockObjectsWithoutExpectations]
+class HydratorTest extends TestCase
+{
+    public function testHydrate()
+    {
+        $services = new Services();
+        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+
+        $metadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'boo_name',
+            'type'       => 'string'
+        ]);
+
+        $metadata->addField([
+            'fieldName'  => 'firstname',
+            'columnName' => 'boo_firstname',
+            'type'       => 'string'
+        ]);
+
+        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('Robez-Masson', $data['bouh']->getName());
+        $this->assertSame('Sylvain', $data['bouh']->getFirstname());
+    }
+
+    public function testHydrateForEntityWithouNotifyPropertyInterfaceShouldWork()
+    {
+        $services = new Services();
+        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\BouhReadOnly');
+        $metadata->setTable('T_BOUH_BOO');
+
+        $metadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'boo_name',
+            'type'       => 'string'
+        ]);
+
+        $metadata->addField([
+            'fieldName'  => 'firstname',
+            'columnName' => 'boo_firstname',
+            'type'       => 'string'
+        ]);
+
+        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhReadOnlyRepository', $metadata);
+
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('Robez-Masson', $data['bouh']->getName());
+        $this->assertSame('Sylvain', $data['bouh']->getFirstname());
+    }
+
+    public function testHydrateWithSchema()
+    {
+        $services = new Services();
+
+        $services->get('MetadataRepository')->addMetadata(
+            'tests\fixtures\model\BouhRepository',
+            \tests\fixtures\model\BouhRepository::initMetadata($services->get('SerializerFactory'))
+        );
+
+        $services->get('MetadataRepository')->addMetadata(
+            'tests\fixtures\model\BouhMySchemaRepository',
+            \tests\fixtures\model\BouhMySchemaRepository::initMetadata($services->get('SerializerFactory'))
+        );
+
+        // Partial mock, like the atoum one: only the overridden iterator methods are replaced
+        $result = $this->getMockBuilder(PgsqlResult::class)
+            ->onlyMethods(['rewind', 'valid', 'current'])
+            ->getMock();
+        $result->method('rewind');
+        $result->method('valid')->willReturn(true);
+        $result->method('current')->willReturn([
+            [
+                'name' => 'fname',
+                'orgName' => 'boo_firstname',
+                'schema' => 'mySchema',
+                'table' => 'bouh',
+                'orgTable' => 'T_BOUH_BOO',
+                'value' => 'Sylvain'
+            ],
+            [
+                'name' => 'name',
+                'orgName' => 'boo_name',
+                'schema' => 'mySchema',
+                'table' => 'bouh',
+                'orgTable' => 'T_BOUH_BOO',
+                'value' => 'Robez-Masson'
+            ]
+        ]);
+
+        $result->setResult(new PgsqlResult());
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('MySchemaRobez-Masson', $data['bouh']->getName());
+        $this->assertSame('MySchemaSylvain', $data['bouh']->getFirstname());
+    }
+
+    public function testHydrateWithAllNullValueShouldReturnNull()
+    {
+        $services = new Services();
+        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+
+        $metadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'boo_name',
+            'type'       => 'string'
+        ]);
+
+        $metadata->addField([
+            'fieldName'  => 'firstname',
+            'columnName' => 'boo_firstname',
+            'type'       => 'string'
+        ]);
+
+        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = $this->createMysqliResult([[null, null]]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertNull($data['bouh']);
+    }
+
+    public function testHydrateWithSomeNullValueShouldNotReturnNull()
+    {
+        $services = new Services();
+        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+
+        $metadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'boo_name',
+            'type'       => 'string'
+        ]);
+
+        $metadata->addField([
+            'fieldName'  => 'firstname',
+            'columnName' => 'boo_firstname',
+            'type'       => 'string'
+        ]);
+
+        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = $this->createMysqliResult([[null, 'Robez-Masson']]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('Robez-Masson', $data['bouh']->getName());
+    }
+
+    public function testHydrateShouldHydrateUnknownColumnIntoKey0()
+    {
+        $services = new Services();
+        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+
+        $metadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'boo_name',
+            'type'       => 'string'
+        ]);
+
+        $metadata->addField([
+            'fieldName'  => 'firstname',
+            'columnName' => 'boo_firstname',
+            'type'       => 'string'
+        ]);
+
+        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson', 'Happy Face']]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'otherColumn';
+            $stdClass->orgname  = 'boo_other_column';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('Robez-Masson', $data['bouh']->getName());
+        $this->assertSame('Sylvain', $data['bouh']->getFirstname());
+        $this->assertSame('Happy Face', $data[0]->otherColumn);
+    }
+
+    public function testHydrateShouldHydrateUnknownColumnOfFromReferenceTable()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            [23, 'LeBron', 'James', 'Cleveland'],
+            [23, 'LeBron', 'James', 'Los Angeles']
+        ]);
+
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'id';
+            $stdClass->orgname  = 'boo_id';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'firstname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'bouh';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            // This column is associated with a mapped table
+            // while parsing but not mapped into metadatas
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'notMappedBouhColumn';
+            $stdClass->orgname  = 'bouh_notMappedBouhColumn';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $currentObject = $iterator->current();
+        $iterator->next();
+        $nextObject = $iterator->current();
+        $this->assertSame(
+            true,
+            is_array($currentObject) && array_key_exists(0, $currentObject),
+            'Unmapped column of known table was not hydrated'
+        );
+        $this->assertSame('Cleveland', $currentObject[0]->notMappedBouhColumn);
+        $this->assertSame(
+            true,
+            is_array($nextObject) && array_key_exists(0, $nextObject),
+            'Unmapped column of known table was not hydrated'
+        );
+        $this->assertSame('Los Angeles', $nextObject[0]->notMappedBouhColumn);
+    }
+
+    public function testHydrateShouldHydrateIntoKey0()
+    {
+        $services = new Services();
+
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('Robez-Masson', $data[0]->name);
+        $this->assertSame('Sylvain', $data[0]->fname);
+    }
+
+    public function testCountShouldReturn3()
+    {
+        $result = $this->createStub(Result::class);
+        $result->method('getNumRows')->willReturn(3);
+
+        $hydrator = new Hydrator();
+        $hydrator->setResult($result);
+        $this->assertSame(3, count($hydrator));
+    }
+
+    public function testCountWithoutResultShoulddReturn0()
+    {
+        $hydrator = new Hydrator();
+        $this->assertSame(0, count($hydrator));
+    }
+
+    public function testHydrateWithMapAliasShouldHydrateToMethodOfObject()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $time = time();
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson', $time]]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'current_time';
+            $stdClass->orgname  = '';
+            $stdClass->table    = '';
+            $stdClass->orgtable = '';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame($time, $data['bouh']->getRetrievedTime());
+        $this->assertArrayNotHasKey(0, $data);
+    }
+
+    public function testHydrateWithMapObjectShouldHydrateToMethodOfObject()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+                ['Sylvain', 'Robez-Masson', 3, 'Palaiseau']
+            ]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'cityId';
+            $stdClass->orgname  = 'cit_id';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'citname';
+            $stdClass->orgname  = 'cit_name';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $city = $data['bouh']->getCity();
+        $this->assertIsObject($city);
+        $this->assertSame(3, $city->getId());
+        $this->assertSame('Palaiseau', $city->getName());
+    }
+
+    public function testHydrateWithMapObjectShouldHydrateToMethodOfObjectWithAManagedEntity()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            ['Sylvain', 'Robez-Masson', 3, 'Palaiseau']
+        ]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'cityId';
+            $stdClass->orgname  = 'cit_id';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'citname';
+            $stdClass->orgname  = 'cit_name';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $city = $data['bouh']->getOriginalCity();
+        $this->assertIsObject($city);
+    }
+
+    public function testHydrateWithUnserializeAlias()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            ['{"name": "Sylvain"}', 'Palaiseau']
+        ]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'data';
+            $stdClass->orgname  = '';
+            $stdClass->table    = '';
+            $stdClass->orgtable = '';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'citname';
+            $stdClass->orgname  = 'cit_name';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->unserializeAliasWith('data', new Json(), ['assoc' => true]);
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $result = $iterator->current();
+        $data = $result[0]->data;
+        $this->assertIsArray($data);
+        $this->assertSame('Sylvain', $data['name']);
+    }
+
+    public function testHydrateWithUnserializeAliasAndMapAlias()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $time = time();
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson', $time]]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'current_time';
+            $stdClass->orgname  = '';
+            $stdClass->table    = '';
+            $stdClass->orgtable = '';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
+        $hydrator->unserializeAliasWith('current_time', new DateTime(), ['format' => 'U']);
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $datetime = $data['bouh']->getRetrievedTime();
+        $this->assertIsObject($datetime);
+        $this->assertSame($time, $datetime->getTimestamp());
+    }
+
+    public function testHydrateWithObjectDatabaseIsShouldHydrateToCity2()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            ['Sylvain', 'Robez-Masson', 3, 'Palaiseau']
+        ]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'fname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'cityId';
+            $stdClass->orgname  = 'cit_id';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'citname';
+            $stdClass->orgname  = 'cit_name';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->objectDatabaseIs('cit', 'bouh_world_2');
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertInstanceOf(\tests\fixtures\model\CitySecond::class, $data['cit']);
+    }
+
+    public function testHydrateReturnSameResultWhenChangingPrimaryKeyOrder()
+    {
+        $services = new Services();
+
+        $metaDataRepo = $services->get('MetadataRepository');
+
+        $cityMetadata =  new Metadata(
+            $this->createStub(SerializerFactoryInterface::class)
+        );
+
+        $cityMetadata->setEntity(City::class);
+        $cityMetadata->setConnectionName('main');
+        $cityMetadata->setDatabase('bouh_world');
+        $cityMetadata->setTable('T_CITY_CIT');
+
+        $cityMetadata->addField([
+            'primary'       => true,
+            'autoincrement' => true,
+            'fieldName'     => 'id',
+            'columnName'    => 'cit_id',
+            'type'          => 'int'
+        ]);
+
+        $cityMetadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'cit_name',
+            'type'      => 'string'
+        ]);
+
+        $cityMetadata->addField([
+            'fieldName'  => 'zipcode',
+            'columnName' => 'cit_zipcode',
+            'type'       => 'string'
+        ]);
+
+        $primaryMultiFieldMetadata = new Metadata($this->createStub(SerializerFactoryInterface::class));
+
+        $primaryMultiFieldMetadata->setEntity(PrimaryOnMultiField::class);
+        $primaryMultiFieldMetadata->setConnectionName('main');
+        $primaryMultiFieldMetadata->setDatabase('bouh_world');
+        $primaryMultiFieldMetadata->setTable('T_PRIMARY_MULTI_FIELD');
+
+        $primaryMultiFieldMetadata->addField([
+            'primary'       => true,
+            'fieldName'     => 'cityId',
+            'columnName'    => 'city_id',
+            'type'          => 'int'
+        ]);
+
+        $primaryMultiFieldMetadata->addField([
+            'fieldName'  => 'otherItemId',
+            'columnName' => 'other_item_id',
+            'type'      => 'string',
+            'primary'   => true
+        ]);
+
+        $primaryMultiFieldMetadata->addField([
+            'fieldName'  => 'value',
+            'columnName' => 'value',
+            'type'       => 'string'
+        ]);
+
+        //*
+        $primaryMultiFieldMetadataInverted = new Metadata($this->createStub(SerializerFactoryInterface::class));
+        $primaryMultiFieldMetadataInverted->setEntity(PrimaryOnMultiField::class);
+        $primaryMultiFieldMetadataInverted->setConnectionName('main');
+        $primaryMultiFieldMetadataInverted->setDatabase('bouh_world');
+        $primaryMultiFieldMetadataInverted->setTable('T_PRIMARY_MULTI_FIELD');
+
+        $primaryMultiFieldMetadataInverted->addField([
+             'fieldName'  => 'otherItemId',
+             'columnName' => 'other_item_id',
+             'type'      => 'string',
+             'primary'   => true
+         ]);
+        $primaryMultiFieldMetadataInverted->addField([
+             'primary'       => true,
+             'fieldName'     => 'cityId',
+             'columnName'    => 'city_id',
+             'type'          => 'int'
+         ]);
+        $primaryMultiFieldMetadataInverted->addField([
+             'fieldName'  => 'value',
+             'columnName' => 'value',
+             'type'       => 'string'
+         ]);
+        //*/
+
+        /** @var MetadataRepository $metadataRepo1 */
+        $metadataRepo1 = clone $metaDataRepo;
+        $metadataRepo2 = clone $metaDataRepo;
+
+        $metadataRepo1->addMetadata(CityRepository::class, $cityMetadata);
+        $metadataRepo1->addMetadata(PrimaryOnMultiField::class, $primaryMultiFieldMetadata);
+
+        /** @var MetadataRepository $metadataRepo2 */
+        $metadataRepo2->addMetadata(CityRepository::class, $cityMetadata);
+        $metadataRepo2->addMetadata(PrimaryOnMultiField::class, $primaryMultiFieldMetadataInverted);
+
+        $mysqliResult =  [
+            [1, 'other_item1', 10, 'City1', 1],
+            [1, 'other_item2', 20, 'City1', 1],
+            [2, 'other_item1', 5, 'City2', 2],
+            [2, 'other_item2', 8, 'City2', 2]
+        ];
+
+        $mockMysqliResult = $this->createMysqliResult($mysqliResult);
+        $mockMysqliResult2 = $this->createMysqliResult($mysqliResult);
+
+        $fetchFields = function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'cityId';
+            $stdClass->orgname  = 'city_id';
+            $stdClass->table    = 'primaryMultiField';
+            $stdClass->orgtable = 'T_PRIMARY_MULTI_FIELD';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'otherItemId';
+            $stdClass->orgname  = 'other_item_id';
+            $stdClass->table    = 'primaryMultiField';
+            $stdClass->orgtable = 'T_PRIMARY_MULTI_FIELD';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'value';
+            $stdClass->orgname  = 'value';
+            $stdClass->table    = 'primaryMultiField';
+            $stdClass->orgtable = 'T_PRIMARY_MULTI_FIELD';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'citname';
+            $stdClass->orgname  = 'cit_name';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'cityId';
+            $stdClass->orgname  = 'cit_id';
+            $stdClass->table    = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            return $fields;
+        };
+
+        $mockMysqliResult->method('fetch_fields')->willReturn($fetchFields());
+        $mockMysqliResult2->method('fetch_fields')->willReturn($fetchFields());
+
+        //*
+        $sqlResult = new Result();
+        $sqlResult->setResult($mockMysqliResult);
+        $sqlResult->setConnectionName('main');
+        $sqlResult->setDatabase('bouh_world');
+
+        $sqlResult2 = new Result();
+        $sqlResult2->setResult($mockMysqliResult2);
+        $sqlResult2->setConnectionName('main');
+        $sqlResult2->setDatabase('bouh_world');
+
+        /** @var UnitOfWork $uow */
+        $uow = $services->get('UnitOfWork');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($metadataRepo1);
+        $hydrator->setUnitOfWork($uow);
+        $hydrator->setResult($sqlResult);
+        $iterator = $hydrator->getIterator();
+        $uow->detachAll();
+        $result1 = iterator_to_array($iterator);
+        $hydrator2 = new Hydrator();
+        $hydrator2->setMetadataRepository($metadataRepo2);
+        $hydrator2->setUnitOfWork($uow);
+        $iterator2 = $hydrator2->setResult($sqlResult2)->getIterator();
+        $result2 = iterator_to_array($iterator2);
+
+        $this->assertIsInt(count($result1));
+        $this->assertEquals(count($result2), count($result1));
+
+        foreach ($result1 as $i => $row) {
+            $this->assertIsInt($row['cit']->getId());
+            $this->assertEquals($result2[$i]['cit']->getId(), $row['cit']->getId());
+            $this->assertIsString($row['cit']->getName());
+            $this->assertEquals($result2[$i]['cit']->getName(), $row['cit']->getName());
+            $this->assertIsInt($row['primaryMultiField']->getCityId());
+            $this->assertEquals($result2[$i]['primaryMultiField']->getCityId(), $row['primaryMultiField']->getCityId());
+            $this->assertIsInt($row['primaryMultiField']->getValue());
+            $this->assertEquals($result2[$i]['primaryMultiField']->getValue(), $row['primaryMultiField']->getValue());
+            $this->assertIsString($row['primaryMultiField']->getOtherItemId());
+            $this->assertEquals(
+                $result2[$i]['primaryMultiField']->getOtherItemId(),
+                $row['primaryMultiField']->getOtherItemId()
+            );
+        }
+    }
+
+    public function testHydrateWithNullSQLReturnShouldReturnNull()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+                 ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            ['Sylvain', 'Robez-Masson', null, null]
+        ]);
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name = 'fname';
+            $stdClass->orgname = 'boo_firstname';
+            $stdClass->table = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name = 'name';
+            $stdClass->orgname = 'boo_name';
+            $stdClass->table = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name = 'cityId';
+            $stdClass->orgname = 'cit_id';
+            $stdClass->table = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name = 'citname';
+            $stdClass->orgname = 'cit_name';
+            $stdClass->table = 'cit';
+            $stdClass->orgtable = 'T_CITY_CIT';
+            $stdClass->type = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->objectDatabaseIs('cit', 'bouh_world_2');
+        $data = $hydrator->setResult($result)->getIterator()->current();
+        $this->assertNull($data['cit']);
+    }
+
+    public function testHydrateWithIdentityMapFalseShouldReturnNewEntity()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            [23, 'Michael', 'Jordan'],
+            [23, 'Michael', 'Jordan']
+        ]);
+
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'id';
+            $stdClass->orgname  = 'boo_id';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'firstname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $currentObject = $iterator->current()['bouh'];
+        $iterator->next();
+        $nextObject = $iterator->current()['bouh'];
+        $this->assertIsString(spl_object_hash($currentObject));
+        $this->assertNotEquals(spl_object_hash($nextObject), spl_object_hash($currentObject));
+    }
+
+    public function testHydrateWithIdentityMapTrueShouldReturnSameEntity()
+    {
+        $services = new Services();
+        $services->get('MetadataRepository')
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $mockMysqliResult = $this->createMysqliResult([
+            [23, 'LeBron', 'James', 'Cleveland'],
+            [30, 'Stephen', 'Curry', 'San Francisco'],
+            [23, 'LeBron', 'James', 'Los Angeles']
+        ]);
+
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'id';
+            $stdClass->orgname  = 'boo_id';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_LONG;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'firstname';
+            $stdClass->orgname  = 'boo_firstname';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'cityName';
+            $stdClass->orgname  = '';
+            $stdClass->table    = '';
+            $stdClass->orgtable = '';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
+        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->identityMap(true);
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $currentObject = $iterator->current()['bouh'];
+        $iterator->next();
+        $iterator->next();
+        $nextObject = $iterator->current()['bouh'];
+        $this->assertIsString(spl_object_hash($currentObject));
+        $this->assertEquals(spl_object_hash($nextObject), spl_object_hash($currentObject));
+    }
+
+    /**
+     * Partial mock, like the atoum one: only fetch_fields is mocked, the iteration code of the fake result is kept.
+     */
+    private function createMysqliResult(array $data): MysqliResult&MockObject
+    {
+        return $this->getMockBuilder(MysqliResult::class)
+            ->setConstructorArgs([$data])
+            ->onlyMethods(['fetch_fields'])
+            ->getMock();
+    }
+}
