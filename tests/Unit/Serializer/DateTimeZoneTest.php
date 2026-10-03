@@ -1,0 +1,69 @@
+<?php
+
+/***********************************************************************
+ *
+ * Ting - PHP Datamapper
+ * ==========================================
+ *
+ * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
+ *
+ ***********************************************************************
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+ * implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ *
+ **********************************************************************/
+
+namespace CCMBenchmark\Ting\Tests\Unit\Serializer;
+
+use CCMBenchmark\Ting\Serializer\DateTimeZone;
+use CCMBenchmark\Ting\Serializer\RuntimeException;
+use CCMBenchmark\Ting\Tests\Support\TestCase;
+
+class DateTimeZoneTest extends TestCase
+{
+    public function testSerializeThenUnSerializeShouldReturnOriginalValue(): void
+    {
+        $datetime = new \DateTimeZone('Europe/Paris');
+        $serializer = new DateTimeZone();
+
+        $this->assertInstanceOf(\DateTimeZone::class, $serializer->unserialize($serializer->serialize($datetime)));
+        $this->assertEquals('Europe/Paris', $serializer->unserialize($serializer->serialize($datetime))->getName());
+    }
+
+    public function testUnserializeInvalidValueShouldRaiseException(): void
+    {
+        $serializer = new DateTimeZone();
+
+        $this->assertThrows(RuntimeException::class, function () use ($serializer): void {
+            $serializer->unserialize('Not a timezone');
+        });
+    }
+
+    public function testSerializeInvalidValueShouldRaiseException(): void
+    {
+        $serializer = new DateTimeZone();
+
+        $this->assertThrows(RuntimeException::class, function () use ($serializer): void {
+            $serializer->serialize(new \StdClass());
+        });
+    }
+
+    public function testNullValueShouldBeReturned(): void
+    {
+        $serializer = new DateTimeZone();
+
+        $this->assertNull($serializer->serialize(null));
+        $this->assertNull($serializer->unserialize(null));
+    }
+}

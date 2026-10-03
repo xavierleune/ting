@@ -1,0 +1,96 @@
+<?php
+
+/***********************************************************************
+ *
+ * Ting - PHP Datamapper
+ * ==========================================
+ *
+ * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
+ *
+ ***********************************************************************
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+ * implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ *
+ **********************************************************************/
+
+namespace CCMBenchmark\Ting\Tests\Unit\Repository;
+
+use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Repository\Collection;
+use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TestCase;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use tests\fixtures\FakeDriver\MysqliResult;
+
+class CollectionFactoryTest extends TestCase
+{
+    public function testGetShouldReturnInstanceOfCollection()
+    {
+        $services = new Services();
+
+        $collectionFactory = $services->get('CollectionFactory');
+        $this->assertInstanceOf(Collection::class, $collectionFactory->get());
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testGetShouldReturnInstanceOfCollectionWithNewHydrator()
+    {
+        $services = new Services();
+
+        $result = new Result();
+        $result->setResult($this->createMysqliResult([['a-Bouh']]));
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $result2 = new Result();
+        $result2->setResult($this->createMysqliResult([['b-Bouh']]));
+        $result2->setConnectionName('main');
+        $result2->setDatabase('bouh_world');
+
+        $collectionFactory = $services->get('CollectionFactory');
+        $collection = $collectionFactory->get();
+        $collection->set($result);
+        $collection2 = $collectionFactory->get();
+        $collection2->set($result2);
+
+        $stdClass = $collection2->getIterator()->current()[0];
+        $this->assertSame('b-Bouh', $stdClass->name);
+        $stdClass = $collection->getIterator()->current()[0];
+        $this->assertSame('a-Bouh', $stdClass->name);
+    }
+
+    /**
+     * Partial mock of the fake mysqli result: only fetch_fields is replaced, the real iterator is kept
+     */
+    private function createMysqliResult(array $data): MysqliResult
+    {
+        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
+            ->setConstructorArgs([$data])
+            ->onlyMethods(['fetch_fields'])
+            ->getMock();
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+            $fields = [];
+            $stdClass = new \stdClass();
+            $stdClass->name     = 'name';
+            $stdClass->orgname  = 'boo_name';
+            $stdClass->table    = 'bouh';
+            $stdClass->orgtable = 'T_BOUH_BOO';
+            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $stdClass;
+            return $fields;
+        });
+
+        return $mockMysqliResult;
+    }
+}

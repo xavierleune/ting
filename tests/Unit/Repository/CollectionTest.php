@@ -1,0 +1,215 @@
+<?php
+
+/***********************************************************************
+ *
+ * Ting - PHP Datamapper
+ * ==========================================
+ *
+ * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
+ *
+ ***********************************************************************
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+ * implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ *
+ **********************************************************************/
+
+namespace CCMBenchmark\Ting\Tests\Unit\Repository;
+
+use CCMBenchmark\Ting\Driver\CacheResult;
+use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Driver\ResultInterface;
+use CCMBenchmark\Ting\Repository\Collection;
+use CCMBenchmark\Ting\Repository\Hydrator;
+use CCMBenchmark\Ting\Tests\Support\TestCase;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use tests\fixtures\FakeDriver\MysqliResult;
+
+class CollectionTest extends TestCase
+{
+    #[AllowMockObjectsWithoutExpectations]
+    public function testCollectionShouldDoNothingWithoutHydrator()
+    {
+        $mockMysqliResult = $this->createMysqliResult(
+            [['Sylvain', 'Robez-Masson']],
+            ['prenom' => 'firstname', 'nom' => 'lastname']
+        );
+
+        $collection = new Collection();
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($mockMysqliResult);
+        $collection->set($result);
+
+        $this->assertSame(['prenom' => 'Sylvain', 'nom' => 'Robez-Masson'], $collection->first());
+    }
+
+    public function testFirstShouldReturnNull()
+    {
+        $collection = new Collection();
+
+        $this->assertNull($collection->first());
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testFirstShouldReturnFirstItemOfCollection()
+    {
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain']], ['prenom' => 'firstname']);
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($mockMysqliResult);
+
+        $collection = new Collection();
+        $collection->set($result);
+        $data = $collection->first();
+
+        $this->assertIsArray($data);
+        $this->assertEquals(['prenom' => 'Sylvain'], $data);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testGetIterator()
+    {
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain']], ['prenom' => 'firstname']);
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($mockMysqliResult);
+
+        $collection = new Collection();
+        $collection->set($result);
+
+        $this->assertInstanceOf(\Iterator::class, $collection->getIterator());
+    }
+
+    public function testIsFromCache()
+    {
+        $collection = new Collection();
+        $collection->setFromCache(false);
+        $this->assertFalse($collection->isFromCache());
+        $collection->setFromCache(true);
+        $this->assertTrue($collection->isFromCache());
+    }
+
+    public function testToCacheReturnArray()
+    {
+        $collection = new Collection();
+
+        $this->assertSame(['connection' => null, 'database' => null, 'data' => []], $collection->toCache());
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testFromCacheShouldSetCacheResult()
+    {
+        $outerResult = null;
+        // Partial mock: fromCache() must run its real code
+        $mockCollection = $this->getMockBuilder(Collection::class)
+            ->onlyMethods(['set'])
+            ->getMock();
+        $mockCollection
+            ->method('set')
+            ->willReturnCallback(function (ResultInterface $result) use (&$outerResult): void {
+                $outerResult = $result;
+            });
+
+        $mockCollection->fromCache(
+            ['connection' => 'connection_name', 'database' => 'database_name', 'data' => ['bouh']]
+        );
+
+        $this->assertInstanceOf(CacheResult::class, $outerResult);
+    }
+
+    public function testCountShouldCallHydratorCount()
+    {
+        // Spy: counts calls while keeping the real implementation
+        $mockHydrator = new class () extends Hydrator {
+            public int $countCalls = 0;
+
+            public function count()
+            {
+                $this->countCalls++;
+                return parent::count();
+            }
+        };
+
+        $collection = new Collection($mockHydrator);
+        $collection->count();
+
+        $this->assertSame(1, $mockHydrator->countCalls);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSetFromCache()
+    {
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain']], ['prenom' => 'firstname']);
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($mockMysqliResult);
+
+        $collection = new Collection();
+        $collection->setFromCache(true);
+        $collection->set($result);
+
+        $this->assertTrue($collection->isFromCache());
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testCollectionShouldBeJsonSerializable()
+    {
+        $mockMysqliResult = $this->createMysqliResult([['Bob']], ['prenom' => 'firstname']);
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($mockMysqliResult);
+
+        $collection = new Collection();
+        $collection->set($result);
+
+        $this->assertEquals('[{"prenom":"Bob"}]', json_encode($collection));
+    }
+
+    /**
+     * Partial mock of the fake mysqli result: only fetch_fields is replaced, the real iterator is kept
+     *
+     * @param array<string, string> $fields alias => original column name, all in table bouh (T_BOUH_BOO)
+     */
+    private function createMysqliResult(array $data, array $fields): MysqliResult
+    {
+        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
+            ->setConstructorArgs([$data])
+            ->onlyMethods(['fetch_fields'])
+            ->getMock();
+        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () use ($fields) {
+            $result = [];
+            foreach ($fields as $name => $orgname) {
+                $stdClass = new \stdClass();
+                $stdClass->name     = $name;
+                $stdClass->orgname  = $orgname;
+                $stdClass->table    = 'bouh';
+                $stdClass->orgtable = 'T_BOUH_BOO';
+                $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
+                $result[] = $stdClass;
+            }
+            return $result;
+        });
+
+        return $mockMysqliResult;
+    }
+}
