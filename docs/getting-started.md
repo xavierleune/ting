@@ -546,8 +546,8 @@ $cityRepository = $repositoryFactory->get(CityRepository::class);
 $city = $cityRepository->get(3);
 var_dump($city); // listeners are hidden by NotifyProperty::__debugInfo()
 
-// Fetch by criteria (property names), with an order (column names) and a limit
-$cities = $cityRepository->getBy(['countryCode' => 'FRA'], order: ['Population' => 'DESC'], limit: 10);
+// Fetch by criteria, with an order and a limit (both indexed by property name)
+$cities = $cityRepository->getBy(['countryCode' => 'FRA'], order: ['population' => 'DESC'], limit: 10);
 foreach ($cities as $city) {
     echo $city->getName(), ': ', $city->getPopulation(), "\n";
 }
@@ -581,14 +581,14 @@ foreach ($collection as $row) {
 ```
 
 `get()` and `getOneBy()` return the entity or `null`; `getBy()` and `getAll()` return a collection of entities. With a
-composite primary key, pass an array indexed by column name:
+composite primary key, pass an array indexed by property name:
 
 ```php
 use VendorName\ApplicationName\Repository\CountryLanguageRepository;
 
 $french = $repositoryFactory
     ->get(CountryLanguageRepository::class)
-    ->get(['CountryCode' => 'FRA', 'Language' => 'French']);
+    ->get(['countryCode' => 'FRA', 'language' => 'French']);
 ```
 
 ## Next steps

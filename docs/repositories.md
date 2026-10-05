@@ -290,16 +290,16 @@ use App\Entity\CityStatus;
 // By primary key
 $city = $cityRepository->get(3);
 
-// Composite primary key: an array indexed by column name
-$language = $countryLanguageRepository->get(['CountryCode' => 'FRA', 'Language' => 'French']);
+// Composite primary key: an array indexed by property name
+$language = $countryLanguageRepository->get(['countryCode' => 'FRA', 'language' => 'French']);
 
 // First entity matching the criteria
 $paris = $cityRepository->getOneBy(['name' => 'Paris']);
 
 // Every entity matching the criteria, ordered and limited
 $cities = $cityRepository->getBy(
-    ['status' => CityStatus::Active->value, 'id' => [1, 2, 3]],
-    order: ['cit_name' => 'ASC'],
+    ['status' => CityStatus::Active, 'id' => [1, 2, 3]],
+    order: ['name' => 'ASC'],
     limit: 10,
 );
 foreach ($cities as $city) {
@@ -310,14 +310,67 @@ foreach ($cities as $city) {
 $all = $cityRepository->getAll();
 ```
 
-The criteria of `getBy()` and `getOneBy()`:
+### Criteria: keys and values
 
-* are indexed by **property name** (`fieldName`); an unknown property throws a
-  `CCMBenchmark\Ting\Exceptions\ValueException`;
-* are combined with `AND`: an array value becomes `IN (...)`, `null` becomes `IS NULL`, any other value `=`;
-* are sent as is, **without serialization**: pass the database value (`CityStatus::Active->value`, a formatted date...).
+The keys of the criteria of `getBy()` and `getOneBy()`, of the `$order` of `getBy()` and of a composite primary key
+given to `get()` are **property names** (`fieldName`), never column names. An unknown key throws a
+`CCMBenchmark\Ting\Exceptions\ValueException`; when the key is a column name, the message names the property to
+use:
 
-The `$order` argument of `getBy()` is indexed by **column name** (`cit_name`), with `ASC` or `DESC` as values.
+```text
+"cit_name" is a column name: use the property name "name" in the order of Repository::getBy()
+```
+
+The criteria are combined with `AND`. Each value is converted for the database with the field, like `save()` does:
+
+| Value                             | Field                                                             | Sent as                                       |
+|-----------------------------------|-------------------------------------------------------------------|-----------------------------------------------|
+| `null`                            | any                                                               | `IS NULL`                                     |
+| array                             | serializer implementing `Serializer\ArrayValueInterface` (`Json`) | serialized as a whole, `=`                    |
+| empty array                       | other fields                                                      | `ValueException`: nothing can match           |
+| array                             | other fields                                                      | `IN (...)`, each element converted as below   |
+| object                            | with a serializer                                                 | serialized, `=` (or element of the `IN` list) |
+| `Stringable` object               | without serializer                                                | as is (the driver casts it to string)         |
+| other object                      | without serializer                                                | `ValueException`                              |
+| scalar (string, int, float, bool) | any                                                               | as is                                         |
+
+So an enum, a `DateTime` or a `Uuid` can be passed as is for a field with the matching serializer (or type), and a
+database value (`CityStatus::Active->value`, a formatted date) still works. The serialize options of the field
+(`serializer_options.serialize`) are used. `get()` with a single value (one primary key) follows the same rules.
+
+`null` or a nested array inside an `IN` list throws a `ValueException` as well: an `IN` list never matches `NULL`.
+
+An empty array throws instead of sending a query that can match nothing. When the list may be empty, return early:
+
+```php
+/**
+ * @param list<int> $ids
+ * @return list<City>
+ */
+public function getByIds(array $ids): array
+{
+    if ($ids === []) {
+        return [];
+    }
+
+    return iterator_to_array($this->getBy(['id' => $ids]), false);
+}
+```
+
+**JSON fields.** With the `Json` serializer (type `json`), an array is encoded and compared with `=`, which compares
+text, not JSON documents:
+
+* a `TEXT` / `VARCHAR` column matches when the stored text has exactly the same encoding (key order, spaces, escaping,
+  e.g. `JSON_UNESCAPED_SLASHES`): keep the same `serializer_options.serialize` for writing and reading;
+* a MySQL `JSON` column compared with a string is always false: write the query with `CAST(:value AS JSON)` or
+  `JSON_CONTAINS()`;
+* a PostgreSQL `json` column has no `=` operator (the query fails), `jsonb` has one and compares the documents.
+
+A custom serializer whose PHP value is an array implements the marker interface
+`CCMBenchmark\Ting\Serializer\ArrayValueInterface` to be serialized as a whole as well.
+
+The `$order` argument of `getBy()` is indexed by property name, with `ASC` or `DESC` (case-insensitive) as values; any
+other direction throws a `ValueException`.
 
 For anything else (joins, `OR`, aggregates...), write the query: see below.
 

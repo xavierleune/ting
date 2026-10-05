@@ -31,16 +31,21 @@ use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exception;
+use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
+use CCMBenchmark\Ting\Query\QueryInterface;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Repository\Metadata;
+use CCMBenchmark\Ting\Serializer\BackedEnum;
 use CCMBenchmark\Ting\Serializer\Json;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\RequiresPhp;
+use tests\fixtures\ColorsEnum;
 use tests\fixtures\FakeDriver\Driver as FakeDriver;
+use tests\fixtures\PriorityEnum;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhCustomGetter;
 use tests\fixtures\model\HookedPropertiesEntity;
@@ -621,6 +626,418 @@ class MetadataTest extends TestCase
                 $services->collectionFactory()
             )
         );
+    }
+
+    public function testGetByPrimariesShouldConvertCompositeKeyPropertiesToColumns()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByPrimaries(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            ['id' => 3, 'secondId' => 4]
+        );
+
+        $this->assertSame(
+            [
+                'SELECT boo_id, boo_second_id, boo_name, boo_color, boo_priority, boo_created_at, boo_roles, boo_raw'
+                . ' FROM bouh WHERE boo_id = :#boo_id AND boo_second_id = :#boo_second_id LIMIT 1',
+                ['#boo_id' => 3, '#boo_second_id' => 4]
+            ],
+            $this->readQuery($query)
+        );
+    }
+
+    public function testGetByPrimariesShouldSerializeCompositeKeyValues()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByPrimaries(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            ['id' => 3, 'color' => ColorsEnum::RED]
+        );
+
+        $this->assertSame(['#boo_id' => 3, '#boo_color' => 'red'], $this->readQuery($query)[1]);
+    }
+
+    public function testGetByPrimariesShouldRejectAColumnNameAndNameTheProperty()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByPrimaries(
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                ['boo_id' => 3, 'secondId' => 4]
+            ),
+            '"boo_id" is a column name: use the property name "id" in Repository::get()'
+        );
+    }
+
+    public function testGetByPrimariesWithAScalarShouldUseThePrimaryColumn()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata(singlePrimary: true);
+
+        $query = $metadata->getByPrimaries(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            '3'
+        );
+
+        $this->assertSame(['#boo_id' => '3'], $this->readQuery($query)[1]);
+    }
+
+    public function testGetByCriteriaWithOrderShouldConvertOrderPropertiesToColumns()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByCriteriaWithOrderAndLimit(
+            ['name' => 'Xavier'],
+            ['name' => 'asc', 'id' => 'DESC'],
+            10,
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory()
+        );
+
+        $this->assertStringEndsWith(
+            ' WHERE boo_name = :#boo_name ORDER BY boo_name ASC,boo_id DESC LIMIT 10',
+            $this->readQuery($query)[0]
+        );
+    }
+
+    public function testGetByCriteriaWithOrderShouldRejectAColumnNameAndNameTheProperty()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteriaWithOrderAndLimit(
+                ['name' => 'Xavier'],
+                ['boo_name' => 'ASC'],
+                0,
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            '"boo_name" is a column name: use the property name "name" in the order of Repository::getBy()'
+        );
+    }
+
+    public function testGetByCriteriaWithOrderShouldRejectAnUnknownProperty()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteriaWithOrderAndLimit(
+                ['name' => 'Xavier'],
+                ['unknown' => 'ASC'],
+                0,
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Undefined property "unknown" in the order of Repository::getBy()'
+        );
+    }
+
+    public function testGetByCriteriaWithOrderShouldRejectAnInvalidDirection()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteriaWithOrderAndLimit(
+                ['name' => 'Xavier'],
+                ['name' => 'ASC; DROP TABLE bouh'],
+                0,
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Invalid direction "ASC; DROP TABLE bouh" for property "name" in the order of Repository::getBy():'
+            . ' use "ASC" or "DESC"'
+        );
+    }
+
+    public function testGetByCriteriaShouldRejectAColumnNameAndNameTheProperty()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['boo_name' => 'Xavier'],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            '"boo_name" is a column name: use the property name "name" in the criteria of Repository::getBy()'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getOneByCriteria(
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                ['boo_name' => 'Xavier']
+            ),
+            '"boo_name" is a column name: use the property name "name" in the criteria of Repository::getOneBy()'
+        );
+    }
+
+    public function testGetByCriteriaShouldSerializeObjectValues()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByCriteria(
+            [
+                'color'     => ColorsEnum::GREEN,
+                'priority'  => [PriorityEnum::LOW, PriorityEnum::HIGH],
+                'createdAt' => new \DateTime('2026-10-05 12:34:56'),
+            ],
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory()
+        );
+
+        [$sql, $params] = $this->readQuery($query);
+        $this->assertStringEndsWith(
+            ' WHERE boo_color = :#boo_color AND boo_priority IN (:boo_priority__1,:boo_priority__2)'
+            . ' AND boo_created_at = :#boo_created_at',
+            $sql
+        );
+        $this->assertSame(
+            [
+                '#boo_color' => 'green',
+                'boo_priority__1' => '1',
+                'boo_priority__2' => '3',
+                '#boo_created_at' => '2026-10-05 12:34:56',
+            ],
+            $params
+        );
+    }
+
+    public function testGetByCriteriaShouldSerializeAnArrayAsAWholeForAnArrayValueSerializer()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getOneByCriteria(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            ['roles' => ['ROLE_ADMIN', 'ROLE/USER']]
+        );
+
+        [$sql, $params] = $this->readQuery($query);
+        $this->assertStringEndsWith(' WHERE boo_roles = :#boo_roles LIMIT 1', $sql);
+        // The serialize options of the field are used (JSON_UNESCAPED_SLASHES)
+        $this->assertSame(['#boo_roles' => '["ROLE_ADMIN","ROLE/USER"]'], $params);
+    }
+
+    public function testGetByCriteriaShouldSendScalarsAndNullAsIs()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByCriteria(
+            ['id' => [1, '2'], 'name' => 'Xavier', 'color' => 'red', 'createdAt' => null, 'raw' => true],
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory()
+        );
+
+        [$sql, $params] = $this->readQuery($query);
+        $this->assertStringEndsWith(
+            ' WHERE boo_id IN (:boo_id__1,:boo_id__2) AND boo_name = :#boo_name AND boo_color = :#boo_color'
+            . ' AND boo_created_at IS NULL AND boo_raw = :#boo_raw',
+            $sql
+        );
+        $this->assertSame(
+            ['boo_id__1' => 1, 'boo_id__2' => '2', '#boo_name' => 'Xavier', '#boo_color' => 'red', '#boo_raw' => true],
+            $params
+        );
+    }
+
+    public function testGetByCriteriaShouldSendAStringableObjectWithoutSerializerAsIs()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+        $stringable = new class () implements \Stringable {
+            public function __toString(): string
+            {
+                return 'd4c5a1f0-0000-4000-8000-000000000000';
+            }
+        };
+
+        $query = $metadata->getByCriteria(
+            ['raw' => $stringable, 'name' => [$stringable]],
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory()
+        );
+
+        $this->assertSame(['#boo_raw' => $stringable, 'boo_name__1' => $stringable], $this->readQuery($query)[1]);
+    }
+
+    public function testGetByPrimariesWithASingleObjectShouldSerializeIt()
+    {
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn(new FakeDriver());
+        $connection = new Connection($connectionPool, 'main', 'db');
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField([
+            'primary'            => true,
+            'fieldName'          => 'color',
+            'columnName'         => 'boo_color',
+            'type'               => 'string',
+            'serializer'         => BackedEnum::class,
+            'serializer_options' => ['unserialize' => ['enum' => ColorsEnum::class]]
+        ]);
+
+        $query = $metadata->getByPrimaries(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            ColorsEnum::BLUE
+        );
+
+        $this->assertSame(['#boo_color' => 'blue'], $this->readQuery($query)[1]);
+    }
+
+    public function testGetByCriteriaShouldRejectAnEmptyArray()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['id' => []],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Empty array for property "id" in the criteria of Repository::getBy(): nothing can match'
+        );
+    }
+
+    public function testGetByCriteriaShouldRejectAnObjectWithoutSerializer()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['raw' => new \stdClass()],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Cannot use an object of class "stdClass" for property "raw" in the criteria of Repository::getBy():'
+            . ' its field has no serializer'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['raw' => ['a', new \stdClass()]],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Cannot use an object of class "stdClass" for property "raw" in the criteria of Repository::getBy():'
+            . ' its field has no serializer'
+        );
+    }
+
+    public function testGetByCriteriaShouldRejectNullOrNestedArrayInAnInList()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['name' => ['Xavier', null]],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Null in the array for property "name" in the criteria of Repository::getBy(): an IN list never matches NULL'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['name' => [['Xavier']]],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Nested array for property "name" in the criteria of Repository::getBy()'
+        );
+    }
+
+    /**
+     * Metadata with a field for each kind of criterion value, read through a FakeDriver replica
+     *
+     * @return array{0: Metadata, 1: Connection, 2: TingServices}
+     */
+    private function createReadMetadata(bool $singlePrimary = false): array
+    {
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn(new FakeDriver());
+        $connection = new Connection($connectionPool, 'main', 'db');
+
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+        $metadata->addField([
+            'primary'    => $singlePrimary === false,
+            'fieldName'  => 'secondId',
+            'columnName' => 'boo_second_id',
+            'type'       => 'int'
+        ]);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        $metadata->addField([
+            'fieldName'          => 'color',
+            'columnName'         => 'boo_color',
+            'type'               => 'string',
+            'serializer'         => BackedEnum::class,
+            'serializer_options' => ['unserialize' => ['enum' => ColorsEnum::class]]
+        ]);
+        $metadata->addField([
+            'fieldName'          => 'priority',
+            'columnName'         => 'boo_priority',
+            'type'               => 'int',
+            'serializer'         => BackedEnum::class,
+            'serializer_options' => ['unserialize' => ['enum' => PriorityEnum::class]]
+        ]);
+        $metadata->addField(['fieldName' => 'createdAt', 'columnName' => 'boo_created_at', 'type' => 'datetime']);
+        $metadata->addField([
+            'fieldName'          => 'roles',
+            'columnName'         => 'boo_roles',
+            'type'               => 'json',
+            'serializer_options' => ['serialize' => ['options' => JSON_UNESCAPED_SLASHES]]
+        ]);
+        $metadata->addField(['fieldName' => 'raw', 'columnName' => 'boo_raw', 'type' => 'string']);
+
+        return [$metadata, $connection, $services];
+    }
+
+    /**
+     * @return array{0: string, 1: array<string, mixed>} the SQL and the parameters of the query
+     */
+    private function readQuery(QueryInterface $query): array
+    {
+        return (fn () => [$this->sql, $this->params])->call($query);
     }
 
     #[AllowMockObjectsWithoutExpectations]

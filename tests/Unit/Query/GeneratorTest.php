@@ -249,6 +249,25 @@ class GeneratorTest extends TestCase
         $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 
+    public function testGetByCriteriaShouldNotAddAnEmptyOrderClauseWhenEveryDirectionIsIgnored()
+    {
+        $services = new TingServices();
+
+        $generator = new Generator(
+            $this->mockConnection,
+            $this->mockQueryFactory,
+            '',
+            'table',
+            ['id', 'population']
+        );
+        $generator->getByCriteria(['name' => 'Xavier'], $services->collectionFactory(), false, ['name' => 'UP'], 5);
+
+        $this->assertSame(
+            'SELECT `id`, `population` FROM `table` WHERE name = :#name LIMIT 5',
+            $this->mockQueryFactory->getCalls[0][0]
+        );
+    }
+
     public function testGetByCriteriaWithArrayValueAndOrderLimitShouldReturnAQuery()
     {
         $services = new TingServices();

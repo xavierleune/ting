@@ -424,6 +424,52 @@ class UnitOfWorkTest extends TestCase
         });
     }
 
+    #[AllowMockObjectsWithoutExpectations]
+    public function testProcessShouldUpdateAndDeleteByPrimaryColumns()
+    {
+        $entity = new Bouh();
+        $metadataRepository = new MetadataRepository($this->services->serializerFactory());
+        $metadataRepository->addMetadata(
+            'tests\fixtures\model\BouhRepository',
+            BouhRepository::initMetadata($this->services->serializerFactory())
+        );
+
+        [$mockConnectionPool] = $this->createProcessMocks(true);
+
+        // Records the SQL and the parameters of each prepared query, without executing it
+        $queries = [];
+        $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getPrepared'])->getMock();
+        $mockQueryFactory->method('getPrepared')->willReturnCallback(
+            function (string $sql, Connection $connection) use (&$queries): PreparedQuery {
+                $query = $this->getMockBuilder(PreparedQuery::class)
+                    ->setConstructorArgs([$sql, $connection])
+                    ->onlyMethods(['prepareExecute', 'execute'])
+                    ->getMock();
+                $query->method('prepareExecute')->willReturnSelf();
+                $query->method('execute')->willReturn(true);
+                $queries[] = $query;
+
+                return $query;
+            }
+        );
+
+        $unitOfWork = new UnitOfWork($mockConnectionPool, $metadataRepository, $mockQueryFactory);
+        $entity->setId(3);
+        $unitOfWork->manage($entity);
+        $entity->setName('newName');
+        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushDelete($entity)->process();
+
+        $read = fn (PreparedQuery $query): array => (fn () => [$this->sql, $this->params])->call($query);
+        $this->assertSame(
+            [
+                ['UPDATE `T_BOUH_BOO` SET `boo_name` = :boo_name WHERE `boo_id` = :#boo_id', ['boo_name' => 'newName', '#boo_id' => 3]],
+                ['DELETE FROM `T_BOUH_BOO` WHERE `boo_id` = :#boo_id', ['#boo_id' => 3]],
+            ],
+            array_map($read, $queries)
+        );
+    }
+
     /**
      * Builds the connection pool and query factory partial mocks shared by the process() tests.
      *

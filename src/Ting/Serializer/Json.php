@@ -27,7 +27,7 @@ namespace CCMBenchmark\Ting\Serializer;
 
 use stdClass;
 
-class Json implements SerializerInterface
+class Json implements SerializerInterface, ArrayValueInterface
 {
     public const JSON_DEFAULT_DEPTH   = 512;
     public const JSON_DEFAULT_OPTIONS = 0;

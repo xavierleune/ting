@@ -108,7 +108,7 @@ try {
     $countryLanguageRepository =
         $services->repositoryFactory()->get(CountryLanguageRepository::class);
 
-    $countryLanguage = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
+    $countryLanguage = $countryLanguageRepository->get(['code' => 'AGO', 'language' => 'Kongo']);
     var_dump($countryLanguage);
 
 } catch (Exception $e) {
