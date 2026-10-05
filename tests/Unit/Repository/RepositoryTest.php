@@ -112,7 +112,7 @@ class RepositoryTest extends TestCase
             $services->unitOfWork(),
             $services->serializerFactory()
         );
-        $retrievedEntity = $repository->get([]);
+        $retrievedEntity = $repository->get(3);
         $this->assertSame($entity->getName(), $retrievedEntity->getName());
     }
 
@@ -165,7 +165,7 @@ class RepositoryTest extends TestCase
             $services->unitOfWork(),
             $services->serializerFactory()
         );
-        $this->assertNull($repository->get([], true));
+        $this->assertNull($repository->get(3, true));
         $this->assertCount(1, array_filter($mockQuery->selectPrimaryCalls, fn ($arguments) => $arguments == [true]));
         $this->assertSame(1, $mockQuery->queryCalls);
     }
