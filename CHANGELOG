@@ -2,6 +2,8 @@
     * BC PHP 8.1 dropped, minimum version is now PHP 8.2
     * BC Symfony 6 dropped, add Symfony 8 support
     * BC Remove constructors from Interfaces (Liskov Substitution Principle violation)
+    * BC Added QueryInterface::selectMaster() and ResultInterface::setObjectToFetch() (named fetchObject() by mistake in the 4.0.0-rc.1 notes)
+    * Fix collections and hydrators no longer Countable since 4.0.0-rc.1: count($collection) threw a TypeError
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit

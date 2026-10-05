@@ -4,8 +4,14 @@ UPGRADE FROM 3.X to 4.0
 PHP Version
 -----------
 
-* PHP 8.0 support has been dropped. The minimum required version is now **PHP 8.1**.
-* Update your `composer.json` to require `"php": ">=8.1"`
+* PHP 8.0 and 8.1 support has been dropped. The minimum required version is now **PHP 8.2**.
+* Update your `composer.json` to require `"php": ">=8.2"`
+
+Symfony
+-------
+
+* Symfony 6 support has been dropped: `symfony/property-access` (and the optional `symfony/uid` / `symfony/cache`)
+  now require `^7.0 || ^8.0`.
 
 Generator
 ---------
@@ -80,31 +86,6 @@ $pgsqlDriver->getInsertIdForSequence('my_sequence');
 $pgsqlDriver->getInsertedIdForSequence('my_sequence');
 ```
 
-Serialization Interfaces
-------------------------
-
-If you have custom serializers, update the type hints:
-
-**SerializeInterface:**
-```php
-// Before (3.x):
-public function serialize($toSerialize, array $options = []): string
-
-// After (4.0):
-public function serialize($toSerialize, array $options = []): mixed
-```
-
-**UnserializeInterface:**
-```php
-// Before (3.x):
-public function unserialize($serialized, array $options = [])
-
-// After (4.0):
-public function unserialize(mixed $serialized, array $options = []): mixed
-```
-
-Note: The `serialize()` method now returns `mixed` instead of `string` to support more flexible serialization formats.
-
 PostgreSQL Driver
 -----------------
 
@@ -148,6 +129,50 @@ public function setTimezone(?string $timezone = null): void
     // e.g., for MySQL: SET time_zone = '+00:00'
 }
 ```
+
+QueryInterface - New Required Method
+------------------------------------
+
+If you have implemented custom queries, you must implement:
+
+```php
+interface QueryInterface
+{
+    // New method in 4.0 (already available on Query in 3.x):
+    public function selectMaster(bool $useMaster): static;
+}
+```
+
+ResultInterface - New Required Method
+-------------------------------------
+
+If you have implemented custom results, you must implement the method used by `HydratorValueObject`:
+
+```php
+interface ResultInterface
+{
+    // New method in 4.0:
+    /** @param class-string $objectToFetch */
+    public function setObjectToFetch(string $objectToFetch): static;
+}
+```
+
+CollectionInterface and HydratorInterface
+-----------------------------------------
+
+If you have implemented custom collections or hydrators, `count()` and `getIterator()` are now declared with their
+types:
+
+```php
+public function count(): int;
+public function getIterator(): \Generator;
+```
+
+Constructors Removed from Interfaces
+------------------------------------
+
+`ConnectionPoolInterface`, `StatementInterface` and `QueryInterface` no longer declare a constructor. Implementations
+are free to define their own.
 
 ConnectionPoolInterface - New Method
 -------------------------------------
