@@ -1,7 +1,7 @@
 {
     "name": "xavierleune/ting",
     "description": "Ting : a lightweight datamapper",
-    "homepage": "http://tech.ccmbg.com/ting/",
+    "homepage": "https://github.com/xavierleune/ting",
     "keywords": [
         "datamapper",
         "database",
@@ -16,7 +16,7 @@
     "support": {
         "issues": "https://github.com/xavierleune/ting/issues",
         "source": "https://github.com/xavierleune/ting",
-        "docs": "http://tech.ccmbg.com/ting/doc/en/"
+        "docs": "https://github.com/xavierleune/ting/tree/main/docs"
     },
     "type": "library",
     "license": "Apache-2.0",
