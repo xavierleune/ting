@@ -111,11 +111,14 @@ Generator
 
 ```php
 // Before (3.x):
-$generator->getByCriteriaWithOrderAndLimit(['status' => 'active'], ['name' => 'ASC'], 10);
+$generator->getByCriteriaWithOrderAndLimit(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
 
 // After (4.0):
-$generator->getByCriteria(['status' => 'active'], ['name' => 'ASC'], 10);
+$generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
 ```
+
+* `Generator` is mostly used internally: from a repository, `getBy($criteria, $forceMaster, $order, $limit)` is
+  unchanged.
 
 Metadata
 --------
