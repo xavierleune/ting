@@ -25,6 +25,8 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+use Exception;
+
 class DateTime implements SerializerInterface
 {
     /**
@@ -33,15 +35,15 @@ class DateTime implements SerializerInterface
      * unSerializeUseFormat => if false, any valid datetime format is automatically used
      * @see http://php.net/manual/en/datetime.formats.compound.php
      */
-    private static $defaultOptions = ['format' => 'Y-m-d H:i:s', 'unSerializeUseFormat' => true];
+    private static array $defaultOptions = ['format' => 'Y-m-d H:i:s', 'unSerializeUseFormat' => true];
 
     /**
-     * @param \DateTime $toSerialize
+     * @param mixed $toSerialize
      * @param array $options
      * @return string|null
      * @throws RuntimeException
      */
-    public function serialize($toSerialize, array $options = [])
+    public function serialize(mixed $toSerialize, array $options = []): ?string
     {
         if ($toSerialize === null) {
             return null;
@@ -58,12 +60,12 @@ class DateTime implements SerializerInterface
     }
 
     /**
-     * @param string $serialized
+     * @param mixed $serialized
      * @param array  $options
      * @return \Datetime|null
      * @throws RuntimeException
      */
-    public function unserialize($serialized, array $options = [])
+    public function unserialize(mixed $serialized, array $options = []): ?\DateTime
     {
         if ($serialized === null) {
             return null;
@@ -78,7 +80,7 @@ class DateTime implements SerializerInterface
         } else {
             try {
                 $value = new \DateTime($serialized);
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 throw new RuntimeException(
                     'Cannot convert ' . $serialized . ' to datetime. Error is : ' . $e->getMessage()
                 );

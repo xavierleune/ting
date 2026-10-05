@@ -182,6 +182,31 @@ class ConnectionPoolTest extends TestCase
         $connectionPool->slave('bouh', 'bouhDb');
     }
 
+    public function testResetShouldCloseAllConnections()
+    {
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->exactly(2))->method('addConnection');
+
+        $connectionPool = new ConnectionPool($mockLogger);
+        $connectionPool->setConfig(
+            [
+                'bouh' => [
+                    'namespace' => '\tests\fixtures\FakeDriver',
+                    'master'    => [
+                        'host'      => 'master',
+                        'user'      => 'test',
+                        'password'  => 'test',
+                        'port'      => 3306
+                    ]
+                ]
+            ]
+        );
+        $driver = $connectionPool->master('bouh', 'bouhDb');
+        $this->assertSame($driver, $connectionPool->master('bouh', 'bouhDb'));
+        $connectionPool->reset();
+        $this->assertNotSame($driver, $connectionPool->master('bouh', 'bouhDb'));
+    }
+
     public function testConnectionPoolShouldLogConnections()
     {
         $mockLogger = $this->createMock(FakeDriverLogger::class);

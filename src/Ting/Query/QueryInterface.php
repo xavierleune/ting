@@ -29,50 +29,31 @@ use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
+/**
+ * @template T
+ */
 interface QueryInterface
 {
     /**
-     * @param string $sql
-     * @param Connection $connection
-     * @param CollectionFactoryInterface $collectionFactory
-     */
-    public function __construct($sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null);
-
-    /**
      * Execute a reading query (SELECT, SHOW, etc.)
      * @param CollectionInterface<T>|null $collection
-     *
      * @return CollectionInterface<T>
-     *
-     * @template T of object
      */
-    public function query(?CollectionInterface $collection = null);
+    public function query(?CollectionInterface $collection = null): CollectionInterface;
 
     /**
      * Execute a writing query (UPDATE, INSERT, etc.)
-     * @return mixed
      */
-    public function execute();
+    public function execute(): mixed;
 
     /**
      * @param array $params
-     * @return void
      */
-    public function setParams(array $params);
+    public function setParams(array $params): static;
 
-    /**
-     * @deprecated
-     * @return int
-     */
-    public function getInsertId();
+    public function selectMaster(bool $useMaster): static;
 
-    /**
-     * @return int
-     */
-    public function getInsertedId();
+    public function getInsertedId(): int;
 
-    /**
-     * @return int
-     */
-    public function getAffectedRows();
+    public function getAffectedRows(): int|string;
 }

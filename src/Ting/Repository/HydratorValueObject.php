@@ -25,8 +25,8 @@
 
 namespace CCMBenchmark\Ting\Repository;
 
-use Generator;
 use CCMBenchmark\Ting\Driver\ResultInterface;
+use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\UnitOfWork;
 
@@ -35,51 +35,40 @@ use CCMBenchmark\Ting\UnitOfWork;
  *
  * @template-implements HydratorInterface<T>
  */
-class HydratorArray implements HydratorInterface
+class HydratorValueObject implements HydratorInterface
 {
+    /**
+     * @var class-string<T>
+     */
+    protected string $objectToHydrate;
+    /**
+     * @var ResultInterface<T>
+     */
     protected ?ResultInterface $result = null;
 
+
     /**
-     * @param MetadataRepository $metadataRepository
-     * @return void
+     * @param class-string<T> $objectToHydrate
      */
-    public function setMetadataRepository(MetadataRepository $metadataRepository): void
+    public function __construct(string $objectToHydrate)
     {
-        // Useless for this hydrator
+        $this->objectToHydrate = $objectToHydrate;
     }
 
     /**
-     * @param UnitOfWork $unitOfWork
-     * @return void
+     * @return \Generator<int, T>
      */
-    public function setUnitOfWork(UnitOfWork $unitOfWork): void
+    public function getIterator(): \Generator
     {
-        // Useless for this hydrator
-    }
+        $this->result->setObjectToFetch($this->objectToHydrate);
 
-    public function setResult(ResultInterface $result): static
-    {
-        $this->result = $result;
-        return $this;
-    }
-
-    /**
-     * @return Generator<int, array>
-     */
-    public function getIterator(): Generator
-    {
         foreach ($this->result as $key => $row) {
-            $data = [];
-            foreach ($row as $column) {
-                $data[$column['name']] = $column['value'];
-            }
-
-            yield $key => $data;
+            yield $key => $row;
         }
     }
 
     /**
-     * @return int Not int<0, max> as Countable states: the number of rows comes from the driver, untyped
+     * @return int
      */
     public function count(): int
     {
@@ -89,5 +78,21 @@ class HydratorArray implements HydratorInterface
 
         // mysqli reports the number of rows as a string beyond PHP_INT_MAX
         return (int) $this->result->getNumRows();
+    }
+
+    public function setMetadataRepository(MetadataRepository $metadataRepository): void
+    {
+        // Useless for this hydrator
+    }
+
+    public function setUnitOfWork(UnitOfWork $unitOfWork): void
+    {
+        // Useless for this hydrator
+    }
+
+    public function setResult(ResultInterface $result): static
+    {
+        $this->result = $result;
+        return $this;
     }
 }

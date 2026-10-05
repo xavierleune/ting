@@ -128,6 +128,7 @@ class DriverTest extends TestCase
     public function testCloseShouldReturnSelf()
     {
         $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->method('real_connect')->willReturn(true);
 
         $driver = new Driver($mockDriver);
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
@@ -198,7 +199,7 @@ class DriverTest extends TestCase
     {
         $mockDriver = $this->createMock(Mysqli::class);
         $mockDriver->error = '';
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->expects($this->once())
             ->method('select_db')
             ->with('bouh')
@@ -213,7 +214,7 @@ class DriverTest extends TestCase
     {
         $mockDriver = $this->createMock(Mysqli::class);
         $mockDriver->error = '';
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->expects($this->once())
             ->method('select_db')
             ->willReturn(true);
@@ -228,7 +229,7 @@ class DriverTest extends TestCase
     {
         $mockDriver = $this->createMock(Mysqli::class);
         $mockDriver->error = '';
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->expects($this->once())
             ->method('select_db')
             ->with('bouh')
@@ -245,7 +246,7 @@ class DriverTest extends TestCase
         $mockDriver = $this->createStub(Mysqli::class);
         $mockDriver->errno = 123;
         $mockDriver->error = 'unknown database';
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->method('select_db')->willReturn(true);
 
         $driver = new Driver($mockDriver);
@@ -283,7 +284,7 @@ class DriverTest extends TestCase
         $mockDriver = $this->createStub(Mysqli::class);
         $mockDriver->errno = 123;
         $mockDriver->error = 'unknown error';
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
 
         $driver = new Driver($mockDriver);
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
@@ -299,7 +300,7 @@ class DriverTest extends TestCase
         $mockDriver = $this->createStub(Mysqli::class);
         $mockDriver->errno = 123;
         $mockDriver->error = 'unknown error';
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->method('prepare')->willReturn(false);
 
         $driver = new Driver($mockDriver);
@@ -360,12 +361,17 @@ class DriverTest extends TestCase
     public function testExecuteShouldReturnACollection()
     {
         $driverFake          = $this->createStub(Mysqli::class);
-        // atoum mock without override: the real fake is used
-        $mockMysqliResult    = new MysqliResult([]);
+        $driverFake->error   = '';
+        // atoum mock only overriding fetch_fields: the real fake is used
+        $mockMysqliResult    = (new MysqliResult([]))->setFields([]);
+        $driverFake->method('real_connect')->willReturn(true);
+        $driverFake->method('select_db')->willReturn(true);
 
         $collection = new Collection();
 
         $driver = new Driver($driverFake);
+        $driver->setDatabase('database');
+        $driver->setName('foo');
         $driverFake->method('real_escape_string')->willReturnCallback(function ($value) {
             if ($value instanceof \DateTime) {
                 $value = $value->format('Y-m-d H:i:s');
@@ -515,7 +521,8 @@ class DriverTest extends TestCase
     public function testPrepareShouldNotTransformEscapedColon()
     {
         $mockDriver = $this->createStub(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->error = '';
+        $mockDriver->method('real_connect')->willReturn(true);
         $driverStatement = $this->createStub(MysqliStatement::class);
         $driverStatement->method('close')->willReturn(true);
 
@@ -526,6 +533,8 @@ class DriverTest extends TestCase
         });
 
         $driver = new Driver($mockDriver);
+        $driver->setName('foo');
+        $driver->setDatabase('T_BOUH_BOO');
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
         $driver->prepare(
             'SELECT * FROM T_BOUH_BOO WHERE name = "\:bim"'
@@ -537,7 +546,8 @@ class DriverTest extends TestCase
     public function testPrepareCalledTwiceShouldReturnTheSameObject()
     {
         $mockDriver = $this->createStub(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->error = '';
+        $mockDriver->method('real_connect')->willReturn(true);
         $driverStatement = $this->createStub(MysqliStatement::class);
         $driverStatement->method('close')->willReturn(true);
 
@@ -549,6 +559,8 @@ class DriverTest extends TestCase
 
         $driver = new Driver($mockDriver);
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setName('foo');
+        $driver->setDatabase('T_BOUH_BOO');
         $statement = $driver->prepare(
             'SELECT * FROM T_BOUH_BOO WHERE name = "\:bim"'
         );
@@ -633,10 +645,10 @@ class DriverTest extends TestCase
         });
     }
 
-    public function testGetInsertIdShouldReturnInsertedId()
+    public function testGetInsertedIdShouldReturnInsertedId()
     {
         $mockDriver = $this->createStub(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->insert_id = 3;
 
         $driver = new Driver($mockDriver);
@@ -648,7 +660,7 @@ class DriverTest extends TestCase
     public function testGetAffectedRowsShouldReturnAffectedRows()
     {
         $mockDriver = $this->createStub(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->affected_rows = 12;
 
         $driver = new Driver($mockDriver);
@@ -660,7 +672,7 @@ class DriverTest extends TestCase
     public function testGetAffectedRowsShouldReturn0OnError()
     {
         $mockDriver = $this->createStub(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->affected_rows = -1;
 
         $driver = new Driver($mockDriver);
@@ -672,14 +684,17 @@ class DriverTest extends TestCase
     public function testExecuteMustLogQuery()
     {
         $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->error = '';
         $mockLogger = $this->createMock(FakeDriverLogger::class);
 
         $mockDriver->method('query')->willReturn(true);
+        $mockDriver->method('select_db')->willReturn(true);
 
         $mockLogger->expects($this->once())->method('startQuery');
         $mockLogger->expects($this->once())->method('stopQuery');
 
         $driver = new Driver($mockDriver);
+        $driver->setDatabase('db');
         $driver->setLogger($mockLogger);
         $driver->execute('Empty query');
     }
@@ -687,8 +702,10 @@ class DriverTest extends TestCase
     public function testPrepareShouldLogQuery()
     {
         $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->error = '';
         $driverStatement = $this->createStub(MysqliStatement::class);
         $mockDriver->method('prepare')->willReturn($driverStatement);
+        $mockDriver->method('select_db')->willReturn(true);
         $driverStatement->method('close')->willReturn(true);
 
         $mockLogger = $this->createMock(FakeDriverLogger::class);
@@ -696,6 +713,8 @@ class DriverTest extends TestCase
         $mockLogger->expects($this->once())->method('stopPrepare');
 
         $driver = new Driver($mockDriver);
+        $driver->setDatabase('db');
+        $driver->setName('foo');
         $driver->setLogger($mockLogger);
         $driver->prepare('Empty query');
     }
@@ -970,7 +989,7 @@ class DriverTest extends TestCase
     public function testTimezone()
     {
         $mockDriver = $this->createMock(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->expects($this->once())->method('query');
 
         $driver = new Driver($mockDriver);
@@ -981,7 +1000,7 @@ class DriverTest extends TestCase
     public function testDefaultTimezone()
     {
         $mockDriver = $this->createMock(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->expects($this->never())->method('query');
 
         $driver = new Driver($mockDriver);
@@ -993,7 +1012,7 @@ class DriverTest extends TestCase
     {
         $queryCalls = [];
         $mockDriver = $this->createMock(Mysqli::class);
-        $mockDriver->method('real_connect')->willReturn($mockDriver);
+        $mockDriver->method('real_connect')->willReturn(true);
         $mockDriver->expects($this->exactly(2))
             ->method('query')
             ->willReturnCallback(function (...$arguments) use (&$queryCalls) {

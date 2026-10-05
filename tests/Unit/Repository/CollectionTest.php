@@ -136,7 +136,7 @@ class CollectionTest extends TestCase
         $mockHydrator = new class () extends Hydrator {
             public int $countCalls = 0;
 
-            public function count()
+            public function count(): int
             {
                 $this->countCalls++;
                 return parent::count();
@@ -147,6 +147,23 @@ class CollectionTest extends TestCase
         $collection->count();
 
         $this->assertSame(1, $mockHydrator->countCalls);
+    }
+
+    public function testCollectionShouldBeCountable()
+    {
+        $result = $this->createStub(Result::class);
+        $result->method('getNumRows')->willReturn(2);
+
+        $collection = new Collection();
+        $collection->set($result);
+
+        $this->assertInstanceOf(\Countable::class, $collection);
+        $this->assertSame(2, count($collection));
+    }
+
+    public function testCountWithoutResultShouldReturn0()
+    {
+        $this->assertSame(0, count(new Collection()));
     }
 
     public function testSetFromCache()

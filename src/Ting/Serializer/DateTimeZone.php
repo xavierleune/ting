@@ -2,9 +2,11 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+use Exception;
+
 class DateTimeZone implements SerializerInterface
 {
-    public function serialize($toSerialize, array $options = [])
+    public function serialize($toSerialize, array $options = []): ?string
     {
         if ($toSerialize === null) {
             return null;
@@ -17,14 +19,19 @@ class DateTimeZone implements SerializerInterface
         return $toSerialize->getName();
     }
 
-    public function unserialize($serialized, array $options = [])
+    /**
+     * @param mixed $serialized
+     * @param array $options
+     * @return \DateTimeZone|null
+     */
+    public function unserialize(mixed $serialized, array $options = []): ?\DateTimeZone
     {
         if ($serialized === null) {
             return null;
         }
         try {
             return new \DateTimeZone($serialized);
-        } catch (\Exception) {
+        } catch (Exception) {
             throw new RuntimeException('Cannot convert ' . $serialized . ' to DateTimeZone.');
         }
     }

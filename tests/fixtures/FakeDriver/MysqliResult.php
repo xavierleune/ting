@@ -33,6 +33,9 @@ class MysqliResult implements ResultInterface
     protected $offset = 0;
     protected $data   = null;
     protected $fields = null;
+    protected $connectionName = null;
+    protected $database = null;
+    protected $objectToFetch = null;
 
     public function __construct(array $data = [])
     {
@@ -60,7 +63,7 @@ class MysqliResult implements ResultInterface
         return $this;
     }
 
-    public function setResult($iterator)
+    public function setResult($iterator): static
     {
         $this->data = iterator_to_array($iterator);
         return $this;
@@ -94,14 +97,12 @@ class MysqliResult implements ResultInterface
     }
     // @codingStandardsIgnoreEnd
 
-    #[\ReturnTypeWillChange]
-    public function rewind()
+    public function rewind(): void
     {
         $this->offset = 0;
     }
 
-    #[\ReturnTypeWillChange]
-    public function current()
+    public function current(): mixed
     {
         if (isset($this->data[$this->offset]) === false) {
             return null;
@@ -110,46 +111,55 @@ class MysqliResult implements ResultInterface
         return $this->data[$this->offset];
     }
 
-    #[\ReturnTypeWillChange]
-    public function key()
+    public function key(): mixed
     {
         return $this->offset;
     }
 
-    #[\ReturnTypeWillChange]
-    public function next()
+    public function next(): void
     {
         ++$this->offset;
     }
 
-    #[\ReturnTypeWillChange]
-    public function valid()
+    public function valid(): bool
     {
         return isset($this->data[$this->offset]);
     }
 
-    public function getNumRows()
+    public function getNumRows(): int
     {
         return count($this->data);
     }
 
-    public function setConnectionName($connectionName)
+    public function setConnectionName(string $connectionName): static
     {
-
+        $this->connectionName = $connectionName;
+        return $this;
     }
 
-    public function setDatabase($database)
+    public function setDatabase($database): static
     {
-
+        $this->database = $database;
+        return $this;
     }
 
-    public function getConnectionName()
+    public function getConnectionName(): ?string
     {
-
+        return $this->connectionName;
     }
 
-    public function getDatabase()
+    public function getDatabase(): ?string
     {
+        return $this->database;
+    }
 
+    public function setObjectToFetch(string $objectToFetch): static
+    {
+        $this->objectToFetch = $objectToFetch;
+        return $this;
+    }
+
+    public function fetch_object($class_name = null)
+    {
     }
 }

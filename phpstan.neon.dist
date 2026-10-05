@@ -1,0 +1,31 @@
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    phpVersion: 80200
+    level: 7
+    paths:
+        - src/
+        - phpstan/
+    tips:
+        treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        - identifier: missingType.iterableValue
+        - identifier: missingType.generics
+    type_coverage:
+        return: 97
+        param: 85
+        # enable on PHP 7.4+
+        property: 83
+        # typed class constants require PHP 8.3+, the minimum is 8.2
+        constant: 0
+    type_perfect:
+        null_over_false: true
+        # no_mixed: true
+        # narrow_param: true
+        narrow_return: true
+
+services:
+    - class: CCMBenchmark\Ting\PHPStan\PropertiesExtension
+      tags:
+        - phpstan.properties.readWriteExtension

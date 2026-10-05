@@ -63,12 +63,14 @@ class QueryTest extends TestCase
         $mockConnection        = $this->createMock(Connection::class);
         $mockCollectionFactory = $this->createMock(CollectionFactory::class);
 
+        $collection = new Collection($services->get('Hydrator'));
+
         $mockConnection->expects($this->once())->method('slave')->willReturn($mockDriver);
-        $mockDriver->expects($this->once())->method('execute')->willReturn(true);
+        $mockDriver->expects($this->once())->method('execute')->willReturn($collection);
         $mockCollectionFactory
             ->expects($this->once())
             ->method('get')
-            ->willReturn(new Collection($services->get('Hydrator')));
+            ->willReturn($collection);
 
         $query = new Query('SELECT', $mockConnection, $mockCollectionFactory);
         $query->query();
@@ -81,7 +83,7 @@ class QueryTest extends TestCase
         $mockCollectionFactory = $this->createMock(CollectionFactory::class);
 
         $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
-        $mockDriver->expects($this->once())->method('execute')->willReturn(true);
+        $mockDriver->expects($this->once())->method('execute')->willReturn(new Collection());
         $mockCollectionFactory->expects($this->once())->method('get')->willReturn(new Collection());
 
         $query = new Query('SELECT', $mockConnection, $mockCollectionFactory);

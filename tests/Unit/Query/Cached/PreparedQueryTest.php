@@ -55,7 +55,7 @@ class PreparedQueryTest extends TestCase
         ) extends CollectionFactory {
             public int $getCalls = 0;
 
-            public function get(?HydratorInterface $hydrator = null)
+            public function get(?HydratorInterface $hydrator = null): Collection
             {
                 $this->getCalls++;
                 return parent::get($hydrator);
@@ -103,6 +103,9 @@ class PreparedQueryTest extends TestCase
             ->setConstructorArgs([$mockMysqliStatement, [], 'connectionName', 'database'])
             ->onlyMethods(['execute'])
             ->getMock();
+        $mockMysqliResult    = $this->getMockBuilder(MysqliResult::class)
+            ->onlyMethods(['getConnectionName', 'getDatabase'])
+            ->getMock();
         $mockMemcached = $this->createMock(MemcachedCache::class);
 
         $mockMemcached->expects($this->once())->method('fetch')->willReturn(false);
@@ -110,10 +113,14 @@ class PreparedQueryTest extends TestCase
         $mockConnection->method('slave')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
-        $mockStatement->method('execute')->willReturnCallback(function (array $params, $collection) {
-            $collection->set(new MysqliResult());
-            return true;
-        });
+        $mockMysqliResult->method('getConnectionName')->willReturn('connectionName');
+        $mockMysqliResult->method('getDatabase')->willReturn('database');
+        $mockStatement->method('execute')->willReturnCallback(
+            function (array $params, $collection) use ($mockMysqliResult) {
+                $collection->set($mockMysqliResult);
+                return true;
+            }
+        );
 
         $collection = new Collection();
 
@@ -153,7 +160,7 @@ class PreparedQueryTest extends TestCase
         $mockStatement       = new class ($mockMysqliStatement, [], 'connectionName', 'database') extends Statement {
             public int $executeCalls = 0;
 
-            public function execute(array $params, ?CollectionInterface $collection = null)
+            public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
             {
                 $this->executeCalls++;
                 return parent::execute($params, $collection);

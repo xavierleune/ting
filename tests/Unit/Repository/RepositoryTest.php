@@ -35,6 +35,9 @@ use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\MetadataRepository;
+use CCMBenchmark\Ting\Query\Cached\PreparedQuery as CachedPreparedQuery;
+use CCMBenchmark\Ting\Query\Cached\Query as CachedQuery;
+use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Repository\Collection;
@@ -132,13 +135,13 @@ class RepositoryTest extends TestCase
             public int $queryCalls = 0;
             public $queryResult = null;
 
-            public function selectMaster($value)
+            public function selectMaster(bool $useMaster): static
             {
                 $this->selectMasterCalls[] = func_get_args();
-                parent::selectMaster($value);
+                return parent::selectMaster($useMaster);
             }
 
-            public function query(?CollectionInterface $collection = null)
+            public function query(?CollectionInterface $collection = null): CollectionInterface
             {
                 $this->queryCalls++;
                 return $this->queryResult;
@@ -326,7 +329,9 @@ class RepositoryTest extends TestCase
         $services         = new Services();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
 
-        $mockQueryFactory->expects($this->once())->method('get')->willReturn(true);
+        $query            = new Query('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
+
+        $mockQueryFactory->expects($this->once())->method('get')->willReturn($query);
 
         $services->get('MetadataRepository')->batchLoadMetadata(
             'tests\fixtures\model',
@@ -342,7 +347,7 @@ class RepositoryTest extends TestCase
             $services->get('UnitOfWork'),
             $services->get('SerializerFactory')
         );
-        $bouhRepository->getQuery('QUERY');
+        $this->assertSame($query, $bouhRepository->getQuery('QUERY'));
     }
 
     public function testGetPreparedQueryShouldCallQueryFactoryGetPrepared()
@@ -350,7 +355,9 @@ class RepositoryTest extends TestCase
         $services         = new Services();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getPrepared'])->getMock();
 
-        $mockQueryFactory->expects($this->once())->method('getPrepared')->willReturn(true);
+        $query            = new PreparedQuery('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
+
+        $mockQueryFactory->expects($this->once())->method('getPrepared')->willReturn($query);
 
         $services->get('MetadataRepository')->batchLoadMetadata(
             'tests\fixtures\model',
@@ -366,7 +373,7 @@ class RepositoryTest extends TestCase
             $services->get('UnitOfWork'),
             $services->get('SerializerFactory')
         );
-        $bouhRepository->getPreparedQuery('QUERY');
+        $this->assertSame($query, $bouhRepository->getPreparedQuery('QUERY'));
     }
 
     public function testGetCachedQueryShouldCallQueryFactoryGetCached()
@@ -374,7 +381,9 @@ class RepositoryTest extends TestCase
         $services         = new Services();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getCached'])->getMock();
 
-        $mockQueryFactory->expects($this->once())->method('getCached')->willReturn(true);
+        $query            = new CachedQuery('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
+
+        $mockQueryFactory->expects($this->once())->method('getCached')->willReturn($query);
 
         $services->get('MetadataRepository')->batchLoadMetadata(
             'tests\fixtures\model',
@@ -390,7 +399,7 @@ class RepositoryTest extends TestCase
             $services->get('UnitOfWork'),
             $services->get('SerializerFactory')
         );
-        $bouhRepository->getCachedQuery('QUERY');
+        $this->assertSame($query, $bouhRepository->getCachedQuery('QUERY'));
     }
 
     public function testGetCachedPreparedQueryShouldCallQueryFactoryGetCachedPreparedQuery()
@@ -398,7 +407,9 @@ class RepositoryTest extends TestCase
         $services         = new Services();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getCachedPrepared'])->getMock();
 
-        $mockQueryFactory->expects($this->once())->method('getCachedPrepared')->willReturn(true);
+        $query            = new CachedPreparedQuery('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
+
+        $mockQueryFactory->expects($this->once())->method('getCachedPrepared')->willReturn($query);
 
         $services->get('MetadataRepository')->batchLoadMetadata(
             'tests\fixtures\model',
@@ -414,7 +425,7 @@ class RepositoryTest extends TestCase
             $services->get('UnitOfWork'),
             $services->get('SerializerFactory')
         );
-        $bouhRepository->getCachedPreparedQuery('QUERY');
+        $this->assertSame($query, $bouhRepository->getCachedPreparedQuery('QUERY'));
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -687,7 +698,7 @@ class RepositoryTest extends TestCase
             ->setConstructorArgs([$services->get('SerializerFactory')])
             ->onlyMethods(['getConnection'])
             ->getMock();
-        $metadata->method('getConnection')->willReturn(null);
+        $metadata->method('getConnection')->willReturn(new Connection($mockConnectionPool, 'main', 'db'));
 
         $metadataRepository->method('findMetadataForRepository')->willReturnCallback(
             function ($repository, $callback, $error) use ($metadata): void {
@@ -708,6 +719,62 @@ class RepositoryTest extends TestCase
             $services->get('SerializerFactory')
         );
         $this->assertSame($metadata, $bouhRepository->getMetadata());
+    }
+
+    public function testResetShouldResetUnitOfWorkAndRenewConnection()
+    {
+        $services           = new Services();
+        $mockConnectionPool = new ConnectionPool();
+        $firstConnection    = new Connection($mockConnectionPool, 'main', 'db');
+        $secondConnection   = new Connection($mockConnectionPool, 'main', 'db');
+
+        $metadata = $this->getMockBuilder(Metadata::class)
+            ->setConstructorArgs([$services->get('SerializerFactory')])
+            ->onlyMethods(['getConnection'])
+            ->getMock();
+        $metadata->setEntity(Bouh::class);
+        $metadata->expects($this->exactly(2))
+            ->method('getConnection')
+            ->with($this->identicalTo($mockConnectionPool))
+            ->willReturnOnConsecutiveCalls($firstConnection, $secondConnection);
+
+        $metadataRepository = $this->getMockBuilder(MetadataRepository::class)
+            ->setConstructorArgs([$services->get('SerializerFactory')])
+            ->onlyMethods(['findMetadataForRepository'])
+            ->getMock();
+        $metadataRepository->expects($this->once())->method('findMetadataForRepository')->willReturnCallback(
+            function ($repository, $callback, $error) use ($metadata): void {
+                $callback($metadata);
+            }
+        );
+
+        $mockUnitOfWork = $this->getMockBuilder(UnitOfWork::class)
+            ->setConstructorArgs([
+                $mockConnectionPool,
+                $services->get('MetadataRepository'),
+                $services->get('QueryFactory')
+            ])
+            ->onlyMethods(['reset'])
+            ->getMock();
+        $mockUnitOfWork->expects($this->once())->method('reset');
+
+        $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
+        $mockQueryFactory->expects($this->once())
+            ->method('get')
+            ->with('QUERY', $this->identicalTo($secondConnection))
+            ->willReturn(new Query('QUERY', $secondConnection));
+
+        $bouhRepository = new BouhRepository(
+            $mockConnectionPool,
+            $metadataRepository,
+            $mockQueryFactory,
+            $services->get('CollectionFactory'),
+            $services->get('Cache'),
+            $mockUnitOfWork,
+            $services->get('SerializerFactory')
+        );
+        $bouhRepository->reset();
+        $bouhRepository->getQuery('QUERY');
     }
 
     /**
@@ -741,19 +808,19 @@ class RepositoryTest extends TestCase
             /** @var array<string, int> */
             public array $calls = ['startTransaction' => 0, 'commit' => 0, 'rollback' => 0];
 
-            public function startTransaction()
+            public function startTransaction(): void
             {
                 $this->calls['startTransaction']++;
                 parent::startTransaction();
             }
 
-            public function commit()
+            public function commit(): void
             {
                 $this->calls['commit']++;
                 parent::commit();
             }
 
-            public function rollback()
+            public function rollback(): void
             {
                 $this->calls['rollback']++;
                 parent::rollback();

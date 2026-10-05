@@ -36,6 +36,7 @@ use CCMBenchmark\Ting\Repository\HydratorInterface;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use Doctrine\Common\Cache\MemcachedCache;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\FakeDriver\MysqliResult;
 
 class QueryTest extends TestCase
@@ -84,7 +85,7 @@ class QueryTest extends TestCase
         ) extends CollectionFactory {
             public int $getCalls = 0;
 
-            public function get(?HydratorInterface $hydrator = null)
+            public function get(?HydratorInterface $hydrator = null): Collection
             {
                 $this->getCalls++;
                 return parent::get($hydrator);
@@ -122,19 +123,27 @@ class QueryTest extends TestCase
         $this->assertSame(1, $mockCollectionFactory->getCalls);
     }
 
+    #[AllowMockObjectsWithoutExpectations]
     public function testQueryShouldCallCacheGetThenStoreIfDataNotInCache()
     {
-        $mockConnection = $this->createStub(Connection::class);
-        $mockDriver     = $this->createStub(Driver::class);
+        $mockConnection   = $this->createStub(Connection::class);
+        $mockDriver       = $this->createStub(Driver::class);
+        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
+            ->onlyMethods(['getConnectionName', 'getDatabase'])
+            ->getMock();
 
         $mockMemcached = $this->createMock(MemcachedCache::class);
         $mockMemcached->expects($this->once())->method('fetch')->willReturn(false);
         $mockMemcached->expects($this->once())->method('save')->willReturn(true);
         $mockConnection->method('slave')->willReturn($mockDriver);
-        $mockDriver->method('execute')->willReturnCallback(function ($sql, array $params, $collection) {
-            $collection->set(new MysqliResult());
-            return $collection;
-        });
+        $mockMysqliResult->method('getConnectionName')->willReturn('main');
+        $mockMysqliResult->method('getDatabase')->willReturn('database');
+        $mockDriver->method('execute')->willReturnCallback(
+            function ($sql, array $params, $collection) use ($mockMysqliResult) {
+                $collection->set($mockMysqliResult);
+                return $collection;
+            }
+        );
         $collection = new Collection();
 
         $query = new Query('', $mockConnection);

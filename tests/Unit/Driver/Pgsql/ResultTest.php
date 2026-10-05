@@ -109,6 +109,7 @@ class ResultTest extends TestCase
     public function testSetQueryShouldNotRaiseExceptionWhenThereIsNoFromInTheQuery()
     {
         NativeFunctionMock::override('pg_num_fields', 0);
+        NativeFunctionMock::override('pg_field_table', 'table');
 
         $result = new Result();
         $result->setConnectionName('connectionName');

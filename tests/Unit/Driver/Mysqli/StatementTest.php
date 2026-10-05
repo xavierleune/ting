@@ -52,8 +52,8 @@ class StatementTest extends TestCase
         ];
         $paramsOrder = ['firstname', 'id', 'description', 'old', 'date', 'is_banned'];
 
-        // atoum returned a mock of \Iterator, which accepted the undeclared fetch_fields() call (returning null)
-        $driverStatement->method('get_result')->willReturn($this->createStub(MysqliResult::class));
+        // As upstream 4.0: a mock of the fake result, fetch_fields() returning []
+        $driverStatement->method('get_result')->willReturn((new MysqliResult([]))->setFields([]));
         $driverStatement->errno = 0;
 
         $driverStatement->expects($this->once())
@@ -83,8 +83,8 @@ class StatementTest extends TestCase
         $driverStatement->method('close')->willReturn(true);
         $collection      = $this->createStub(Collection::class);
 
-        // atoum returned a mock of \Iterator, which accepted the undeclared fetch_fields() call (returning null)
-        $driverStatement->method('get_result')->willReturn($this->createStub(MysqliResult::class));
+        // As upstream 4.0: a mock of the fake result, fetch_fields() returning []
+        $driverStatement->method('get_result')->willReturn((new MysqliResult([]))->setFields([]));
         $driverStatement->errno = 0;
 
         $driverStatement->expects($this->once())->method('execute');
@@ -211,8 +211,8 @@ class StatementTest extends TestCase
         $collection      = $this->createStub(Collection::class);
         $mockLogger      = $this->createMock(FakeDriverLogger::class);
 
-        // atoum returned a mock of \Iterator, which accepted the undeclared fetch_fields() call (returning null)
-        $driverStatement->method('get_result')->willReturn($this->createStub(MysqliResult::class));
+        // As upstream 4.0: a mock of the fake result, fetch_fields() returning []
+        $driverStatement->method('get_result')->willReturn((new MysqliResult([]))->setFields([]));
         $driverStatement->errno = 0;
 
         $mockLogger->expects($this->once())->method('startStatementExecute');

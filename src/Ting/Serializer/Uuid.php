@@ -2,9 +2,11 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+use InvalidArgumentException;
+
 class Uuid implements SerializerInterface
 {
-    public function serialize($toSerialize, array $options = [])
+    public function serialize(mixed $toSerialize, array $options = []): ?string
     {
         if ($toSerialize === null) {
             return null;
@@ -16,14 +18,19 @@ class Uuid implements SerializerInterface
         return $toSerialize->toRfc4122();
     }
 
-    public function unserialize($serialized, array $options = [])
+    /**
+     * @param string|null $serialized
+     * @param array $options
+     * @return mixed
+     */
+    public function unserialize($serialized, array $options = []): mixed
     {
         if ($serialized === null) {
             return null;
         }
         try {
             return \Symfony\Component\Uid\Uuid::fromString($serialized);
-        } catch (\InvalidArgumentException) {
+        } catch (InvalidArgumentException) {
             throw new RuntimeException('Cannot convert ' . $serialized . ' to UUID.');
         }
     }
