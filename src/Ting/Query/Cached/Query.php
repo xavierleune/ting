@@ -40,8 +40,6 @@ class Query extends \CCMBenchmark\Ting\Query\Query
 
     protected ?string $cacheKey = null;
 
-    protected int $version = 1;
-
     protected bool $force = false;
 
     /**
@@ -74,17 +72,6 @@ class Query extends \CCMBenchmark\Ting\Query\Query
     {
         $this->cacheKey = $cacheKey;
 
-        return $this;
-    }
-
-    /**
-     * Set the version used in the key
-     * @param int $version
-     * @return $this
-     */
-    public function setVersion($version): static
-    {
-        $this->version = $version;
         return $this;
     }
 
