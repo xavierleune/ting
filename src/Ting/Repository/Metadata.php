@@ -390,18 +390,25 @@ class Metadata
      */
     protected function getEntityProperty(object $entity, array $field): mixed
     {
-        $value = $this->propertyAccessor->getValue($entity, $field['fieldName'], $field['getter'] ?? null);
+        return $this->serializeFieldValue(
+            $field,
+            $this->propertyAccessor->getValue($entity, $field['fieldName'], $field['getter'] ?? null)
+        );
+    }
 
-        if (isset($field['serializer'])) {
-            $options = [];
-
-            if (isset($field['serializer_options']['serialize'])) {
-                $options = $field['serializer_options']['serialize'];
-            }
-            $value = $this->serializerFactory->get($field['serializer'])->serialize($value, $options);
+    /**
+     * Database value of a field: the value serialized by the serializer of the field, if any
+     */
+    private function serializeFieldValue(array $field, mixed $value): mixed
+    {
+        if (isset($field['serializer']) === false) {
+            return $value;
         }
 
-        return $value;
+        return $this->serializerFactory->get($field['serializer'])->serialize(
+            $value,
+            $field['serializer_options']['serialize'] ?? []
+        );
     }
     
     public function getEntityPropertyByFieldName(object $entity, string $fieldName): mixed
@@ -851,13 +858,9 @@ class Metadata
             $fieldName = $primary['fieldName'];
             if (isset($properties[$fieldName])) {
                 // Key value has been updated: the row is still stored with the old one
-                $primariesKeyValue[$key] = $properties[$fieldName][0];
+                $primariesKeyValue[$key] = $this->serializeFieldValue($primary, $properties[$fieldName][0]);
             } else {
-                $primariesKeyValue[$key] = $this->propertyAccessor->getValue(
-                    $entity,
-                    $fieldName,
-                    $primary['getter'] ?? null
-                );
+                $primariesKeyValue[$key] = $this->getEntityProperty($entity, $primary);
             }
         }
         return $primariesKeyValue;

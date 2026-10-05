@@ -1342,6 +1342,68 @@ class MetadataTest extends TestCase
         )->execute();
     }
 
+    public function testGenerateQueryForUpdateShouldSerializeThePrimaryKey()
+    {
+        [$metadata, $connection, $services, $entity] = $this->createEnumPrimaryKeyMetadata();
+
+        $query = $metadata->generateQueryForUpdate($connection, $services->queryFactory(), $entity, ['name' => ['Sylvain', 'Xavier']]);
+
+        $this->assertSame(['name' => 'Xavier', '#color' => 'blue'], $this->readQuery($query)[1]);
+    }
+
+    public function testGenerateQueryForUpdateShouldSerializeTheOldValueOfAChangedPrimaryKey()
+    {
+        [$metadata, $connection, $services, $entity] = $this->createEnumPrimaryKeyMetadata();
+
+        $query = $metadata->generateQueryForUpdate(
+            $connection,
+            $services->queryFactory(),
+            $entity,
+            ['color' => [ColorsEnum::RED, ColorsEnum::BLUE]]
+        );
+
+        $this->assertSame(['color' => 'blue', '#color' => 'red'], $this->readQuery($query)[1]);
+    }
+
+    public function testGenerateQueryForDeleteShouldSerializeThePrimaryKey()
+    {
+        [$metadata, $connection, $services, $entity] = $this->createEnumPrimaryKeyMetadata();
+
+        $query = $metadata->generateQueryForDelete($connection, $services->queryFactory(), [], $entity);
+
+        $this->assertSame(['#color' => 'blue'], $this->readQuery($query)[1]);
+    }
+
+    /**
+     * A metadata whose primary key is an enum, and an entity whose key is ColorsEnum::BLUE.
+     *
+     * @return array{0: Metadata, 1: Connection, 2: TingServices, 3: object}
+     */
+    private function createEnumPrimaryKeyMetadata(): array
+    {
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('primary')->willReturn(new FakeDriver());
+        $services = new TingServices();
+        $entity = new class () {
+            public ColorsEnum $color = ColorsEnum::BLUE;
+            public string $name = 'Xavier';
+        };
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity($entity::class);
+        $metadata->setTable('bouh');
+        $metadata->addField([
+            'primary'            => true,
+            'fieldName'          => 'color',
+            'columnName'         => 'color',
+            'type'               => 'string',
+            'serializer'         => BackedEnum::class,
+            'serializer_options' => ['unserialize' => ['enum' => ColorsEnum::class]],
+        ]);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'name', 'type' => 'string']);
+
+        return [$metadata, new Connection($connectionPool, 'main', 'db'), $services, $entity];
+    }
+
     public function testSetEntityPropertyWithDefinedSetter()
     {
         $services = new TingServices();
