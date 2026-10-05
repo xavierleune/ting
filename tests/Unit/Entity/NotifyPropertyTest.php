@@ -79,4 +79,16 @@ class NotifyPropertyTest extends TestCase
         ];
         $this->assertSame($expected, $entity->__serialize());
     }
+
+    public function testDebugInfoShouldNotExposeListeners()
+    {
+        $entity = new Bouh();
+        $entity->setName('Xavier');
+        $entity->addPropertyListener($this->createStub(PropertyListenerInterface::class));
+
+        $debugInfo = $entity->__debugInfo();
+
+        $this->assertArrayNotHasKey('listeners', $debugInfo);
+        $this->assertSame('Xavier', $debugInfo['name']);
+    }
 }
