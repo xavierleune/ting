@@ -44,6 +44,7 @@
     * BC An empty array, or null / a nested array inside an IN list, in the criteria throws a ValueException instead of sending invalid or never-matching SQL
     * BC An order direction other than ASC / DESC in Repository::getBy() throws a ValueException instead of being silently ignored
     * Fix Generator::getByCriteria() emitting an empty " ORDER BY " when every direction of the order was ignored
+    * Security: Mysqli Driver::execute() quotes string values with single quotes; double quotes allowed SQL injection under the sql_mode NO_BACKSLASH_ESCAPES (real_escape_string() then only doubles single quotes) and made values identifiers under ANSI_QUOTES
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
