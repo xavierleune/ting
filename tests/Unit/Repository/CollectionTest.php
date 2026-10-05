@@ -127,6 +127,22 @@ class CollectionTest extends TestCase
         $this->assertSame(['connection' => null, 'database' => null, 'data' => []], $collection->toCache());
     }
 
+    public function testACollectionWithoutResultShouldComeBackFromTheCacheAsAnEmptyCollection()
+    {
+        // e.g. a cached prepared query whose statement has no result set
+        $cached = json_decode(json_encode((new Collection())->toCache()), true);
+
+        foreach ([new Hydrator(), new HydratorArray(), new HydratorSingleObject(), new HydratorValueObject(\stdClass::class)] as $hydrator) {
+            $collection = new Collection($hydrator);
+            $collection->fromCache($cached);
+
+            $this->assertTrue($collection->isFromCache(), $hydrator::class);
+            $this->assertSame([], iterator_to_array($collection), $hydrator::class);
+            $this->assertCount(0, $collection, $hydrator::class);
+            $this->assertNull($collection->first(), $hydrator::class);
+        }
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testFromCacheShouldSetCacheResult()
     {

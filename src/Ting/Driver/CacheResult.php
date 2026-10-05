@@ -35,17 +35,21 @@ class CacheResult implements ResultInterface
 
     protected ?Iterator $result = null;
 
-    public function setConnectionName(string $connectionName): static
+    /**
+     * Null when the cached collection had no result (e.g. a statement without result set)
+     */
+    public function setConnectionName(?string $connectionName): static
     {
         $this->connectionName = $connectionName;
         return $this;
     }
 
     /**
-     * @param string $database
+     * Null when the cached collection had no result (e.g. a statement without result set)
+     *
      * @return $this
      */
-    public function setDatabase(string $database): static
+    public function setDatabase(?string $database): static
     {
         $this->database = $database;
         return $this;
