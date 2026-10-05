@@ -27,4 +27,8 @@ namespace CCMBenchmark\Ting\Driver;
 
 class QueryException extends Exception
 {
+    public static function missingParameter(string $name): self
+    {
+        return new self('Value has not been set for param ' . $name);
+    }
 }

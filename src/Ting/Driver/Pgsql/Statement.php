@@ -94,6 +94,9 @@ class Statement implements StatementInterface
     {
         $values = [];
         foreach (array_keys($this->paramsOrder) as $key) {
+            if (!\array_key_exists($key, $params)) {
+                throw QueryException::missingParameter((string) $key);
+            }
             $values[] = $params[$key];
         }
 

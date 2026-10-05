@@ -180,6 +180,18 @@ class StatementTest extends TestCase
         }, 'unknown error');
     }
 
+    public function testExecuteShouldRaiseExceptionIfValueNotDefined()
+    {
+        NativeFunctionMock::override('pg_execute', true);
+        NativeFunctionMock::override('pg_query', true);
+
+        $statement = new Statement('MyStatementName', ['id' => 1], 'connectionName', 'database');
+
+        $this->assertThrows(QueryException::class, function () use ($statement): void {
+            $statement->execute([]);
+        }, 'Value has not been set for param id');
+    }
+
     public function testExecuteShouldReturnTrueIfNoError()
     {
         NativeFunctionMock::override('pg_execute', true);

@@ -186,6 +186,19 @@ class StatementTest extends TestCase
         );
     }
 
+    public function testExecuteShouldRaiseExceptionIfValueNotDefined()
+    {
+        $driverStatement = $this->createMock(MysqliStatement::class);
+        $driverStatement->method('close')->willReturn(true);
+        $driverStatement->expects($this->never())->method('execute');
+
+        $statement = new Statement($driverStatement, ['id'], 'connectionName', 'database');
+
+        $this->assertThrows(QueryException::class, function () use ($statement): void {
+            $statement->execute([]);
+        }, 'Value has not been set for param id');
+    }
+
     public function testExecuteShouldReturnTrueIfNoError()
     {
         $driverStatement = $this->createStub(MysqliStatement::class);

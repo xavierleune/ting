@@ -543,6 +543,49 @@ class DriverTest extends TestCase
         $this->assertSame('SELECT * FROM T_BOUH_BOO WHERE name = ":bim"', $outerSql);
     }
 
+    public function testPreparedStatementShouldBindTheValuesInTheQueryOrder()
+    {
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->error = '';
+        $driverStatement = $this->createMock(MysqliStatement::class);
+        $driverStatement->method('close')->willReturn(true);
+        $driverStatement->method('get_result')->willReturn(true);
+        $driverStatement->errno = 0;
+        $mockDriver->method('prepare')->willReturn($driverStatement);
+
+        $driverStatement->expects($this->once())
+            ->method('bind_param')
+            ->with(
+                $this->identicalTo('isi'),
+                $this->identicalTo(3),
+                $this->identicalTo('Sylvain'),
+                $this->identicalTo(3)
+            );
+
+        $driver = new Driver($mockDriver);
+        $driver->setName('foo');
+        $driver->setDatabase('T_BOUH_BOO');
+        $driver->prepare('SELECT * FROM T_BOUH_BOO WHERE id = :id AND name = :name OR parent_id = :id')
+            ->execute(['name' => 'Sylvain', 'id' => 3]);
+    }
+
+    public function testExecuteShouldNotTransformEscapedColon()
+    {
+        $driverFake = $this->createStub(Mysqli::class);
+        $driverFake->method('real_escape_string')->willReturnCallback(fn ($value) => $value);
+        $driverFake->method('query')->willReturnCallback(function ($sql) use (&$outerSql) {
+            $outerSql = $sql;
+
+            return true;
+        });
+
+        $driver = new Driver($driverFake);
+        $driver->execute('SELECT * FROM T_BOUH_BOO WHERE name = "\:bim" AND login = :login', ['login' => 'a\:b']);
+
+        // The escape is removed from the query, not from the values
+        $this->assertSame('SELECT * FROM T_BOUH_BOO WHERE name = ":bim" AND login = "a\:b"', $outerSql);
+    }
+
     public function testPrepareCalledTwiceShouldReturnTheSameObject()
     {
         $mockDriver = $this->createStub(Mysqli::class);

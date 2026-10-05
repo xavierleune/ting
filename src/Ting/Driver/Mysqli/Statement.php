@@ -49,7 +49,8 @@ class Statement implements StatementInterface
     protected string $objectHash = '';
 
     /**
-     * @param mysqli_stmt $driverStatement
+     * @param mysqli_stmt  $driverStatement
+     * @param list<string> $paramsOrder parameter names, in the order of the placeholders (a name can repeat)
      */
     public function __construct(
         protected $driverStatement,
@@ -68,6 +69,9 @@ class Statement implements StatementInterface
         $values = [];
 
         foreach ($this->paramsOrder as $key) {
+            if (!\array_key_exists($key, $params)) {
+                throw QueryException::missingParameter($key);
+            }
             $value = $params[$key];
             $types .= self::PARAM_TYPE_BINDING[\gettype($value)] ?? 's';
 

@@ -499,6 +499,21 @@ class DriverTest extends TestCase
         $this->assertSame(2, $count);
     }
 
+    public function testExecuteShouldRaiseExceptionIfValueNotDefined()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_result_status', \PGSQL_TUPLES_OK);
+        NativeFunctionMock::override('pg_fetch_assoc', null);
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        $this->assertThrows(QueryException::class, function () use ($driver): void {
+            $driver->execute('SELECT 1 FROM "myTable" WHERE id = :id', []);
+        }, 'Value has not been set for param id');
+    }
+
     public function testExecuteWithoutParametersShouldCallPGQuery()
     {
         NativeFunctionMock::override('pg_connect', true);

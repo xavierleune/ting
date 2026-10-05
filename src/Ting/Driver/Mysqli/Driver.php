@@ -232,11 +232,15 @@ class Driver implements DriverInterface
      */
     public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): bool|CollectionInterface|array
     {
+        // One pass: unescaping \: after the substitution would alter the values
         $sql = preg_replace_callback(
-            '/' . $this->parameterMatching . '/',
+            '/\\\\:|' . $this->parameterMatching . '/',
             function (array $match) use ($params) {
+                if ($match[0] === '\\:') {
+                    return ':';
+                }
                 if (!\array_key_exists($match[1], $params)) {
-                    throw new QueryException('Value has not been set for param ' . $match[1]);
+                    throw QueryException::missingParameter($match[1]);
                 }
 
                 return (string) $this->quoteValue($params[$match[1]]);
@@ -315,7 +319,7 @@ class Driver implements DriverInterface
         $sql = preg_replace_callback(
             '/' . $this->parameterMatching . '/',
             function (array $match) use (&$paramsOrder): string {
-                $paramsOrder[$match[1]] = null;
+                $paramsOrder[] = $match[1];
                 return '?';
             },
             $sql
