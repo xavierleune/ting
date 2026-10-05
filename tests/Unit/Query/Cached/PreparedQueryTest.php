@@ -107,7 +107,7 @@ class PreparedQueryTest extends TestCase
 
         $mockMemcached->expects($this->once())->method('fetch')->willReturn(false);
         $mockMemcached->expects($this->once())->method('save')->willReturn(true);
-        $mockConnection->method('slave')->willReturn($mockDriver);
+        $mockConnection->method('replica')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
         $mockStatement->method('execute')->willReturnCallback(function (array $params, $collection) {
@@ -134,7 +134,7 @@ class PreparedQueryTest extends TestCase
         // atoum used a \mock\CCMBenchmark\Ting\Cache\Memcached ghost mock (get/store) that was never given
         // to the query: it has no effect and is not converted
 
-        $mockConnection->method('master')->willReturn($mockDriver);
+        $mockConnection->method('primary')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->expects($this->once())->method('prepare')->willReturn($mockStatement);
 
@@ -162,7 +162,7 @@ class PreparedQueryTest extends TestCase
         // atoum used a \mock\CCMBenchmark\Ting\Cache\Memcached ghost mock (get/store) that was never given
         // to the query: it has no effect and is not converted
 
-        $mockConnection->method('master')->willReturn($mockDriver);
+        $mockConnection->method('primary')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
         $mockMysqliStatement->errno = 0;
@@ -171,5 +171,21 @@ class PreparedQueryTest extends TestCase
         $query->setTtl(0)->setCacheKey('myCacheKey');
         $query->execute();
         $this->assertSame(1, $mockStatement->executeCalls);
+    }
+
+    public function testPrepareQueryShouldUsePrimaryWhenSelectPrimary()
+    {
+        $mockConnection      = $this->createMock(Connection::class);
+        $mockDriver          = $this->createMock(Driver::class);
+        $mockMysqliStatement = $this->createStub(MysqliStatement::class);
+        $mockStatement       = new Statement($mockMysqliStatement, [], 'connectionName', 'database');
+
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
+        $mockConnection->expects($this->never())->method('replica');
+        $mockDriver->expects($this->once())->method('prepare')->willReturn($mockStatement);
+
+        $query = new PreparedQuery('SELECT', $mockConnection);
+        $query->selectPrimary(true);
+        $query->prepareQuery();
     }
 }

@@ -3,6 +3,16 @@ Unreleased:
     * Drop Symfony 6 and PHP 8.1 support, PHP >= 8.2 is now required
     * Add Symfony 8 support
     * Tests: migrate from atoum to PHPUnit
+    * Add primary/replica names: ConnectionPool::primary() / replica(), Connection::primary() / replica(),
+      Query::selectPrimary() and Repository::pingPrimary()
+    * Connection configuration now uses the "primary" and "replicas" keys
+    * Deprecate ConnectionPool::master() / slave(), Connection::master() / slave(), Query::selectMaster()
+      and Repository::pingMaster(): they trigger a silenced E_USER_DEPRECATED and delegate to the new methods
+    * Deprecate the "master" and "slaves" connection configuration keys: they trigger a silenced E_USER_DEPRECATED
+      and are converted to "primary" / "replicas" (the new key wins when both are given)
+    * ConnectionPoolInterface::master() / slave() are deprecated, they will be replaced by primary() / replica() in 4.0.
+      Connection uses primary() / replica() when the pool provides them, master() / slave() otherwise
+    * Fix Cached\PreparedQuery: selectPrimary() (formerly selectMaster()) is now honoured for reading queries
 
 3.13.0 (2026-09-24):
     * Drop PHP 8.0 support, PHP >= 8.1 is now required

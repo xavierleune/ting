@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -44,7 +45,7 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     /**
      * @var array
      */
-    protected $connectionSlaves = [];
+    protected $connectionReplicas = [];
 
     /**
      * @var array
@@ -69,7 +70,48 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
      */
     public function setConfig($config)
     {
+        if (is_array($config) === true) {
+            foreach ($config as $name => $connectionConfig) {
+                if (is_array($connectionConfig) === true) {
+                    $config[$name] = $this->normalizeConnectionConfig($connectionConfig);
+                }
+            }
+        }
+
         $this->connectionConfig = $config;
+    }
+
+    /**
+     * Convert the deprecated "master" / "slaves" keys to "primary" / "replicas"
+     *
+     * @param array $connectionConfig
+     * @return array
+     */
+    private function normalizeConnectionConfig(array $connectionConfig)
+    {
+        $deprecatedKeys = ['master' => 'primary', 'slaves' => 'replicas'];
+
+        foreach ($deprecatedKeys as $deprecatedKey => $key) {
+            if (array_key_exists($deprecatedKey, $connectionConfig) === false) {
+                continue;
+            }
+
+            @trigger_error(
+                sprintf(
+                    'The "%s" connection key is deprecated since Ting 3.14, use "%s" instead.',
+                    $deprecatedKey,
+                    $key
+                ),
+                E_USER_DEPRECATED
+            );
+
+            if (array_key_exists($key, $connectionConfig) === false) {
+                $connectionConfig[$key] = $connectionConfig[$deprecatedKey];
+            }
+            unset($connectionConfig[$deprecatedKey]);
+        }
+
+        return $connectionConfig;
     }
 
     public function setDatabaseOptions($options)
@@ -78,19 +120,19 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     }
 
     /**
-     * Return the master connection
+     * Return the primary connection
      *
-     * @param $name
-     * @param $database
+     * @param string $name
+     * @param string $database
      * @return DriverInterface
      * @throws ConnectionException
      */
-    public function master($name, $database)
+    public function primary($name, $database)
     {
-        if (isset($this->connectionConfig[$name]['master']) === false) {
+        if (isset($this->connectionConfig[$name]['primary']) === false) {
             throw new ConnectionException('Connection not found: ' . $name);
         }
-        $config = $this->connectionConfig[$name]['master'];
+        $config = $this->connectionConfig[$name]['primary'];
         $driverClass = $this->connectionConfig[$name]['namespace'] . '\\Driver';
 
         $charset = null;
@@ -103,37 +145,37 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     }
 
     /**
-     * Return always the same slave connection
+     * Return always the same replica connection, or the primary connection when no replica is configured
      *
      * @param string $name
      * @param string $database
      * @return DriverInterface
      * @throws ConnectionException
      */
-    public function slave($name, $database)
+    public function replica($name, $database)
     {
         if (isset($this->connectionConfig[$name]) === false) {
             throw new ConnectionException('Connection not found: ' . $name);
         }
         $driverClass = $this->connectionConfig[$name]['namespace'] . '\\Driver';
 
-        if (isset($this->connectionConfig[$name]['slaves']) === false
-            || $this->connectionConfig[$name]['slaves'] === []
+        if (isset($this->connectionConfig[$name]['replicas']) === false
+            || $this->connectionConfig[$name]['replicas'] === []
         ) {
-            return $this->master($name, $database);
+            return $this->primary($name, $database);
         }
 
-        if (isset($this->connectionSlaves[$name]) === false) {
+        if (isset($this->connectionReplicas[$name]) === false) {
             /**
-             * It's a slave connection and we do not have choosen a slave. We randomly take one & store datas.
-             * In this way we avoid opening one connection per slave because of round-robin.
+             * It's a replica connection and we have not chosen a replica yet. We randomly take one & store it.
+             * In this way we avoid opening one connection per replica because of round-robin.
              */
 
-            $randomKey = array_rand($this->connectionConfig[$name]['slaves']);
-            $this->connectionSlaves[$name] = $this->connectionConfig[$name]['slaves'][$randomKey];
+            $randomKey = array_rand($this->connectionConfig[$name]['replicas']);
+            $this->connectionReplicas[$name] = $this->connectionConfig[$name]['replicas'][$randomKey];
         }
 
-        $connectionConfig = $this->connectionSlaves[$name];
+        $connectionConfig = $this->connectionReplicas[$name];
 
         $charset = null;
 
@@ -142,6 +184,40 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
         }
 
         return $this->connect($connectionConfig, $driverClass, $database, $name, $charset);
+    }
+
+    /**
+     * Return the primary connection
+     *
+     * @deprecated since Ting 3.14, use primary() instead
+     *
+     * @param string $name
+     * @param string $database
+     * @return DriverInterface
+     * @throws ConnectionException
+     */
+    public function master($name, $database)
+    {
+        @trigger_error(sprintf('Method "%s()" is deprecated since Ting 3.14, use "%s()" instead.', __METHOD__, 'primary'), E_USER_DEPRECATED);
+
+        return $this->primary($name, $database);
+    }
+
+    /**
+     * Return always the same replica connection
+     *
+     * @deprecated since Ting 3.14, use replica() instead
+     *
+     * @param string $name
+     * @param string $database
+     * @return DriverInterface
+     * @throws ConnectionException
+     */
+    public function slave($name, $database)
+    {
+        @trigger_error(sprintf('Method "%s()" is deprecated since Ting 3.14, use "%s()" instead.', __METHOD__, 'replica'), E_USER_DEPRECATED);
+
+        return $this->replica($name, $database);
     }
 
     /**

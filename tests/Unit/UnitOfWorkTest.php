@@ -52,7 +52,7 @@ class UnitOfWorkTest extends TestCase
             [
                 'main' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
+                    'primary'   => [
                         'host'      => 'localhost.test',
                         'user'      => 'test',
                         'password'  => 'test',
@@ -354,7 +354,7 @@ class UnitOfWorkTest extends TestCase
     private function createProcessMocks(bool $mockCloseStatement): array
     {
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)
-            ->onlyMethods(['master'])
+            ->onlyMethods(['primary'])
             ->getMock();
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
@@ -379,7 +379,7 @@ class UnitOfWorkTest extends TestCase
         }
 
         $mockQueryFactory->method('getPrepared')->willReturn($mockPreparedQuery);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         return [$mockConnectionPool, $mockQueryFactory];
     }

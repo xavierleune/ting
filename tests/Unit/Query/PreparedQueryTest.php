@@ -37,42 +37,42 @@ use tests\fixtures\Fake\MysqliStatement;
 
 class PreparedQueryTest extends TestCase
 {
-    public function testPrepareQueryShouldCallSlavePrepare()
+    public function testPrepareQueryShouldCallReplicaPrepare()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
 
-        $mockConnection->expects($this->once())->method('slave')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('replica')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('prepare')->willReturn(true);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
         $this->assertSame($query, $query->prepareQuery());
     }
 
-    public function testPrepareQueryShouldCallMasterPrepare()
+    public function testPrepareQueryShouldCallPrimaryPrepare()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
 
-        $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('prepare')->willReturn(true);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
-        $query->selectMaster(true);
+        $query->selectPrimary(true);
         $this->assertSame($query, $query->prepareQuery());
         $this->assertSame($query, $query->prepareQuery());
     }
 
-    public function testPrepareExecuteShouldCallMasterPrepare()
+    public function testPrepareExecuteShouldCallPrimaryPrepare()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
 
-        $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('prepare')->willReturn(true);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
-        $query->selectMaster(true);
+        $query->selectPrimary(true);
         $this->assertSame($query, $query->prepareExecute());
         $this->assertSame($query, $query->prepareExecute());
     }
@@ -89,7 +89,7 @@ class PreparedQueryTest extends TestCase
 
         $mockStatement->expects($this->once())->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
-        $mockConnection->method('master')->willReturn($mockDriver);
+        $mockConnection->method('primary')->willReturn($mockDriver);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
         $this->assertSame($query, $query->prepareExecute());
@@ -112,7 +112,7 @@ class PreparedQueryTest extends TestCase
 
         $mockStatement->expects($this->once())->method('execute')->willReturn($collection);
         $mockDriver->method('prepare')->willReturn($mockStatement);
-        $mockConnection->method('slave')->willReturn($mockDriver);
+        $mockConnection->method('replica')->willReturn($mockDriver);
         $mockCollectionFactory->method('get')->willReturn($collection);
 
         $query = new PreparedQuery('SELECT', $mockConnection, $mockCollectionFactory);

@@ -6,3 +6,4 @@
 - getInsertId should be named getInsertedId for consistency with getAffectedRows
 - add setTimezone to DriverInterface
 - add setDatabaseOptions to ConnectionPoolInterface
+- replace master()/slave() by primary()/replica() in ConnectionPoolInterface, remove the deprecated master/slave methods and configuration keys

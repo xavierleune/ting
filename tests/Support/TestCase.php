@@ -80,4 +80,27 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
 
         return $types;
     }
+
+    /**
+     * Runs $callable and returns the messages of the E_USER_DEPRECATED it triggered, silenced or not
+     * (a custom error handler is called even for errors silenced with @).
+     *
+     * @return list<string>
+     */
+    protected function collectDeprecations(callable $callable): array
+    {
+        $messages = [];
+        set_error_handler(static function (int $type, string $message) use (&$messages): bool {
+            $messages[] = $message;
+
+            return true;
+        }, E_USER_DEPRECATED);
+        try {
+            $callable();
+        } finally {
+            restore_error_handler();
+        }
+
+        return $messages;
+    }
 }

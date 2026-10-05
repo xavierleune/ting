@@ -49,7 +49,7 @@ echo str_repeat("-", 40) . "\n";
 $connections = [
     'main' => [
         'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
-        'master' => [
+        'primary' => [
             'host'      => '127.0.0.1',
             'user'      => 'root',
             'password'  => 'p455w0rd',
@@ -299,7 +299,7 @@ try {
         inner join t_countrylanguage_col as col on (col.cou_code = co.cou_code)
         where co.cou_code = :code limit 3"
     );
-    $query->selectMaster(true);
+    $query->selectPrimary(true);
 
     $hydrator = $services->get('HydratorSingleObject');
     $hydrator

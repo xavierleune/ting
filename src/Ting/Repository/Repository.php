@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -340,33 +341,33 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * Start a transaction against the master connection
+     * Start a transaction against the primary connection
      *
      * @return void
      */
     public function startTransaction()
     {
-        $this->connection->master()->startTransaction();
+        $this->connection->primary()->startTransaction();
     }
 
     /**
-     * Rollback the transaction opened on the master connection
+     * Rollback the transaction opened on the primary connection
      *
      * @return void
      */
     public function rollback()
     {
-        $this->connection->master()->rollback();
+        $this->connection->primary()->rollback();
     }
 
     /**
-     * Commit the transaction opened on the master connection
+     * Commit the transaction opened on the primary connection
      *
      * @return void
      */
     public function commit()
     {
-        $this->connection->master()->commit();
+        $this->connection->primary()->commit();
     }
 
     /**
@@ -375,8 +376,8 @@ abstract class Repository implements ResetInterface
      */
     public function ping()
     {
-        if (method_exists($this->connection->slave(), 'ping') === true) {
-            return $this->connection->slave()->ping();
+        if (method_exists($this->connection->replica(), 'ping') === true) {
+            return $this->connection->replica()->ping();
         }
 
         return false;
@@ -386,13 +387,25 @@ abstract class Repository implements ResetInterface
      * @throws NeverConnectedException when you have not been connected to your database before trying to ping it.
      * @return bool
      */
-    public function pingMaster()
+    public function pingPrimary()
     {
-        if (method_exists($this->connection->master(), 'ping') === true) {
-            return $this->connection->master()->ping();
+        if (method_exists($this->connection->primary(), 'ping') === true) {
+            return $this->connection->primary()->ping();
         }
 
         return false;
+    }
+
+    /**
+     * @deprecated since Ting 3.14, use pingPrimary() instead
+     * @throws NeverConnectedException when you have not been connected to your database before trying to ping it.
+     * @return bool
+     */
+    public function pingMaster()
+    {
+        @trigger_error(sprintf('Method "%s()" is deprecated since Ting 3.14, use "%s()" instead.', __METHOD__, 'pingPrimary'), E_USER_DEPRECATED);
+
+        return $this->pingPrimary();
     }
 
     /**

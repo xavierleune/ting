@@ -330,7 +330,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $properties
                 );
 
-                $this->addStatementToClose($query->getStatementName(), $connection->master());
+                $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->prepareExecute()->execute();
 
                 $this->entitiesChanged->offsetUnset($entity);
@@ -359,10 +359,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $this->queryFactory,
                     $entity
                 );
-                $this->addStatementToClose($query->getStatementName(), $connection->master());
+                $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->prepareExecute()->execute();
 
-                $metadata->setEntityPropertyForAutoIncrement($entity, $connection->master());
+                $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
 
                 $this->entitiesChanged->offsetUnset($entity);
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
@@ -403,7 +403,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $properties,
                     $entity
                 );
-                $this->addStatementToClose($query->getStatementName(), $connection->master());
+                $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->prepareExecute()->execute();
                 $this->detach($entity);
             },

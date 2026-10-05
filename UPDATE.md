@@ -1,6 +1,18 @@
 # Update file
 This file will track changes to public interfaces between 2 major versions.
 
+## 4.0 (prepared in 3.14):
+* ConnectionPoolInterface: ```master()``` and ```slave()``` will be replaced by ```primary()``` and ```replica()```.
+    Custom pools should implement ```primary()``` and ```replica()``` now: ```Connection``` uses them when available.
+* Removed deprecated methods, use their replacement:
+    * ```ConnectionPool::master()``` / ```slave()``` => ```primary()``` / ```replica()```
+    * ```Connection::master()``` / ```slave()``` => ```primary()``` / ```replica()```
+    * ```Query::selectMaster()``` => ```selectPrimary()```
+    * ```Repository::pingMaster()``` => ```pingPrimary()```
+* Connection configuration: the ```master``` and ```slaves``` keys are replaced by ```primary``` and ```replicas```.
+* Since 3.14, classes extending ```ConnectionPool``` must override ```primary()``` / ```replica()``` instead of
+    ```master()``` / ```slave()```: Ting no longer calls the deprecated methods.
+
 ## 3.0:
 * PHP required version is now 5.5
 * Cache data are incompatibles with previous major version, you should clean your cache data

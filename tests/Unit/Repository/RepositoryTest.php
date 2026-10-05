@@ -56,7 +56,7 @@ class RepositoryTest extends TestCase
     public function testGet()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'bouh_world');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
@@ -74,7 +74,7 @@ class RepositoryTest extends TestCase
 
         $mockQueryFactory->method('get')->willReturn($mockQuery);
 
-        $mockConnectionPool->method('slave')->willReturn($mockDriver);
+        $mockConnectionPool->method('replica')->willReturn($mockDriver);
 
         $entity = new Bouh();
         $entity->setName('Bouh');
@@ -112,10 +112,10 @@ class RepositoryTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testGetOnMaster()
+    public function testGetOnPrimary()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'db');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
@@ -125,17 +125,17 @@ class RepositoryTest extends TestCase
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        // Spy: selectMaster() keeps its real implementation, query() is replaced
+        // Spy: selectPrimary() keeps its real implementation, query() is replaced
         $mockQuery = new class ('', $mockConnection, $services->get('CollectionFactory')) extends Query {
             /** @var list<array<mixed>> */
-            public array $selectMasterCalls = [];
+            public array $selectPrimaryCalls = [];
             public int $queryCalls = 0;
             public $queryResult = null;
 
-            public function selectMaster($value)
+            public function selectPrimary($value)
             {
-                $this->selectMasterCalls[] = func_get_args();
-                parent::selectMaster($value);
+                $this->selectPrimaryCalls[] = func_get_args();
+                parent::selectPrimary($value);
             }
 
             public function query(?CollectionInterface $collection = null)
@@ -148,7 +148,7 @@ class RepositoryTest extends TestCase
 
         $mockQueryFactory->method('get')->willReturn($mockQuery);
 
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockQuery->queryResult = new Collection();
 
         $repository = new BouhRepository(
@@ -161,7 +161,7 @@ class RepositoryTest extends TestCase
             $services->get('SerializerFactory')
         );
         $this->assertNull($repository->get([], true));
-        $this->assertCount(1, array_filter($mockQuery->selectMasterCalls, fn ($arguments) => $arguments == [true]));
+        $this->assertCount(1, array_filter($mockQuery->selectPrimaryCalls, fn ($arguments) => $arguments == [true]));
         $this->assertSame(1, $mockQuery->queryCalls);
     }
 
@@ -169,7 +169,7 @@ class RepositoryTest extends TestCase
     public function testStartTransactionShouldOpenTransaction()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = $this->createDriverSpy($fakeDriver);
 
@@ -178,7 +178,7 @@ class RepositoryTest extends TestCase
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
@@ -197,7 +197,7 @@ class RepositoryTest extends TestCase
     public function testCommitShouldCloseTransaction()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = $this->createDriverSpy($fakeDriver);
 
@@ -206,7 +206,7 @@ class RepositoryTest extends TestCase
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
@@ -226,7 +226,7 @@ class RepositoryTest extends TestCase
     public function testRollbackShouldCloseTransaction()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = $this->createDriverSpy($fakeDriver);
 
@@ -235,7 +235,7 @@ class RepositoryTest extends TestCase
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
@@ -421,7 +421,7 @@ class RepositoryTest extends TestCase
     public function testGetAllShouldReturnAQuery()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'db');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
@@ -439,7 +439,7 @@ class RepositoryTest extends TestCase
 
         $mockQueryFactory->method('get')->willReturn($mockQuery);
 
-        $mockConnectionPool->method('slave')->willReturn($mockDriver);
+        $mockConnectionPool->method('replica')->willReturn($mockDriver);
 
         $entity = new Bouh();
         $entity->setName('Bouh');
@@ -464,7 +464,7 @@ class RepositoryTest extends TestCase
     public function testGetByCriteriaShouldReturnAQuery()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'db');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
@@ -482,7 +482,7 @@ class RepositoryTest extends TestCase
 
         $mockQueryFactory->method('get')->willReturn($mockQuery);
 
-        $mockConnectionPool->method('slave')->willReturn($mockDriver);
+        $mockConnectionPool->method('replica')->willReturn($mockDriver);
 
         $entity = new Bouh();
         $entity->setName('Bouh');
@@ -507,7 +507,7 @@ class RepositoryTest extends TestCase
     public function testGetOneByCriteriaShouldReturnAnEntityOrNull()
     {
         $services           = new Services();
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'bouh_world');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
@@ -525,7 +525,7 @@ class RepositoryTest extends TestCase
 
         $mockQueryFactory->method('get')->willReturn($mockQuery);
 
-        $mockConnectionPool->method('slave')->willReturn($mockDriver);
+        $mockConnectionPool->method('replica')->willReturn($mockDriver);
 
         $entity = new Bouh();
         $entity->setName('Bouh');
@@ -632,14 +632,14 @@ class RepositoryTest extends TestCase
     {
         $services           = new Services();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)
-            ->onlyMethods(['slave', 'master'])
+            ->onlyMethods(['replica', 'primary'])
             ->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
-        $mockDriverSlave    = $this->getMockBuilder(Driver::class)
+        $mockDriverReplica  = $this->getMockBuilder(Driver::class)
             ->setConstructorArgs([$fakeDriver])
             ->onlyMethods(['ping'])
             ->getMock();
-        $mockDriverMaster   = $this->getMockBuilder(Driver::class)
+        $mockDriverPrimary  = $this->getMockBuilder(Driver::class)
             ->setConstructorArgs([$fakeDriver])
             ->onlyMethods(['ping'])
             ->getMock();
@@ -649,10 +649,10 @@ class RepositoryTest extends TestCase
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        $mockConnectionPool->method('slave')->willReturn($mockDriverSlave);
-        $mockConnectionPool->method('master')->willReturn($mockDriverMaster);
-        $mockDriverMaster->expects($masterPing = $this->once())->method('ping')->willReturn(true);
-        $mockDriverSlave->expects($slavePing = $this->once())->method('ping')->willReturn(true);
+        $mockConnectionPool->method('replica')->willReturn($mockDriverReplica);
+        $mockConnectionPool->method('primary')->willReturn($mockDriverPrimary);
+        $mockDriverPrimary->expects($primaryPing = $this->once())->method('ping')->willReturn(true);
+        $mockDriverReplica->expects($replicaPing = $this->once())->method('ping')->willReturn(true);
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
@@ -664,9 +664,9 @@ class RepositoryTest extends TestCase
             $services->get('SerializerFactory')
         );
         $bouhRepository->ping();
-        $this->assertSame(1, $slavePing->numberOfInvocations());
-        $bouhRepository->pingMaster();
-        $this->assertSame(1, $masterPing->numberOfInvocations());
+        $this->assertSame(1, $replicaPing->numberOfInvocations());
+        $bouhRepository->pingPrimary();
+        $this->assertSame(1, $primaryPing->numberOfInvocations());
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -674,11 +674,11 @@ class RepositoryTest extends TestCase
     {
         $services           = new Services();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)
-            ->onlyMethods(['slave', 'master'])
+            ->onlyMethods(['replica', 'primary'])
             ->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
-        $mockDriverSlave    = new Driver($fakeDriver);
-        $mockDriverMaster   = new Driver($fakeDriver);
+        $mockDriverReplica  = new Driver($fakeDriver);
+        $mockDriverPrimary  = new Driver($fakeDriver);
         $metadataRepository = $this->getMockBuilder(MetadataRepository::class)
             ->setConstructorArgs([$services->get('SerializerFactory')])
             ->onlyMethods(['findMetadataForRepository'])
@@ -695,8 +695,8 @@ class RepositoryTest extends TestCase
             }
         );
 
-        $mockConnectionPool->method('slave')->willReturn($mockDriverSlave);
-        $mockConnectionPool->method('master')->willReturn($mockDriverMaster);
+        $mockConnectionPool->method('replica')->willReturn($mockDriverReplica);
+        $mockConnectionPool->method('primary')->willReturn($mockDriverPrimary);
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
@@ -759,5 +759,44 @@ class RepositoryTest extends TestCase
                 parent::rollback();
             }
         };
+    }
+
+    public function testDeprecatedPingMasterShouldPingPrimaryAndTriggerADeprecation()
+    {
+        $services           = new Services();
+        $mockConnectionPool = $this->createStub(ConnectionPool::class);
+        $mockDriverPrimary  = $this->getMockBuilder(Driver::class)
+            ->setConstructorArgs([$this->createStub(Mysqli::class)])
+            ->onlyMethods(['ping'])
+            ->getMock();
+
+        $services->get('MetadataRepository')->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../../fixtures/model/*Repository.php'
+        );
+
+        $mockConnectionPool->method('primary')->willReturn($mockDriverPrimary);
+        $mockDriverPrimary->expects($this->once())->method('ping')->willReturn(true);
+
+        $bouhRepository = new BouhRepository(
+            $mockConnectionPool,
+            $services->get('MetadataRepository'),
+            $services->get('QueryFactory'),
+            $services->get('CollectionFactory'),
+            $services->get('Cache'),
+            $services->get('UnitOfWork'),
+            $services->get('SerializerFactory')
+        );
+
+        $result       = null;
+        $deprecations = $this->collectDeprecations(function () use ($bouhRepository, &$result): void {
+            $result = $bouhRepository->pingMaster();
+        });
+
+        $this->assertTrue($result);
+        $this->assertSame(
+            ['Method "CCMBenchmark\Ting\Repository\Repository::pingMaster()" is deprecated since Ting 3.14, use "pingPrimary()" instead.'],
+            $deprecations
+        );
     }
 }

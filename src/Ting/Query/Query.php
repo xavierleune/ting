@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -43,6 +44,7 @@ class Query implements QueryInterface
     protected $collectionFactory = null;
 
     /**
+     * True when the reading query must be executed on the primary connection (see selectPrimary())
      * @var bool
      */
     protected $selectMaster = false;
@@ -65,13 +67,26 @@ class Query implements QueryInterface
     }
 
     /**
-     * Force the query to be executed on the master connection. Applicable only on a reading query.
+     * Force the query to be executed on the primary connection. Applicable only on a reading query.
+     * @param bool $value
+     * @return void
+     */
+    public function selectPrimary($value)
+    {
+        $this->selectMaster = (bool) $value;
+    }
+
+    /**
+     * Force the query to be executed on the primary connection. Applicable only on a reading query.
+     * @deprecated since Ting 3.14, use selectPrimary() instead
      * @param bool $value
      * @return void
      */
     public function selectMaster($value)
     {
-        $this->selectMaster = (bool) $value;
+        @trigger_error(sprintf('Method "%s()" is deprecated since Ting 3.14, use "%s()" instead.', __METHOD__, 'selectPrimary'), E_USER_DEPRECATED);
+
+        $this->selectPrimary($value);
     }
 
     /**
@@ -99,9 +114,9 @@ class Query implements QueryInterface
         }
 
         if ($this->selectMaster === true) {
-            return $this->connection->master()->execute($this->sql, $this->params, $collection);
+            return $this->connection->primary()->execute($this->sql, $this->params, $collection);
         } else {
-            return $this->connection->slave()->execute($this->sql, $this->params, $collection);
+            return $this->connection->replica()->execute($this->sql, $this->params, $collection);
         }
     }
 
@@ -113,7 +128,7 @@ class Query implements QueryInterface
      */
     public function execute()
     {
-        return $this->connection->master()->execute($this->sql, $this->params);
+        return $this->connection->primary()->execute($this->sql, $this->params);
     }
 
 
@@ -123,7 +138,7 @@ class Query implements QueryInterface
      */
     public function getInsertedId()
     {
-        return $this->connection->master()->getInsertedId();
+        return $this->connection->primary()->getInsertedId();
     }
 
     /**
@@ -144,6 +159,6 @@ class Query implements QueryInterface
      */
     public function getAffectedRows()
     {
-        return $this->connection->master()->getAffectedRows();
+        return $this->connection->primary()->getAffectedRows();
     }
 }
