@@ -244,20 +244,6 @@ interface QueryInterface
 }
 ```
 
-ResultInterface - New Required Method
--------------------------------------
-
-If you have implemented custom results, you must implement the method used by `HydratorValueObject`:
-
-```php
-interface ResultInterface
-{
-    // New method in 4.0:
-    /** @param class-string $objectToFetch */
-    public function setObjectToFetch(string $objectToFetch): static;
-}
-```
-
 CollectionInterface and HydratorInterface
 -----------------------------------------
 

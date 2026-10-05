@@ -35,7 +35,6 @@ class MysqliResult implements ResultInterface
     protected $fields = null;
     protected $connectionName = null;
     protected $database = null;
-    protected $objectToFetch = null;
 
     public function __construct(array $data = [])
     {
@@ -151,15 +150,5 @@ class MysqliResult implements ResultInterface
     public function getDatabase(): ?string
     {
         return $this->database;
-    }
-
-    public function setObjectToFetch(string $objectToFetch): static
-    {
-        $this->objectToFetch = $objectToFetch;
-        return $this;
-    }
-
-    public function fetch_object($class_name = null)
-    {
     }
 }

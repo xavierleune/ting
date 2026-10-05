@@ -36,10 +36,8 @@ class Result implements ResultInterface
     /** @var array<int, object{name: string, orgname: string, table: string, orgtable: string, def: string, db: string, catalog: string, max_length: int, length: int, charsetnr: string, flags: int, type: int, decimals: int}> $fields  */
     protected array $fields = [];
     protected int $iteratorOffset = 0;
-    /** @var array|false|object|null */
+    /** @var array|null */
     protected $iteratorCurrent = null;
-    /** @var class-string|null  */
-    protected ?string $objectToFetch = null;
 
     public function setConnectionName(string $connectionName): static
     {
@@ -61,15 +59,6 @@ class Result implements ResultInterface
     {
         $this->result = $result;
         $this->fields = $this->result->fetch_fields();
-        return $this;
-    }
-
-    /**
-     * @param class-string $objectToFetch
-     */
-    public function setObjectToFetch(string $objectToFetch): static
-    {
-        $this->objectToFetch = $objectToFetch;
         return $this;
     }
 
@@ -207,11 +196,7 @@ class Result implements ResultInterface
     public function next(): void
     {
         if ($this->result !== null) {
-            if ($this->objectToFetch !== null) {
-                $this->iteratorCurrent = $this->result->fetch_object($this->objectToFetch);
-            } else {
-                $this->iteratorCurrent = $this->format($this->result->fetch_array(MYSQLI_NUM));
-            }
+            $this->iteratorCurrent = $this->format($this->result->fetch_array(MYSQLI_NUM));
 
             $this->iteratorOffset++;
         }

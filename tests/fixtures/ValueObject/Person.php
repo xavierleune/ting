@@ -5,7 +5,7 @@
  * Ting - PHP Datamapper
  * ==========================================
  *
- * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -23,32 +23,32 @@
  *
  **********************************************************************/
 
-namespace CCMBenchmark\Ting\Driver;
-
-use Iterator;
+namespace tests\fixtures\ValueObject;
 
 /**
- * @template T
- *
- * @template-extends Iterator<int, T>
+ * Value object for HydratorValueObject: its properties are set from the columns, then the constructor is called
+ * without arguments
  */
-interface ResultInterface extends Iterator
+class Person
 {
-    public function setConnectionName(string $connectionName): static;
+    private ?string $firstname = null;
 
-    public function setDatabase(string $database): static;
+    private ?string $name = null;
 
-    /**
-     * @param T|null $result
-     */
-    public function setResult($result): static;
+    private string $fullName = '';
 
-    public function getConnectionName(): ?string;
+    public function __construct()
+    {
+        $this->fullName = trim($this->firstname . ' ' . $this->name);
+    }
 
-    public function getDatabase(): ?string;
+    public function getFirstname(): ?string
+    {
+        return $this->firstname;
+    }
 
-    /**
-     * PgSQL will return int and Mysqli will return int or string when value is higher than PHP_INT_MAX
-     */
-    public function getNumRows(): mixed;
+    public function getFullName(): string
+    {
+        return $this->fullName;
+    }
 }
