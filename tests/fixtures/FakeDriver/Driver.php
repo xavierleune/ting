@@ -71,7 +71,7 @@ class Driver implements DriverInterface
 
     }
 
-    public function setLogger(DriverLoggerInterface $logger = null): static
+    public function setLogger(?DriverLoggerInterface $logger = null): static
     {
         return $this;
     }
