@@ -321,7 +321,15 @@ $hydrator = new Hydrator();
 $hydrator->objectDatabaseIs('a', 'library_archive');
 ```
 
-With PostgreSQL, the schema of each table is read from the query (`FROM my_schema.book b`).
+With PostgreSQL, the schema of each table is read from the query (`FROM my_schema.book b`). When the query doesn't
+name it (the table is found through the `search_path`), set it with `objectSchemaIs(string $object, string $schema)`:
+
+```php
+$hydrator = new Hydrator();
+$hydrator->objectSchemaIs('b', 'my_schema');
+```
+
+A schema written in the query takes precedence.
 
 ### Identity map
 

@@ -215,6 +215,60 @@ class HydratorTest extends TestCase
         $this->assertSame('MySchemaSylvain', $data['bouh']->getFirstname());
     }
 
+    #[AllowMockObjectsWithoutExpectations]
+    public function testHydrateWithObjectSchemaIsAndNoSchemaInQuery()
+    {
+        $services = new TingServices();
+
+        $services->metadataRepository()->addMetadata(
+            'tests\fixtures\model\BouhRepository',
+            \tests\fixtures\model\BouhRepository::initMetadata($services->serializerFactory())
+        );
+
+        $services->metadataRepository()->addMetadata(
+            'tests\fixtures\model\BouhMySchemaRepository',
+            \tests\fixtures\model\BouhMySchemaRepository::initMetadata($services->serializerFactory())
+        );
+
+        // Pgsql\Result sets the schema to '' when the query doesn't name it
+        $result = $this->getMockBuilder(PgsqlResult::class)
+            ->onlyMethods(['rewind', 'valid', 'current'])
+            ->getMock();
+        $result->method('rewind');
+        $result->method('valid')->willReturn(true);
+        $result->method('current')->willReturn([
+            [
+                'name' => 'fname',
+                'orgName' => 'boo_firstname',
+                'schema' => '',
+                'table' => 'bouh',
+                'orgTable' => 'T_BOUH_BOO',
+                'value' => 'Sylvain'
+            ],
+            [
+                'name' => 'name',
+                'orgName' => 'boo_name',
+                'schema' => '',
+                'table' => 'bouh',
+                'orgTable' => 'T_BOUH_BOO',
+                'value' => 'Robez-Masson'
+            ]
+        ]);
+
+        $result->setResult(new PgsqlResult());
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->objectSchemaIs('bouh', 'mySchema');
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $iterator = $hydrator->setResult($result)->getIterator();
+        $data = $iterator->current();
+        $this->assertSame('MySchemaRobez-Masson', $data['bouh']->getName());
+        $this->assertSame('MySchemaSylvain', $data['bouh']->getFirstname());
+    }
+
     public function testHydrateWithAllNullValueShouldReturnNull()
     {
         $services = new TingServices();
