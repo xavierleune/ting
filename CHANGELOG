@@ -1,4 +1,4 @@
-Unreleased:
+3.14.0 (2026-10-05):
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence() (backport from 4.0.0-rc.1)
     * Drop Symfony 6 and PHP 8.1 support, PHP >= 8.2 is now required
     * Add Symfony 8 support
