@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -25,10 +26,10 @@
 
 namespace CCMBenchmark\Ting\Cache;
 
-use Doctrine\Common\Cache\Cache as DoctrineCache;
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
+use Symfony\Contracts\Cache\CacheInterface as SymfonyCacheInterface;
 
-interface CacheInterface extends DoctrineCache
+interface CacheInterface extends SymfonyCacheInterface
 {
     /**
      * Add the ability to log operations

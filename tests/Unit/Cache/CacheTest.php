@@ -29,7 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Cache;
 use CCMBenchmark\Ting\Cache\Cache;
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use Doctrine\Common\Cache\VoidCache;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 class CacheTest extends TestCase
 {
@@ -37,64 +37,65 @@ class CacheTest extends TestCase
     {
         $mockLogger = $this->createMock(CacheLoggerInterface::class);
         $mockLogger
-            ->expects($this->atLeastOnce())
+            ->expects($this->once())
             ->method('startOperation')
             ->with($this->identicalTo(CacheLoggerInterface::OPERATION_DELETE), $this->identicalTo('bouh'));
         $mockLogger->expects($this->once())->method('stopOperation');
 
         $cache = new Cache();
-        $cache->setCache(new VoidCache());
+        $cache->setCache(new ArrayAdapter());
         $cache->setLogger($mockLogger);
-        $cache->delete('bouh');
+
+        $this->assertTrue($cache->delete('bouh'));
     }
 
-    public function testFetchShouldCallLogger()
+    public function testGetShouldComputeTheValueAndLogAMissWhenNotInCache()
     {
         $mockLogger = $this->createMock(CacheLoggerInterface::class);
         $mockLogger
-            ->expects($this->atLeastOnce())
+            ->expects($this->once())
             ->method('startOperation')
             ->with($this->identicalTo(CacheLoggerInterface::OPERATION_GET), $this->identicalTo('bouh'));
-        $mockLogger->expects($this->once())->method('stopOperation');
+        $mockLogger->expects($this->once())->method('stopOperation')->with($this->identicalTo(true));
 
         $cache = new Cache();
-        $cache->setCache(new VoidCache());
+        $cache->setCache(new ArrayAdapter());
         $cache->setLogger($mockLogger);
-        $cache->fetch('bouh');
+
+        $this->assertSame('computed', $cache->get('bouh', fn () => 'computed'));
     }
 
-    public function testContainsShouldCallLogger()
+    public function testGetShouldReturnTheCachedValueAndLogAHit()
     {
+        $pool = new ArrayAdapter();
+        $pool->get('bouh', fn () => 'cached');
         $mockLogger = $this->createMock(CacheLoggerInterface::class);
-        $mockLogger
-            ->expects($this->atLeastOnce())
-            ->method('startOperation')
-            ->with($this->identicalTo(CacheLoggerInterface::OPERATION_EXIST), $this->identicalTo('bouh'));
-        $mockLogger->expects($this->once())->method('stopOperation');
+        $mockLogger->expects($this->once())->method('startOperation');
+        $mockLogger->expects($this->once())->method('stopOperation')->with($this->identicalTo(false));
 
         $cache = new Cache();
-        $cache->setCache(new VoidCache());
+        $cache->setCache($pool);
         $cache->setLogger($mockLogger);
-        $cache->contains('bouh');
+
+        $this->assertSame('cached', $cache->get('bouh', function (): never {
+            $this->fail('The callback must not be called on a cache hit');
+        }));
     }
 
-    public function testSaveShouldCallLogger()
+    public function testGetShouldStopTheLogWhenTheCallbackThrows()
     {
         $mockLogger = $this->createMock(CacheLoggerInterface::class);
-        $mockLogger
-            ->expects($this->atLeastOnce())
-            ->method('startOperation')
-            // atoum never evaluated this check, which also expected the data and lifetime:
-            // Cache::save() only logs the operation and the id
-            ->with(
-                $this->identicalTo(CacheLoggerInterface::OPERATION_STORE),
-                $this->identicalTo('name')
-            );
-        $mockLogger->expects($this->once())->method('stopOperation');
+        $mockLogger->expects($this->once())->method('startOperation');
+        $mockLogger->expects($this->once())->method('stopOperation')->with($this->identicalTo(true));
 
         $cache = new Cache();
-        $cache->setCache(new VoidCache());
+        $cache->setCache(new ArrayAdapter());
         $cache->setLogger($mockLogger);
-        $cache->save('name', 'Sylvain', 33);
+
+        $this->assertThrows(\RuntimeException::class, function () use ($cache): void {
+            $cache->get('bouh', function (): never {
+                throw new \RuntimeException('Query failed');
+            });
+        }, 'Query failed');
     }
 }

@@ -13,6 +13,50 @@ Symfony
 * Symfony 6 support has been dropped: `symfony/property-access` (and the optional `symfony/uid` / `symfony/cache`)
   now require `^7.0 || ^8.0`.
 
+Cache: doctrine/cache Replaced by Symfony Cache Contracts
+--------------------------------------------------------
+
+`doctrine/cache` is abandoned. Ting now relies on [Symfony Cache Contracts](https://symfony.com/doc/current/components/cache.html#cache-contracts)
+(`symfony/cache-contracts`), the "get with a callback" API, rather than PSR-6.
+
+* Every argument typed `Doctrine\Common\Cache\Cache` now expects a `Symfony\Contracts\Cache\CacheInterface`:
+  `Repository` and `RepositoryFactory` constructors, `QueryFactory(Interface)::getCached()` /
+  `getCachedPrepared()`, `Query\Cached\Query::setCache()` and `Cache\Cache::setCache()`.
+* Any Symfony cache pool works as is: `ArrayAdapter`, `RedisAdapter`, `MemcachedAdapter`, `ApcuAdapter`...
+  `NullAdapter` replaces `VoidCache`. Pools come from `symfony/cache` (suggested, not required).
+* `CCMBenchmark\Ting\Cache\CacheInterface` now extends Symfony's `CacheInterface` instead of Doctrine's.
+  `CCMBenchmark\Ting\Cache\Cache` exposes `get()` and `delete()`: `fetch()`, `contains()`, `save()` and
+  `getStats()` have been removed.
+
+```php
+// Before (3.x):
+$cache = new \CCMBenchmark\Ting\Cache\Cache();
+$cache->setCache(new \Doctrine\Common\Cache\MemcachedCache());
+$value = $cache->fetch('key');
+if ($value === false) {
+    $value = compute();
+    $cache->save('key', $value, 3600);
+}
+
+// After (4.0):
+$cache = new \CCMBenchmark\Ting\Cache\Cache();
+$cache->setCache(new \Symfony\Component\Cache\Adapter\MemcachedAdapter($memcachedClient));
+$value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $item) {
+    $item->expiresAfter(3600);
+
+    return compute();
+});
+```
+
+* Cached queries keep the same API (`setTtl()`, `setCacheKey()`, `setForce()`) and behaviour: a TTL of `0` still means
+  "no expiration", `setForce(true)` still recomputes and stores the result. Concurrent misses on the same key are now
+  protected against cache stampede by Symfony.
+* If you extend cached queries: the protected `Query\Cached\Query::checkCache()` has been replaced by
+  `queryThroughCache()`.
+* Logging (`CacheLoggerInterface`): a read is logged as `OPERATION_GET`, flagged as a miss when the value had to be
+  computed, which also stores it. `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
+* Values stored by doctrine/cache cannot be read by the new pools: expect a cold cache after upgrading.
+
 Generator
 ---------
 

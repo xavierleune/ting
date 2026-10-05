@@ -26,7 +26,7 @@
 namespace CCMBenchmark\Ting\Query;
 
 use CCMBenchmark\Ting\Connection;
-use Doctrine\Common\Cache\Cache;
+use Symfony\Contracts\Cache\CacheInterface;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
 interface QueryFactoryInterface
@@ -49,28 +49,28 @@ interface QueryFactoryInterface
     /**
      * @param string $sql
      * @param Connection $connection
-     * @param Cache $cache
+     * @param CacheInterface $cache
      * @param CollectionFactoryInterface $collectionFactory
      * @return Cached\Query
      */
     public function getCached(
         $sql,
         Connection $connection,
-        Cache $cache,
+        CacheInterface $cache,
         ?CollectionFactoryInterface $collectionFactory = null
     ): \CCMBenchmark\Ting\Query\Cached\Query;
 
     /**
      * @param string $sql
      * @param Connection $connection
-     * @param Cache $cache
+     * @param CacheInterface $cache
      * @param CollectionFactoryInterface $collectionFactory
      * @return Cached\PreparedQuery
      */
     public function getCachedPrepared(
         $sql,
         Connection $connection,
-        Cache $cache,
+        CacheInterface $cache,
         ?CollectionFactoryInterface $collectionFactory = null
     ): \CCMBenchmark\Ting\Query\Cached\PreparedQuery;
 }

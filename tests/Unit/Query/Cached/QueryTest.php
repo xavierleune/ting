@@ -35,8 +35,8 @@ use CCMBenchmark\Ting\Repository\CollectionFactory;
 use CCMBenchmark\Ting\Repository\HydratorInterface;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use Doctrine\Common\Cache\MemcachedCache;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use tests\fixtures\FakeDriver\MysqliResult;
 
 class QueryTest extends TestCase
@@ -76,7 +76,8 @@ class QueryTest extends TestCase
     public function testQueryShouldCallOnlyCacheGetIfDataInCache()
     {
         $services       = new Services();
-        $mockConnection = $this->createStub(Connection::class);
+        $mockConnection = $this->createMock(Connection::class);
+        $mockConnection->expects($this->never())->method('slave');
         // Spy: counts calls to get() while keeping the real implementation (a real Collection is expected)
         $mockCollectionFactory = new class (
             $services->get('MetadataRepository'),
@@ -92,8 +93,8 @@ class QueryTest extends TestCase
             }
         };
 
-        $mockMemcached = $this->createMock(MemcachedCache::class);
-        $mockMemcached->expects($this->exactly(2))->method('fetch')->willReturnCallback(fn () => [
+        $cache = new ArrayAdapter();
+        $cache->get('myCacheKey', fn () => [
             'connection' => 'connectionName',
             'database'   => 'database',
             'data'       =>
@@ -110,14 +111,14 @@ class QueryTest extends TestCase
                     ]
                 ]
         ]);
-        $mockMemcached->expects($this->never())->method('save');
 
         $collection = new Collection();
 
         $query = new Query('', $mockConnection, $mockCollectionFactory);
-        $query->setCache($mockMemcached);
+        $query->setCache($cache);
         $query->setTtl(10)->setCacheKey('myCacheKey');
         $this->assertSame($collection, $query->query($collection));
+        $this->assertTrue($collection->isFromCache());
         $this->assertSame(0, $mockCollectionFactory->getCalls);
         $this->assertInstanceOf(Collection::class, $query->query());
         $this->assertSame(1, $mockCollectionFactory->getCalls);
@@ -132,9 +133,7 @@ class QueryTest extends TestCase
             ->onlyMethods(['getConnectionName', 'getDatabase'])
             ->getMock();
 
-        $mockMemcached = $this->createMock(MemcachedCache::class);
-        $mockMemcached->expects($this->once())->method('fetch')->willReturn(false);
-        $mockMemcached->expects($this->once())->method('save')->willReturn(true);
+        $cache = new ArrayAdapter();
         $mockConnection->method('slave')->willReturn($mockDriver);
         $mockMysqliResult->method('getConnectionName')->willReturn('main');
         $mockMysqliResult->method('getDatabase')->willReturn('database');
@@ -147,9 +146,11 @@ class QueryTest extends TestCase
         $collection = new Collection();
 
         $query = new Query('', $mockConnection);
-        $query->setCache($mockMemcached);
+        $query->setCache($cache);
         $query->setTtl(10)->setCacheKey('myCacheKey');
         $this->assertSame($collection, $query->query($collection));
+        $this->assertFalse($collection->isFromCache());
+        $this->assertSame($collection->toCache(), $cache->getItem('myCacheKey')->get());
     }
 
     public function testQueryWithoutTTLShouldRaiseException()
@@ -180,5 +181,57 @@ class QueryTest extends TestCase
             },
             'You must call setCacheKey to use query method'
         );
+    }
+
+    public function testQueryWithTtl0ShouldStoreTheResultWithoutExpiration()
+    {
+        $cache = new ArrayAdapter();
+        $query = new Query('', $this->createConnectionReturning('Sylvain', $executions));
+        $query->setCache($cache);
+        $query->setTtl(0)->setCacheKey('myCacheKey');
+
+        $query->query(new Collection());
+
+        // With Symfony, expiresAfter(0) would expire the item at once: 0 must keep meaning "no expiration"
+        $this->assertTrue($cache->getItem('myCacheKey')->isHit());
+        $this->assertTrue($query->query(new Collection())->isFromCache());
+        $this->assertSame(1, $executions);
+    }
+
+    public function testQueryWithForceShouldRecomputeACachedResult()
+    {
+        $cache = new ArrayAdapter();
+        $cache->get('myCacheKey', fn () => ['connection' => 'main', 'database' => 'database', 'data' => [['old']]]);
+        $query = new Query('', $this->createConnectionReturning('Sylvain', $executions));
+        $query->setCache($cache);
+        $query->setTtl(10)->setCacheKey('myCacheKey')->setForce(true);
+
+        $collection = $query->query(new Collection());
+
+        $this->assertSame(1, $executions);
+        $this->assertFalse($collection->isFromCache());
+        $this->assertSame($collection->toCache(), $cache->getItem('myCacheKey')->get());
+    }
+
+    /**
+     * Connection whose slave driver fills the collection with one row, counting executions in $executions
+     */
+    private function createConnectionReturning(string $value, ?int &$executions): Connection
+    {
+        $executions = 0;
+        $result = (new MysqliResult([[$value]]))->setConnectionName('main')->setDatabase('database');
+        $driver = $this->createStub(Driver::class);
+        $driver->method('execute')->willReturnCallback(
+            function ($sql, array $params, $collection) use ($result, &$executions) {
+                $executions++;
+                $collection->set($result);
+
+                return $collection;
+            }
+        );
+        $connection = $this->createStub(Connection::class);
+        $connection->method('slave')->willReturn($driver);
+
+        return $connection;
     }
 }

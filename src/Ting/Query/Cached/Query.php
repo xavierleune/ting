@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -26,13 +27,14 @@
 namespace CCMBenchmark\Ting\Query\Cached;
 
 use CCMBenchmark\Ting\Exception;
-use Doctrine\Common\Cache\Cache;
 use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 class Query extends \CCMBenchmark\Ting\Query\Query
 {
-    protected ?Cache $cache = null;
+    protected ?CacheInterface $cache = null;
 
     protected ?int $ttl = null;
 
@@ -44,16 +46,16 @@ class Query extends \CCMBenchmark\Ting\Query\Query
 
     /**
      * Set the cache interface to the actual query
-     * @param Cache $cache
+     * @param CacheInterface $cache
      * @return void
      */
-    public function setCache(Cache $cache): void
+    public function setCache(CacheInterface $cache): void
     {
         $this->cache = $cache;
     }
 
     /**
-     * Define the ttl for the current query
+     * Define the ttl for the current query, in seconds (0: no expiration)
      * @param int $ttl
      * @return $this
      */
@@ -112,45 +114,44 @@ class Query extends \CCMBenchmark\Ting\Query\Query
             $collection = $this->collectionFactory->get();
         }
 
-        $isCached = $this->checkCache($this->cacheKey, $collection);
-        if ($isCached === true) {
-            return $collection;
-        }
-
-        parent::query($collection);
-        $this->cache->save($this->cacheKey, $collection->toCache(), $this->ttl);
-
-        return $collection;
+        return $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
+            parent::query($collection);
+        });
     }
 
     /**
-     * Check if a key is available in cache and fill collection if it's available
-     * @param string|null $key
-     * @param CollectionInterface $collection
-     * @return bool
+     * Fill the collection from cache, or run $execute to fill it and store the result
+     *
+     * @param \Closure(CollectionInterface): void $execute runs the actual query into the collection
      * @throws QueryException
      */
-    protected function checkCache($key, CollectionInterface $collection): bool
+    protected function queryThroughCache(CollectionInterface $collection, \Closure $execute): CollectionInterface
     {
-        if ($key === null) {
+        if ($this->cacheKey === null) {
             throw new QueryException('You must call setCacheKey to use query method');
         }
 
         $collection->setFromCache(false);
+        $computed = false;
+        $result = $this->cache->get(
+            $this->cacheKey,
+            function (ItemInterface $item) use ($collection, $execute, &$computed): array {
+                $computed = true;
+                // 0 meant "no expiration" with doctrine/cache, Symfony would expire the item immediately
+                $item->expiresAfter($this->ttl === 0 ? null : $this->ttl);
+                $execute($collection);
 
-        if ($this->force === true) {
-            return false;
-        }
+                return $collection->toCache();
+            },
+            // INF forces the value to be recomputed
+            $this->force === true ? INF : null
+        );
 
-        $this->checkTtl();
-        $result = $this->cache->fetch($key);
-
-        if ($result !== false) {
+        if ($computed === false) {
             $collection->fromCache($result);
-            return true;
         }
 
-        return false;
+        return $collection;
     }
 
     /**
