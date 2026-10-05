@@ -96,7 +96,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Flag the entity to be persisted (insert or update) on next process
+     * Flag the entity to be persisted (insert or update) on next process.
+     * A new entity becomes managed only once inserted: until then, it stays new.
      */
     public function pushSave(NotifyPropertyInterface $entity): static
     {
@@ -108,7 +109,6 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
         $hash = spl_object_hash($entity);
         $this->entitiesShouldBePersisted[$hash] = ['state' => $state, 'entity' => $entity];
-        $this->entities[$entity] = $entity;
 
         return $this;
     }
