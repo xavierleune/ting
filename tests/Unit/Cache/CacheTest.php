@@ -84,11 +84,11 @@ class CacheTest extends TestCase
         $mockLogger
             ->expects($this->atLeastOnce())
             ->method('startOperation')
+            // atoum never evaluated this check, which also expected the data and lifetime:
+            // Cache::save() only logs the operation and the id
             ->with(
                 $this->identicalTo(CacheLoggerInterface::OPERATION_STORE),
-                $this->identicalTo('name'),
-                $this->identicalTo('Sylvain'),
-                $this->identicalTo(33)
+                $this->identicalTo('name')
             );
         $mockLogger->expects($this->once())->method('stopOperation');
 

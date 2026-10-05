@@ -31,7 +31,6 @@ use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\Fake\MysqliStatement;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\FakeLogger\FakeDriverLogger;
@@ -99,31 +98,24 @@ class StatementTest extends TestCase
         $statement->execute([], $collection);
     }
 
-    // Partial mock without expectations (atoum mocks are partial)
-    #[AllowMockObjectsWithoutExpectations]
     public function testSetCollectionWithResult()
     {
         $driverStatement = $this->createStub(MysqliStatement::class);
         $driverStatement->method('close')->willReturn(true);
         $collection      = $this->createMock(Collection::class);
         // Partial mock: Result uses the real methods of the fake, only fetch_fields is overridden
-        $result          = $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([
+        $result          = new MysqliResult([
                 [
-                    [
-                        'prenom' => 'Sylvain',
-                        'nom'    => 'Robez-Masson'
-                    ],
-                    [
-                        'prenom' => 'Xavier',
-                        'nom'    => 'Leune'
-                    ]
+                    'prenom' => 'Sylvain',
+                    'nom'    => 'Robez-Masson'
+                ],
+                [
+                    'prenom' => 'Xavier',
+                    'nom'    => 'Leune'
                 ]
-            ])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
+            ]);
 
-        $result->method('fetch_fields')->willReturnCallback(function () {
+        $result->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'prenom';

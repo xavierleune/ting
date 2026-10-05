@@ -715,11 +715,8 @@ class RepositoryTest extends TestCase
      */
     private function createMysqliResultMock(): MysqliResult
     {
-        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([[['Bouh']]])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Bouh']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields             = [];
             $stdClass           = new \stdClass();
             $stdClass->name     = 'name';

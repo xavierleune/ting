@@ -93,7 +93,6 @@ class PreparedQueryTest extends TestCase
         $this->assertSame(1, $mockCollectionFactory->getCalls);
     }
 
-    // Partial mock of Statement used as a stub (real constructor, execute() overridden): PHPUnit has no partial stub
     #[AllowMockObjectsWithoutExpectations]
     public function testQueryShouldCallCacheGetThenStoreIfDataNotInCache()
     {

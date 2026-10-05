@@ -28,22 +28,16 @@ namespace CCMBenchmark\Ting\Tests\Unit\Driver\Mysqli;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\FakeDriver\MysqliResult;
 
 class ResultTest extends TestCase
 {
-    // Partial mock without expectations (atoum mocks are partial)
-    #[AllowMockObjectsWithoutExpectations]
     public function testIterator()
     {
         // Partial mock: the real fetch_array/data_seek of the fake are used by Result
-        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([[['value'], ['value2']]])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
+        $mockMysqliResult = new MysqliResult([['value'], ['value2']]);
 
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'prenom';
