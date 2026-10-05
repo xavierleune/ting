@@ -25,15 +25,13 @@
 
 namespace sample\src;
 
-// ting autoloader
-
+use CCMBenchmark\Ting\Exception;
 use sample\src\model\CityRepository;
 
-require __DIR__ . '/../../vendor/autoload.php';
-// sample autoloader
+// Ting and the sample are both autoloaded by the sample's own vendor (run "composer install" in sample/)
 require __DIR__ . '/../vendor/autoload.php';
 
-$services = new \sample\src\TingServices();
+$services = new TingServices();
 $repositories =
     $services
         ->metadataRepository()
@@ -59,14 +57,14 @@ $services->connectionPool()->setConfig($connections);
 
 $options = [
     'world' => [
-        'timezone' => 'EETDST'
+        'timezone' => 'Europe/Paris'
     ]
 ];
 $services->connectionPool()->setDatabaseOptions($options);
 
 
 try {
-    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get(CityRepository::class);
     var_dump($cityRepository->get(['cit_id' => 3]));
     echo str_repeat("-", 40) . "\n";
 
@@ -88,7 +86,7 @@ try {
 }
 
 try {
-    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get(CityRepository::class);
     $collection = $cityRepository->getZCountryWithLotsPopulation();
 
     foreach ($collection as $result) {
@@ -101,10 +99,7 @@ try {
 
 
 try {
-    /**
-     * @var $cityRepository CityRepository
-     */
-    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get(CityRepository::class);
 
     echo str_repeat("-", 40) . "\n";
 

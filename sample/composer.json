@@ -1,10 +1,21 @@
 {
-    "name": "xavierleune/ting/sample",
-    "type": "library",
+    "name": "xavierleune/ting-sample",
+    "description": "Ting usage sample on the world database",
+    "type": "project",
     "license": "Apache-2.0",
+    "repositories": [
+        {
+            "type": "path",
+            "url": ".."
+        }
+    ],
     "require": {
-        "php": ">=5.5"
+        "php": ">=8.2",
+        "xavierleune/ting": "*",
+        "symfony/cache": "^7.0 || ^8.0"
     },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "autoload": {
         "psr-4" : {
             "sample\\src\\": "src"

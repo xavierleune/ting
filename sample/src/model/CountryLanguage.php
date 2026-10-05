@@ -54,36 +54,30 @@ class CountryLanguage implements NotifyPropertyInterface
         $this->language = (string) $language;
     }
 
-    public function getLanguage($withUUID = false)
+    public function getLanguage()
     {
-        $append = '';
-
-        if ($withUUID === true) {
-            $append = " (" . $this->tingUUID . ")";
-        }
-
-        return (string) $this->language . $append;
+        return (string) $this->language;
     }
 
     public function setIsOfficial($isOfficial)
     {
         $this->propertyChanged('isOfficial', $this->isOfficial, $isOfficial);
-        $this->isOfficial = (string) $isOfficial;
+        $this->isOfficial = (bool) $isOfficial;
     }
 
     public function getIsOfficial()
     {
-        return (string) $this->isOfficial;
+        return (bool) $this->isOfficial;
     }
 
     public function setPercentage($percentage)
     {
         $this->propertyChanged('percentage', $this->percentage, $percentage);
-        $this->percentage = (string) $percentage;
+        $this->percentage = (float) $percentage;
     }
 
     public function getPercentage()
     {
-        return (string) $this->percentage;
+        return (float) $this->percentage;
     }
 }

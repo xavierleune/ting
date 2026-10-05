@@ -27,11 +27,15 @@ namespace sample\src\model;
 
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Repository\MetadataInitializer;
+use CCMBenchmark\Ting\Repository\Repository;
 use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
 
-class CountryLanguageRepository extends \CCMBenchmark\Ting\Repository\Repository implements MetadataInitializer
+/**
+ * @extends Repository<CountryLanguage>
+ */
+class CountryLanguageRepository extends Repository implements MetadataInitializer
 {
-    public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = [])
+    public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
     {
         $metadata = new Metadata($serializerFactory);
 
@@ -57,7 +61,7 @@ class CountryLanguageRepository extends \CCMBenchmark\Ting\Repository\Repository
         $metadata->addField([
             'fieldName'  => 'isOfficial',
             'columnName' => 'col_is_official',
-            'type'       => 'boolean'
+            'type'       => 'bool'
         ]);
 
         $metadata->addField([

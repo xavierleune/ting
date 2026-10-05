@@ -54,15 +54,9 @@ class Producer implements NotifyPropertyInterface
         $this->name = (string) $name;
     }
 
-    public function getName($withUUID = false)
+    public function getName()
     {
-        $append = '';
-
-        if ($withUUID === true) {
-            $append = " (" . $this->tingUUID . ")";
-        }
-
-        return (string) $this->name . $append;
+        return (string) $this->name;
     }
 
     public function moviesAre(array $movies)
