@@ -120,9 +120,13 @@ A few rules:
 
 * The first argument of `propertyChanged()` is the **property name** (the `fieldName` of the metadata), not the column
   name.
-* Values are compared with `===`: setting the same value again is not a change. Objects are compared by identity, so
-  for a `DateTime` modified in place Ting sees no change; prefer immutable objects (`DateTimeImmutable`, enums...) and
-  replace them.
+* `propertyChanged()` tells the unit of work that the property **may** have changed. On save, the property is compared
+  with the value read from the database (or last written to it), both converted to their database value by the
+  serializer of the field: a `DateTime` modified in place then given to its setter is updated, a `DateTime` replaced by
+  an equal one is not, and a property set back to its original value is not updated either.
+* A change made without calling the setter (e.g. `$city->getCreatedAt()->modify('+1 day')` alone) is not notified,
+  so it is never `UPDATE`d. Prefer immutable objects (`DateTimeImmutable`, enums...) and replace them through the
+  setter.
 * A property that never calls `propertyChanged()` is still written on `INSERT`, but its changes are never `UPDATE`d.
 * A property notified by `propertyChanged()` but not mapped in the metadata is ignored by the unit of work.
 * Hydration goes through the same setters (unless the metadata says otherwise). A setter must accept every value the

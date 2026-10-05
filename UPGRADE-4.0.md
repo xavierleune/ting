@@ -279,6 +279,12 @@ UnitOfWork
 * The `UnitOfWork::generateUid()` method has been removed.
 * The `UnitOfWork::generateUUID()` method has been removed (was deprecated in 3.x).
 * If you need unique identifiers, use PHP's built-in functions like `uniqid()` or `spl_object_hash()` directly.
+* Changes are detected against the database values: a notified property is updated when its value, serialized by the
+  serializer of its field, differs from the one read from (or last written to) the database. A `DateTime` modified in
+  place then given to its setter is now updated; one replaced by an equal instance no longer is.
+  `NotifyProperty::propertyChanged()` therefore notifies the listeners when the old and new values are the same object
+  (a custom `PropertyListenerInterface` receives these calls too). The values given to `propertyChanged()` are no
+  longer used to build the `UPDATE`.
 
 Query and Driver Methods
 -------------------------

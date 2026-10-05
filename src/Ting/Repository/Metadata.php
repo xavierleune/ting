@@ -427,6 +427,39 @@ class Metadata
         $field = $this->fieldsByProperty[$fieldName];
         return $this->getEntityProperty($entity, $field);
     }
+
+    /**
+     * Returns false for a public typed property not initialized
+     *
+     * @internal
+     */
+    public function isEntityPropertyReadable(object $entity, string $fieldName): bool
+    {
+        return $this->propertyAccessor->isReadable(
+            $entity,
+            $fieldName,
+            $this->fieldsByProperty[$fieldName]['getter'] ?? null
+        );
+    }
+
+    /**
+     * Database values (serialized by the serializer of their field) of the readable mapped properties of the entity
+     *
+     * @return array<string, mixed> property name => database value
+     *
+     * @internal
+     */
+    public function getEntityDatabaseValues(object $entity): array
+    {
+        $values = [];
+        foreach ($this->fieldsByProperty as $fieldName => $field) {
+            if ($this->propertyAccessor->isReadable($entity, $fieldName, $field['getter'] ?? null)) {
+                $values[$fieldName] = $this->getEntityProperty($entity, $field);
+            }
+        }
+
+        return $values;
+    }
     
     /**
      * Return a Query to get one object by it's primaries
@@ -793,7 +826,8 @@ class Metadata
     /**
      * Return a query to update a row in database
      *
-     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [old value, new value]
+     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
+     *                                                            the change, new database value]
      *
      * @internal
      */
@@ -811,16 +845,9 @@ class Metadata
             array_keys($properties)
         );
 
-        // Get new values affected to entity
         $values = [];
-        foreach ($properties as $name => $value) {
-            $columnName = $this->fieldsByProperty[$name]['columnName'];
-
-            // Public typed properties non initialized is non-readable
-            // In this case we don't update it, so it will keep the current value
-            if ($this->propertyAccessor->isReadable($entity, $this->fieldsByProperty[$name]['fieldName'], $this->fieldsByProperty[$name]['getter'] ?? null)) {
-                $values[$columnName] = $this->getEntityProperty($entity, $this->fieldsByProperty[$name]);
-            }
+        foreach ($properties as $name => [, $value]) {
+            $values[$this->fieldsByProperty[$name]['columnName']] = $value;
         }
 
         $primariesKeyValue = $this->getPrimariesKeyValuesByProperties($properties, $entity);
@@ -833,7 +860,8 @@ class Metadata
      *
      * @param Connection            $connection
      * @param QueryFactoryInterface $queryFactory
-     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [old value, new value]
+     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
+     *                                                            the change, new database value]
      * @param object                $entity
      * @return PreparedQuery
      *
@@ -859,7 +887,8 @@ class Metadata
     }
 
     /**
-     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [old value, new value]
+     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
+     *                                                            the change, new database value]
      * @return array<string, mixed> primary key values by column name, as currently stored in the database
      */
     protected function getPrimariesKeyValuesByProperties(array $properties, object $entity): array
@@ -869,7 +898,7 @@ class Metadata
             $fieldName = $primary['fieldName'];
             if (isset($properties[$fieldName])) {
                 // Key value has been updated: the row is still stored with the old one
-                $primariesKeyValue[$key] = $this->serializeFieldValue($primary, $properties[$fieldName][0]);
+                $primariesKeyValue[$key] = $properties[$fieldName][0];
             } else {
                 $primariesKeyValue[$key] = $this->getEntityProperty($entity, $primary);
             }

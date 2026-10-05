@@ -15,6 +15,10 @@ entity becomes managed once it has been inserted.
 Managed entities are stored in a `WeakMap`: the unit of work does not keep them alive. Once your code drops its last
 reference to an entity, it is freed, and forgotten by the unit of work.
 
+To detect changes, the unit of work keeps the database values of each managed entity (one array per entity, held in
+a `WeakMap` too): they are taken when the entity becomes managed (hydration, `manage()`, after its `INSERT`) and
+refreshed by each `UPDATE`. They are dropped with the entity, by `detach()`, `detachAll()` and `reset()`.
+
 ## Saving and deleting
 
 Changes are queued with `pushSave()` and `pushDelete()`, then written by `process()`:
@@ -37,8 +41,10 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
 * **new entity**: every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
   properties. The generated key is then set on the entity (through its setter, see
   [field options](repositories.md#field-options)) and the entity becomes managed.
-* **managed entity**: only the properties reported by `propertyChanged()` since the last write are updated. If nothing
-  changed, no query is sent.
+* **managed entity**: only the properties reported by `propertyChanged()` since the last write, and whose database
+  value (serialized by the serializer of the field) differs from the one read from or last written to the database,
+  are updated. If nothing changed, no query is sent. A property modified without calling its setter is not reported,
+  so it is not updated: see [entities](entities.md#tracking-changes).
 * **deleted entity**: it is deleted by its primary key, then detached.
 
 Use `pushSave()` both to insert and to update: the unit of work knows which one applies.
@@ -78,13 +84,13 @@ try {
 | `isNew(NotifyPropertyInterface $entity)`                            | the entity is queued for an `INSERT`                       |
 | `shouldBePersisted(NotifyPropertyInterface $entity)`                | the entity is queued (save or delete)                      |
 | `shouldBeRemoved(NotifyPropertyInterface $entity)`                  | the entity is queued for a `DELETE`                        |
-| `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property changed and has not been written yet  |
+| `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property was notified and its database value differs from the stored one |
 
 ## Managing an entity yourself
 
 `manage()` starts tracking an entity that was not hydrated by Ting, for instance one rebuilt from a cache or a
-session. The entity must already exist in the database, and its primary key must be set: the next `pushSave()` will
-`UPDATE` the properties changed after the call to `manage()`.
+session. The entity must already exist in the database, and its primary key must be set: its values at the call to
+`manage()` are taken as the stored ones, and the next `pushSave()` will `UPDATE` the properties changed after it.
 
 ```php
 $city = unserialize($cachedCity); // a City read earlier, with its id
