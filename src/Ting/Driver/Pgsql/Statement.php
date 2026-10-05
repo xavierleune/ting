@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -41,6 +42,12 @@ class Statement implements StatementInterface
     protected ?DriverLoggerInterface $logger = null;
 
     /**
+     * Receives the result of each execution
+     * @var (\Closure(\PgSql\Result): void)|null
+     */
+    protected ?\Closure $resultHandler = null;
+
+    /**
      * @param string              $statementName
      */
     public function __construct(
@@ -60,6 +67,19 @@ class Statement implements StatementInterface
     public function setConnection($connection): static
     {
         $this->connection = $connection;
+
+        return $this;
+    }
+
+    /**
+     * Hand the result of each execution over, so that the driver reports its affected rows
+     * @param \Closure(\PgSql\Result): void $resultHandler
+     *
+     * @internal
+     */
+    public function setResultHandler(\Closure $resultHandler): static
+    {
+        $this->resultHandler = $resultHandler;
 
         return $this;
     }
@@ -110,6 +130,10 @@ class Statement implements StatementInterface
 
         if ($result === false) {
             throw new QueryException(pg_last_error($this->connection));
+        }
+
+        if ($this->resultHandler !== null) {
+            ($this->resultHandler)($result);
         }
 
         if ($collection !== null) {

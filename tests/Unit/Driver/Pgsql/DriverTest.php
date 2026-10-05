@@ -566,6 +566,29 @@ class DriverTest extends TestCase
         $this->assertSame(0, $driver->getAffectedRows());
     }
 
+    public function testGetAffectedRowsShouldReturnTheCountOfTheLastPreparedQuery()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_prepare', true);
+        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_query_params', 'query result');
+        NativeFunctionMock::override('pg_execute', 'statement result');
+        NativeFunctionMock::override('pg_result_status', \PGSQL_COMMAND_OK);
+        NativeFunctionMock::override('pg_affected_rows', fn ($result) => $result === 'statement result' ? 3 : 1);
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->execute('UPDATE myTable SET a = 1 WHERE id = :id', ['id' => 1]);
+        $this->assertSame(1, $driver->getAffectedRows());
+
+        $statement = $driver->prepare('UPDATE myTable SET a = 2 WHERE id > :id');
+        $statement->execute(['id' => 1]);
+        $this->assertSame(3, $driver->getAffectedRows());
+
+        $driver->execute('UPDATE myTable SET a = 1 WHERE id = :id', ['id' => 1]);
+        $this->assertSame(1, $driver->getAffectedRows());
+    }
+
     public function testgetInsertedIdShouldReturnInsertedId()
     {
         NativeFunctionMock::override('pg_connect', true);
