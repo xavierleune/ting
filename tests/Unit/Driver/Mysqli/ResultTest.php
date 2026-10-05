@@ -97,7 +97,7 @@ class ResultTest extends TestCase
 
     public function testGetNumRows()
     {
-        // atoum mocked ResultInterface, accepting the undeclared fetch_fields() call (returning null)
+        // atoum mocked ResultInterface, accepting the undeclared fetch_fields() call (mocked to return [] as upstream 4.0)
         // and the dynamic num_rows property: an anonymous class gives the same shape
         $mockMysqliResult = new class () {
             public $num_rows = null;
@@ -105,7 +105,7 @@ class ResultTest extends TestCase
             // @codingStandardsIgnoreStart
             public function fetch_fields()
             {
-                return null;
+                return [];
             }
             // @codingStandardsIgnoreEnd
         };
