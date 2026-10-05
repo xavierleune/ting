@@ -35,7 +35,6 @@ use CCMBenchmark\Ting\Repository\HydratorRelational;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\CityWithPublicPropertiesRepository;
@@ -46,8 +45,6 @@ use const MYSQLI_TYPE_VAR_STRING;
 /**
  * HydratorRelational
  */
-// Partial mocks of fake results only replace fetch_fields: they carry no expectation
-#[AllowMockObjectsWithoutExpectations]
 class HydratorRelationalTest extends TestCase
 {
     /**
@@ -106,14 +103,14 @@ class HydratorRelationalTest extends TestCase
 
         $this->services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 1, 'Boulogne-Billancourt'],
             [4, 'Xavier', 'Leune', 2, 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 2, 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 3, 'Montbéliard'],
             [3, 'Sylvain', 'Robez-Masson', 4, 'Luxiol']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -343,14 +340,14 @@ class HydratorRelationalTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 1, 'Boulogne-Billancourt'],
             [3, 'Sylvain', 'Robez-Masson', 2, 'Palaiseau'],
             [4, 'Xavier', 'Leune', 2, 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 3, 'Montbéliard'],
             [3, 'Sylvain', 'Robez-Masson', 4, 'Luxiol']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -483,7 +480,7 @@ class HydratorRelationalTest extends TestCase
             \tests\fixtures\model\ParkRepository::initMetadata($services->get('SerializerFactory'))
         );
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 1, 'Boulogne-Billancourt', 1, 'Parc de Billancourt'],
             [3, 'Sylvain', 'Robez-Masson', 2, 'Palaiseau', 2, 'Parc Pierre et Marie Curie'],
             [4, 'Xavier', 'Leune', 2, 'Palaiseau', null, null],
@@ -493,7 +490,7 @@ class HydratorRelationalTest extends TestCase
             [3, 'Sylvain', 'Robez-Masson', 2, 'Palaiseau', 5, 'Bois du Clos du Pileu'],
             [3, 'Sylvain', 'Robez-Masson', 4, 'Luxiol', null, null]
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -668,10 +665,10 @@ class HydratorRelationalTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\AuthorityRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [1, 11, 22, 33],
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -776,10 +773,10 @@ class HydratorRelationalTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [1, 'Xavier', 'Leune'],
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -852,10 +849,10 @@ class HydratorRelationalTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [1, 'Xavier', 'Leune'],
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -912,12 +909,12 @@ class HydratorRelationalTest extends TestCase
         $services->get('MetadataRepository')->addMetadata($metadataCity->getEntity(), $metadataCity);
         $services->get('MetadataRepository')->addMetadata($metadataCountry->getEntity(), $metadataCountry);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [1, 'Paris', 2, 'France'],
             [2, 'London', 3, 'United Kingdom'],
             [3, 'Tokyo', null, null], // No relation
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -984,16 +981,5 @@ class HydratorRelationalTest extends TestCase
         $this->assertSame('Tokyo', $data->name);
         $country = $data->getCountry();
         $this->assertNull($country);
-    }
-
-    /**
-     * Partial mock, like the atoum one: only fetch_fields is mocked, the iteration code of the fake result is kept.
-     */
-    private function createMysqliResult(array $data): MysqliResult&MockObject
-    {
-        return $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([$data])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
     }
 }

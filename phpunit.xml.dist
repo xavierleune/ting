@@ -8,6 +8,7 @@
          failOnWarning="true"
          failOnNotice="true"
          failOnPhpunitDeprecation="true"
+         failOnPhpunitWarning="true"
          displayDetailsOnTestsThatTriggerDeprecations="true"
          displayDetailsOnTestsThatTriggerNotices="true"
          displayDetailsOnTestsThatTriggerWarnings="true"

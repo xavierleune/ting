@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -31,11 +32,32 @@ class MysqliResult implements ResultInterface
 {
     protected $offset = 0;
     protected $data   = null;
+    protected $fields = null;
 
     public function __construct(array $data = [])
     {
         $this->data = $data;
 
+    }
+
+    /**
+     * @param array|null $fields Returned by fetch_fields()
+     * @return $this
+     */
+    public function setFields(?array $fields)
+    {
+        $this->fields = $fields;
+        return $this;
+    }
+
+    /**
+     * @param \Closure $fields Called on each fetch_fields() call, its result is returned
+     * @return $this
+     */
+    public function setFieldsCallback(\Closure $fields)
+    {
+        $this->fields = $fields;
+        return $this;
     }
 
     public function setResult($iterator)
@@ -47,7 +69,11 @@ class MysqliResult implements ResultInterface
     // @codingStandardsIgnoreStart
     public function fetch_fields()
     {
+        if ($this->fields instanceof \Closure) {
+            return ($this->fields)();
+        }
 
+        return $this->fields;
     }
 
     public function fetch_assoc()

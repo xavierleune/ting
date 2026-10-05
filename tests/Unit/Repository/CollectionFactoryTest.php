@@ -30,7 +30,6 @@ use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\FakeDriver\MysqliResult;
 
 class CollectionFactoryTest extends TestCase
@@ -43,7 +42,6 @@ class CollectionFactoryTest extends TestCase
         $this->assertInstanceOf(Collection::class, $collectionFactory->get());
     }
 
-    #[AllowMockObjectsWithoutExpectations]
     public function testGetShouldReturnInstanceOfCollectionWithNewHydrator()
     {
         $services = new Services();
@@ -71,15 +69,12 @@ class CollectionFactoryTest extends TestCase
     }
 
     /**
-     * Partial mock of the fake mysqli result: only fetch_fields is replaced, the real iterator is kept
+     * Fake mysqli result describing a single bouh.name column
      */
     private function createMysqliResult(array $data): MysqliResult
     {
-        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([$data])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult($data);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'name';

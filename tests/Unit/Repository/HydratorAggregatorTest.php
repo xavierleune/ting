@@ -31,15 +31,12 @@ use CCMBenchmark\Ting\Repository\HydratorAggregator;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 
 /**
  * HydratorAggregator
  */
-// Partial mocks of fake results only replace fetch_fields: they carry no expectation
-#[AllowMockObjectsWithoutExpectations]
 class HydratorAggregatorTest extends TestCase
 {
     public function testHydrate()
@@ -85,14 +82,14 @@ class HydratorAggregatorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
             [4, 'Xavier', 'Leune', 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 'Montbéliard'],
             [3, 'Sylvain', 'Robez-Masson', 'Luxiol']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -197,14 +194,14 @@ class HydratorAggregatorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
             [4, 'Xavier', 'Leune', 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 'Montbéliard'],
             [3, 'Sylvain', 'Robez-Masson', 'Luxiol']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -313,14 +310,14 @@ class HydratorAggregatorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
             [3, 'Sylvain', 'Robez-Masson', 'Palaiseau'],
             [4, 'Xavier', 'Leune', 'Palaiseau'],
             [3, 'Sylvain', 'Robez-Masson', 'Montbéliard'],
             [3, 'Sylvain', 'Robez-Masson', 'Luxiol']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -379,16 +376,5 @@ class HydratorAggregatorTest extends TestCase
         $this->assertSame('Palaiseau', $data['aggregate'][0]->getName());
         $this->assertSame('Montbéliard', $data['aggregate'][1]->getName());
         $this->assertSame('Luxiol', $data['aggregate'][2]->getName());
-    }
-
-    /**
-     * Partial mock, like the atoum one: only fetch_fields is mocked, the iteration code of the fake result is kept.
-     */
-    private function createMysqliResult(array $data): MysqliResult&MockObject
-    {
-        return $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([$data])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
     }
 }

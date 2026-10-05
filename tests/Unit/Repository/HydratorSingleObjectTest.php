@@ -31,12 +31,9 @@ use CCMBenchmark\Ting\Repository\HydratorSingleObject;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 
-// Partial mocks of fake results only replace fetch_fields: they carry no expectation
-#[AllowMockObjectsWithoutExpectations]
 class HydratorSingleObjectTest extends TestCase
 {
     public function testHydrateShouldReturnBouhObject()
@@ -62,8 +59,8 @@ class HydratorSingleObjectTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -106,16 +103,5 @@ class HydratorSingleObjectTest extends TestCase
         $hydrator = new HydratorSingleObject();
         $hydrator->setResult($result);
         $this->assertSame(2, count($hydrator));
-    }
-
-    /**
-     * Partial mock, like the atoum one: only fetch_fields is mocked, the iteration code of the fake result is kept.
-     */
-    private function createMysqliResult(array $data): MysqliResult&MockObject
-    {
-        return $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([$data])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
     }
 }

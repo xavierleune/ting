@@ -37,7 +37,6 @@ use tests\fixtures\FakeDriver\MysqliResult;
 
 class CollectionTest extends TestCase
 {
-    #[AllowMockObjectsWithoutExpectations]
     public function testCollectionShouldDoNothingWithoutHydrator()
     {
         $mockMysqliResult = $this->createMysqliResult(
@@ -62,7 +61,6 @@ class CollectionTest extends TestCase
         $this->assertNull($collection->first());
     }
 
-    #[AllowMockObjectsWithoutExpectations]
     public function testFirstShouldReturnFirstItemOfCollection()
     {
         $mockMysqliResult = $this->createMysqliResult([['Sylvain']], ['prenom' => 'firstname']);
@@ -80,7 +78,6 @@ class CollectionTest extends TestCase
         $this->assertEquals(['prenom' => 'Sylvain'], $data);
     }
 
-    #[AllowMockObjectsWithoutExpectations]
     public function testGetIterator()
     {
         $mockMysqliResult = $this->createMysqliResult([['Sylvain']], ['prenom' => 'firstname']);
@@ -152,7 +149,6 @@ class CollectionTest extends TestCase
         $this->assertSame(1, $mockHydrator->countCalls);
     }
 
-    #[AllowMockObjectsWithoutExpectations]
     public function testSetFromCache()
     {
         $mockMysqliResult = $this->createMysqliResult([['Sylvain']], ['prenom' => 'firstname']);
@@ -169,7 +165,6 @@ class CollectionTest extends TestCase
         $this->assertTrue($collection->isFromCache());
     }
 
-    #[AllowMockObjectsWithoutExpectations]
     public function testCollectionShouldBeJsonSerializable()
     {
         $mockMysqliResult = $this->createMysqliResult([['Bob']], ['prenom' => 'firstname']);
@@ -186,17 +181,14 @@ class CollectionTest extends TestCase
     }
 
     /**
-     * Partial mock of the fake mysqli result: only fetch_fields is replaced, the real iterator is kept
+     * Fake mysqli result describing a single bouh.name column
      *
      * @param array<string, string> $fields alias => original column name, all in table bouh (T_BOUH_BOO)
      */
     private function createMysqliResult(array $data, array $fields): MysqliResult
     {
-        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([$data])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () use ($fields) {
+        $mockMysqliResult = new MysqliResult($data);
+        $mockMysqliResult->setFieldsCallback(function () use ($fields) {
             $result = [];
             foreach ($fields as $name => $orgname) {
                 $stdClass = new \stdClass();

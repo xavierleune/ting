@@ -44,8 +44,6 @@ use tests\fixtures\model\City;
 use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\PrimaryOnMultiField;
 
-// Partial mocks of fake results only replace fetch_fields: they carry no expectation
-#[AllowMockObjectsWithoutExpectations]
 class HydratorTest extends TestCase
 {
     public function testHydrate()
@@ -71,8 +69,8 @@ class HydratorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -129,8 +127,8 @@ class HydratorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhReadOnlyRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -164,6 +162,7 @@ class HydratorTest extends TestCase
         $this->assertSame('Sylvain', $data['bouh']->getFirstname());
     }
 
+    #[AllowMockObjectsWithoutExpectations]
     public function testHydrateWithSchema()
     {
         $services = new Services();
@@ -239,8 +238,8 @@ class HydratorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([[null, null]]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([[null, null]]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -296,8 +295,8 @@ class HydratorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([[null, 'Robez-Masson']]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([[null, 'Robez-Masson']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -353,8 +352,8 @@ class HydratorTest extends TestCase
 
         $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson', 'Happy Face']]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson', 'Happy Face']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -403,12 +402,12 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [23, 'LeBron', 'James', 'Cleveland'],
             [23, 'LeBron', 'James', 'Los Angeles']
         ]);
 
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -478,8 +477,8 @@ class HydratorTest extends TestCase
     {
         $services = new Services();
 
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson']]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -536,8 +535,8 @@ class HydratorTest extends TestCase
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $time = time();
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson', $time]]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson', $time]]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -586,10 +585,10 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
                 ['Sylvain', 'Robez-Masson', 3, 'Palaiseau']
             ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -648,10 +647,10 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             ['Sylvain', 'Robez-Masson', 3, 'Palaiseau']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -708,10 +707,10 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             ['{"name": "Sylvain"}', 'Palaiseau']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'data';
@@ -754,8 +753,8 @@ class HydratorTest extends TestCase
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $time = time();
-        $mockMysqliResult = $this->createMysqliResult([['Sylvain', 'Robez-Masson', $time]]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson', $time]]);
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -806,10 +805,10 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             ['Sylvain', 'Robez-Masson', 3, 'Palaiseau']
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name     = 'fname';
@@ -965,8 +964,8 @@ class HydratorTest extends TestCase
             [2, 'other_item2', 8, 'City2', 2]
         ];
 
-        $mockMysqliResult = $this->createMysqliResult($mysqliResult);
-        $mockMysqliResult2 = $this->createMysqliResult($mysqliResult);
+        $mockMysqliResult = new MysqliResult($mysqliResult);
+        $mockMysqliResult2 = new MysqliResult($mysqliResult);
 
         $fetchFields = function () {
             $fields = [];
@@ -1013,8 +1012,8 @@ class HydratorTest extends TestCase
             return $fields;
         };
 
-        $mockMysqliResult->method('fetch_fields')->willReturn($fetchFields());
-        $mockMysqliResult2->method('fetch_fields')->willReturn($fetchFields());
+        $mockMysqliResult->setFields($fetchFields());
+        $mockMysqliResult2->setFields($fetchFields());
 
         //*
         $sqlResult = new Result();
@@ -1069,10 +1068,10 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
                  ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             ['Sylvain', 'Robez-Masson', null, null]
         ]);
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
             $stdClass = new \stdClass();
             $stdClass->name = 'fname';
@@ -1128,12 +1127,12 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [23, 'Michael', 'Jordan'],
             [23, 'Michael', 'Jordan']
         ]);
 
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -1185,13 +1184,13 @@ class HydratorTest extends TestCase
         $services->get('MetadataRepository')
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
-        $mockMysqliResult = $this->createMysqliResult([
+        $mockMysqliResult = new MysqliResult([
             [23, 'LeBron', 'James', 'Cleveland'],
             [30, 'Stephen', 'Curry', 'San Francisco'],
             [23, 'LeBron', 'James', 'Los Angeles']
         ]);
 
-        $mockMysqliResult->method('fetch_fields')->willReturnCallback(function () {
+        $mockMysqliResult->setFieldsCallback(function () {
             $fields = [];
 
             $stdClass = new \stdClass();
@@ -1245,16 +1244,5 @@ class HydratorTest extends TestCase
         $nextObject = $iterator->current()['bouh'];
         $this->assertIsString(spl_object_hash($currentObject));
         $this->assertEquals(spl_object_hash($nextObject), spl_object_hash($currentObject));
-    }
-
-    /**
-     * Partial mock, like the atoum one: only fetch_fields is mocked, the iteration code of the fake result is kept.
-     */
-    private function createMysqliResult(array $data): MysqliResult&MockObject
-    {
-        return $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([$data])
-            ->onlyMethods(['fetch_fields'])
-            ->getMock();
     }
 }
