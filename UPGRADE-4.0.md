@@ -51,8 +51,7 @@ $repositoryFactory = new RepositoryFactory(
     $queryFactory,
     new CollectionFactory($metadataRepository, $unitOfWork, $hydrator),
     $unitOfWork,
-    $cache,
-    $serializerFactory
+    $cache
 );
 $repository = $repositoryFactory->get(CityRepository::class);
 ```
@@ -130,6 +129,16 @@ $generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['n
 
 * `Generator` is mostly used internally: from a repository, `getBy($criteria, $forceMaster, $order, $limit)` is
   unchanged.
+
+Repository and RepositoryFactory Constructors
+---------------------------------------------
+
+The `SerializerFactoryInterface` argument, unused since 3.x, has been removed from both constructors:
+
+* `Repository::__construct()` takes 6 arguments: if your repository overrides the constructor, drop the last
+  `SerializerFactoryInterface $serializerFactory` parameter and don't pass it to `parent::__construct()`.
+* `RepositoryFactory::__construct()` takes 6 arguments: drop the last `$serializerFactory` argument (with Symfony,
+  ting_bundle does it for you).
 
 Metadata
 --------

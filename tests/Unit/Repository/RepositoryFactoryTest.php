@@ -47,8 +47,7 @@ class RepositoryFactoryTest extends TestCase
             $services->queryFactory(),
             $services->collectionFactory(),
             $services->unitOfWork(),
-            $services->cache(),
-            $services->serializerFactory()
+            $services->cache()
         );
         $repository = $repositoryFactory->get('\tests\fixtures\model\BouhRepository');
 

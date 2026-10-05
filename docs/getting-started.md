@@ -483,8 +483,7 @@ $repositoryFactory = new RepositoryFactory(
     $queryFactory,
     $collectionFactory,
     $unitOfWork,
-    $cache,
-    $serializerFactory
+    $cache
 );
 ```
 

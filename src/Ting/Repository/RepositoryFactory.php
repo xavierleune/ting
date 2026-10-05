@@ -29,7 +29,6 @@ use Symfony\Contracts\Cache\CacheInterface;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\QueryFactory;
-use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
 use CCMBenchmark\Ting\UnitOfWork;
 
 class RepositoryFactory
@@ -42,7 +41,6 @@ class RepositoryFactory
      * @param CollectionFactory $collectionFactory
      * @param UnitOfWork $unitOfWork
      * @param CacheInterface $cache
-     * @param SerializerFactoryInterface $serializerFactory
      */
     public function __construct(
         protected ConnectionPool $connectionPool,
@@ -50,8 +48,7 @@ class RepositoryFactory
         protected QueryFactory $queryFactory,
         protected CollectionFactory $collectionFactory,
         protected UnitOfWork $unitOfWork,
-        protected CacheInterface $cache,
-        protected SerializerFactoryInterface $serializerFactory
+        protected CacheInterface $cache
     ) {
     }
 
@@ -69,8 +66,7 @@ class RepositoryFactory
             $this->queryFactory,
             $this->collectionFactory,
             $this->cache,
-            $this->unitOfWork,
-            $this->serializerFactory
+            $this->unitOfWork
         );
     }
 }

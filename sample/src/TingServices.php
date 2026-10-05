@@ -101,8 +101,7 @@ final class TingServices
             $this->queryFactory(),
             $this->collectionFactory(),
             $this->unitOfWork(),
-            $this->cache(),
-            $this->serializerFactory()
+            $this->cache()
         );
     }
 
