@@ -82,9 +82,10 @@ public function findByName(string $name): CollectionInterface
 
 (`use CCMBenchmark\Ting\Repository\CollectionInterface;` in the repository.)
 
-`setParams()` replaces the previous parameters and returns the query, so calls can be chained. Give a value for every
-placeholder: with the MySQL driver, a missing one raises a `CCMBenchmark\Ting\Driver\QueryException`. PostgreSQL
-casts (`::text`) and times (`12:30`) are not taken for placeholders.
+`setParams()` replaces the previous parameters and returns the query, so calls can be chained. A placeholder can appear
+several times in the SQL. Give a value for every placeholder: a missing one raises a
+`CCMBenchmark\Ting\Driver\QueryException`. PostgreSQL casts (`::text`) and times (`12:30`) are not taken for
+placeholders; to write a literal `:name` in the SQL, escape the colon (`'\:name'`).
 
 ### Executing and reading the results
 
