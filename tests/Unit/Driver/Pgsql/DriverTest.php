@@ -33,6 +33,7 @@ use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Driver\Pgsql\Statement;
+use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\Fake\Pgsql;
@@ -61,6 +62,25 @@ class DriverTest extends TestCase
         $driver = new Driver();
 
         $this->assertSame($driver, $driver->connect('hostname.test', 'user.test', 'password.test', 1234));
+    }
+
+    public function testConnectWithoutUserNorPasswordShouldLeaveThemOutOfTheDsn()
+    {
+        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn) {
+            $outerDsn = $dsn;
+
+            return false;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', null, null, 1234);
+        try {
+            $driver->setDatabase('bouh');
+        } catch (DriverException) {
+        }
+
+        // libpq then uses its defaults (current user, .pgpass)
+        $this->assertSame('host=hostname.test port=1234 dbname=bouh', $outerDsn);
     }
 
     public function testCloseShouldReturnSelf()

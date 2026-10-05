@@ -30,7 +30,7 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 
 interface DriverInterface
 {
-    public function connect(string $hostname, string $username, string $password, int $port): static;
+    public function connect(string $hostname, ?string $username, ?string $password, int $port): static;
 
     /**
      * Close the connection to the database

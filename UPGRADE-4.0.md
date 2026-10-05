@@ -243,6 +243,9 @@ public function setTimezone(?string $timezone = null): void
 }
 ```
 
+`connect()` is now typed: `connect(string $hostname, ?string $username, ?string $password, int $port): static`.
+User and password stay optional in the connection configuration: `ConnectionPool` passes `null` when they are missing.
+
 QueryInterface - New Required Method
 ------------------------------------
 

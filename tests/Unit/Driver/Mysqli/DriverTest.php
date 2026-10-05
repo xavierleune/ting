@@ -93,6 +93,18 @@ class DriverTest extends TestCase
         $this->assertSame($driver, $driver->connect('hostname.test', 'user.test', 'password.test', 1234));
     }
 
+    public function testConnectWithoutUserNorPasswordShouldUseTheDefaults()
+    {
+        $mockDriver = $this->createMock(Mysqli::class);
+        $mockDriver->expects($this->once())
+            ->method('real_connect')
+            ->with('hostname.test', null, null, null, 1234)
+            ->willReturn(true);
+
+        $driver = new Driver($mockDriver);
+        $driver->connect('hostname.test', null, null, 1234);
+    }
+
     public function testConnectParameters()
     {
         $mockDriver = $this->createMock(Mysqli::class);

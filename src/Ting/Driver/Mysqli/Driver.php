@@ -125,7 +125,7 @@ class Driver implements DriverInterface
     /**
      * @throws ConnectionException
      */
-    public function connect(string $hostname, string $username, string $password, int $port = 3306): static
+    public function connect(string $hostname, ?string $username, ?string $password, int $port = 3306): static
     {
         $this->driver->report_mode = MYSQLI_REPORT_STRICT;
 
