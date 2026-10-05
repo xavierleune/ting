@@ -12,7 +12,7 @@
     * Fix HydratorValueObject on cached queries (a cache hit returned raw rows): the hydrator now builds the objects itself, from the rows, with or without cache; ResultInterface::setObjectToFetch(), added in 4.0.0-rc.1, is removed
     * Fix cached prepared queries ignoring selectMaster(true): they were always prepared on a slave
     * Fix UnitOfWork keeping a saved entity queued when it had no change: shouldBePersisted() stayed true and the entity was retained until detach/reset (leak in worker mode)
-    * Fix Hydrator::objectSchemaIs() ignored with PostgreSQL: the result sets an empty schema when the query doesn't name it, which took precedence
+    * Fix Hydrator::objectSchemaIs() ignored with PostgreSQL since 4.0.0-rc.1: the schema read from the query, even empty, took precedence; objectSchemaIs() overrides it again, as in 3.x
     * Fix Mysqli prepared queries binding NULL for every parameter since 4.0.0-rc.1 (regression of ccmbenchmark/ting#108: parameter order lost, a repeated parameter bound once)
     * Fix a missing query parameter: every driver now raises a QueryException, prepared or not (Pgsql and Mysqli prepared queries sent NULL)
     * Fix the escaped colon (\:) kept in non-prepared Mysqli queries
