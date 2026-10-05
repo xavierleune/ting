@@ -1390,6 +1390,49 @@ class HydratorTest extends TestCase
         $this->assertEquals(spl_object_hash($nextObject), spl_object_hash($currentObject));
     }
 
+    public function testIdentityMapShouldIdentifyEntitiesByTheirWholeCompositeKey()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setEntity(\tests\fixtures\model\Bouh::class);
+        $metadata->setTable('T_BOUH_BOO');
+        $metadata->addField(['primary' => true, 'fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        $metadata->addField(['primary' => true, 'fieldName' => 'firstname', 'columnName' => 'boo_firstname', 'type' => 'string']);
+        $metadata->addField(['fieldName' => 'price', 'columnName' => 'boo_price', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = new MysqliResult([
+            ['Jean', 'Pierre-Paul', '10'],
+            ['Jean', 'Pierre', '20'],
+            ['Jean-Pierre', 'Paul', '30'], // with "-" between the values, its key is the same as the first one
+            ['Jean', 'Pierre-Paul', '10'], // the first one again
+        ]);
+        $mockMysqliResult->setFields([
+            $this->field('boo_name', 'boo_name', 'b', 'T_BOUH_BOO'),
+            $this->field('boo_firstname', 'boo_firstname', 'b', 'T_BOUH_BOO'),
+            $this->field('boo_price', 'boo_price', 'b', 'T_BOUH_BOO'),
+        ]);
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->identityMap(true);
+        $bouhs = array_column(iterator_to_array($hydrator->setResult($result)->getIterator()), 'b');
+
+        $this->assertSame(
+            [['Jean', 'Pierre-Paul', '10'], ['Jean', 'Pierre', '20'], ['Jean-Pierre', 'Paul', '30'], ['Jean', 'Pierre-Paul', '10']],
+            array_map(fn ($bouh) => [$bouh->getName(), $bouh->getFirstname(), $bouh->getPrice()], $bouhs)
+        );
+        $this->assertSame($bouhs[0], $bouhs[3]);
+        $this->assertCount(3, array_unique(array_map('spl_object_id', $bouhs)));
+    }
+
     private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass
     {
         $field = new \stdClass();
