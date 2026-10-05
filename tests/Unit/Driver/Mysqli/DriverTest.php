@@ -33,6 +33,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
+use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\Fake\Mysqli;
@@ -662,6 +663,71 @@ class DriverTest extends TestCase
                 'SELECT * FROM T_BOUH_BOO WHERE name = "\:bim"'
             )
         );
+    }
+
+    public function testPrepareShouldNotReuseAStatementPreparedOnAnotherDatabase()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->error = '';
+        $mysqli->method('real_connect')->willReturn(true);
+        $mysqli->method('select_db')->willReturn(true);
+        $mysqli->method('prepare')->willReturnCallback(fn () => $this->createStub(MysqliStatement::class));
+
+        $driver = new Driver($mysqli);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $sql = 'SELECT * FROM T_BOUH_BOO WHERE id = :id';
+
+        // One driver serves every database of a server: a statement is bound to the database selected when prepared
+        $driver->setDatabase('db1');
+        $statementDb1 = $driver->prepare($sql);
+        $driver->setDatabase('db2');
+        $statementDb2 = $driver->prepare($sql);
+
+        $this->assertNotSame($statementDb1, $statementDb2);
+        $this->assertSame($statementDb2, $driver->prepare($sql));
+        $driver->setDatabase('db1');
+        $this->assertSame($statementDb1, $driver->prepare($sql));
+
+        $collection = $this->createStub(CollectionInterface::class);
+        $collection->method('set')->willReturnCallback(function ($result) use (&$outerResult): void {
+            $outerResult = $result;
+        });
+        $statementDb2->setCollectionWithResult((new MysqliResult([]))->setFields([]), $collection);
+        $this->assertSame('db2', $outerResult->getDatabase());
+    }
+
+    public function testCloseStatementShouldCloseTheStatementOfEveryDatabase()
+    {
+        $prepareCalls = 0;
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->error = '';
+        $mysqli->method('real_connect')->willReturn(true);
+        $mysqli->method('select_db')->willReturn(true);
+        $mysqli->method('prepare')->willReturnCallback(function () use (&$prepareCalls) {
+            $prepareCalls++;
+
+            return $this->createStub(MysqliStatement::class);
+        });
+
+        $driver = new Driver($mysqli);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $sql = 'SELECT * FROM T_BOUH_BOO WHERE id = :id';
+
+        $driver->setDatabase('db1');
+        $driver->prepare($sql);
+        $driver->setDatabase('db2');
+        $driver->prepare($sql);
+
+        // The name given by PreparedQuery::getStatementName() and closed by the UnitOfWork
+        $driver->closeStatement(sha1($sql));
+
+        $driver->prepare($sql);
+        $driver->setDatabase('db1');
+        $driver->prepare($sql);
+        $this->assertSame(4, $prepareCalls);
+        $this->assertThrows(Exception::class, function () use ($driver): void {
+            $driver->closeStatement(sha1('SELECT 1'));
+        });
     }
 
     public function testEscapeFieldShouldEscapeField()
