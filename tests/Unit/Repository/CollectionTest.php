@@ -32,9 +32,11 @@ use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\Hydrator;
 use CCMBenchmark\Ting\Repository\HydratorArray;
+use CCMBenchmark\Ting\Repository\HydratorInterface;
 use CCMBenchmark\Ting\Repository\HydratorSingleObject;
 use CCMBenchmark\Ting\Repository\HydratorValueObject;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\FakeDriver\MysqliResult;
 
@@ -229,6 +231,84 @@ class CollectionTest extends TestCase
         $collection->set($result);
 
         $this->assertEquals('[{"prenom":"Bob"}]', json_encode($collection));
+    }
+
+    public function testFirstInsideAForeachShouldNotDisturbTheIteration()
+    {
+        $services = new TingServices();
+        $hydrators = [
+            'array' => static fn () => new HydratorArray(),
+            'hydrator' => static fn () => $services->hydrator(),
+            'relational' => static fn () => $services->hydratorRelational(),
+        ];
+
+        foreach ($hydrators as $name => $hydrator) {
+            foreach (['live' => false, 'cached' => true] as $source => $fromCache) {
+                $collection = $this->createCollectionOf3Rows($hydrator(), $fromCache);
+                $seen = [];
+                $firsts = [];
+                foreach ($collection as $row) {
+                    $seen[] = $this->firstnameOf($row);
+                    $firsts[] = $this->firstnameOf($collection->first());
+                    if (count($seen) > 3) {
+                        break;
+                    }
+                }
+
+                $this->assertSame(['Xavier', 'Sylvain', 'Bob'], $seen, "$name, $source");
+                $this->assertSame(['Xavier', 'Xavier', 'Xavier'], $firsts, "$name, $source");
+            }
+        }
+    }
+
+    public function testFirstShouldNotStartTheIterationFromItsSecondItem()
+    {
+        $collection = $this->createCollectionOf3Rows(new HydratorArray(), false);
+
+        $this->assertSame('Xavier', $this->firstnameOf($collection->first()));
+        $this->assertSame(['Xavier', 'Sylvain', 'Bob'], array_map($this->firstnameOf(...), iterator_to_array($collection)));
+        $this->assertSame('Xavier', $this->firstnameOf($collection->first()));
+    }
+
+    public function testCountInsideAForeachOverACachedCollectionShouldNotEndTheIteration()
+    {
+        $collection = $this->createCollectionOf3Rows(new HydratorArray(), true);
+        $seen = [];
+        $counts = [];
+        foreach ($collection as $row) {
+            $seen[] = $this->firstnameOf($row);
+            $counts[] = count($collection);
+        }
+
+        $this->assertSame(['Xavier', 'Sylvain', 'Bob'], $seen);
+        $this->assertSame([3, 3, 3], $counts);
+    }
+
+    private function createCollectionOf3Rows(HydratorInterface $hydrator, bool $fromCache): Collection
+    {
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($this->createMysqliResult([['Xavier'], ['Sylvain'], ['Bob']], ['prenom' => 'firstname']));
+
+        $collection = new Collection($hydrator);
+        if ($fromCache) {
+            $live = new Collection();
+            $live->set($result);
+            $collection->fromCache($live->toCache());
+        } else {
+            $collection->set($result);
+        }
+
+        return $collection;
+    }
+
+    /**
+     * @param array|null $row from HydratorArray, or from Hydrator(Relational): the unmapped column in the key 0
+     */
+    private function firstnameOf(?array $row): ?string
+    {
+        return $row === null ? null : ($row['prenom'] ?? $row[0]->prenom);
     }
 
     /**

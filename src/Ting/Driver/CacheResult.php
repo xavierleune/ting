@@ -25,6 +25,7 @@
 
 namespace CCMBenchmark\Ting\Driver;
 
+use Countable;
 use Iterator;
 
 class CacheResult implements ResultInterface
@@ -133,6 +134,11 @@ class CacheResult implements ResultInterface
 
     public function getNumRows(): int
     {
-        return $this->result !== null ? iterator_count($this->result) : 0;
+        if ($this->result === null) {
+            return 0;
+        }
+
+        // iterator_count() would move the cursor of an iteration in progress
+        return $this->result instanceof Countable ? count($this->result) : iterator_count($this->result);
     }
 }

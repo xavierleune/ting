@@ -83,9 +83,10 @@ class MysqliResult implements ResultInterface
         return $this->data;
     }
 
-    public function data_seek()
+    public function data_seek($offset)
     {
-
+        $this->offset = $offset;
+        return true;
     }
 
     public function fetch_array($type)
