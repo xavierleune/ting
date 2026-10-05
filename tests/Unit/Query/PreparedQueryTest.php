@@ -41,9 +41,11 @@ class PreparedQueryTest extends TestCase
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
+        $mockMysqliStatement = $this->createStub(MysqliStatement::class);
+        $mockStatement = new Statement($mockMysqliStatement, [], 'connectionName', 'database');
 
         $mockConnection->expects($this->once())->method('slave')->willReturn($mockDriver);
-        $mockDriver->expects($this->once())->method('prepare')->willReturn(true);
+        $mockDriver->expects($this->once())->method('prepare')->willReturn($mockStatement);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
         $this->assertSame($query, $query->prepareQuery());
@@ -53,9 +55,11 @@ class PreparedQueryTest extends TestCase
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
+        $mockMysqliStatement = $this->createStub(MysqliStatement::class);
+        $mockStatement = new Statement($mockMysqliStatement, [], 'connectionName', 'database');
 
         $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
-        $mockDriver->expects($this->once())->method('prepare')->willReturn(true);
+        $mockDriver->expects($this->once())->method('prepare')->willReturn($mockStatement);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
         $query->selectMaster(true);
@@ -67,9 +71,11 @@ class PreparedQueryTest extends TestCase
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
+        $mockMysqliStatement = $this->createStub(MysqliStatement::class);
+        $mockStatement = new Statement($mockMysqliStatement, [], 'connectionName', 'database');
 
         $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
-        $mockDriver->expects($this->once())->method('prepare')->willReturn(true);
+        $mockDriver->expects($this->once())->method('prepare')->willReturn($mockStatement);
 
         $query = new PreparedQuery('SELECT', $mockConnection);
         $query->selectMaster(true);

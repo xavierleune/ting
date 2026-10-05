@@ -64,13 +64,13 @@ class GeneratorTest extends TestCase
                 parent::__construct($connectionPool, $name, $database);
             }
 
-            public function master()
+            public function master(): DriverInterface
             {
                 $this->calls['master']++;
                 return $this->driver;
             }
 
-            public function slave()
+            public function slave(): DriverInterface
             {
                 $this->calls['slave']++;
                 return $this->driver;
@@ -82,7 +82,7 @@ class GeneratorTest extends TestCase
             /** @var list<array> */
             public array $getCalls = [];
 
-            public function get($sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null)
+            public function get($sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): Query
             {
                 $this->getCalls[] = [$sql, $connection, $collectionFactory];
                 return parent::get($sql, $connection, $collectionFactory);
@@ -239,7 +239,7 @@ class GeneratorTest extends TestCase
         );
         $this->assertInstanceOf(
             Query::class,
-            $generator->getByCriteriaWithOrderAndLimit(
+            $generator->getByCriteria(
                 ['name' => ['Xavier', 'Olivier']],
                 $services->get('CollectionFactory'),
                 true,
@@ -262,7 +262,7 @@ class GeneratorTest extends TestCase
         );
         $this->assertInstanceOf(
             Query::class,
-            $generator->getByCriteriaWithOrderAndLimit(
+            $generator->getByCriteria(
                 ['name' => ['Xavier', 'Olivier']],
                 $services->get('CollectionFactory'),
                 true,
