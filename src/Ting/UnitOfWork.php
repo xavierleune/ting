@@ -156,10 +156,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     public function detach(NotifyPropertyInterface $entity): void
     {
-        $hash = spl_object_hash($entity);
-        if ($this->entitiesShouldBePersisted[$hash]) {
-            unset($this->entitiesShouldBePersisted[$hash]);
-        }
+        unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
         $this->entitiesChanged->offsetUnset($entity);
         $this->entities->offsetUnset($entity);
     }

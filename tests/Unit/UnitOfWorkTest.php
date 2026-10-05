@@ -193,6 +193,23 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->shouldBePersisted($mockEntity));
     }
 
+    public function testDetachAManagedEntityNotQueuedShouldStopManagingIt()
+    {
+        $entity = new Bouh();
+
+        $unitOfWork = new UnitOfWork(
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
+        );
+        $unitOfWork->manage($entity);
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+
+        $unitOfWork->detach($entity);
+
+        $this->assertFalse($unitOfWork->isManaged($entity));
+    }
+
     public function testDetachAll()
     {
         $entity1 = new Bouh();
