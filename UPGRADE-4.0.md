@@ -103,6 +103,14 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
   computed, which also stores it. `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
 * Values stored by doctrine/cache cannot be read by the new pools: expect a cold cache after upgrading.
 
+Util\Debug
+----------
+
+* `Debug::export()` and `Debug::dump()` describe objects as arrays (`['__CLASS__' => ..., 'property' => ...]`)
+  instead of cloned objects: typed properties can't hold the exported values. Property listeners are still left out,
+  and uninitialized properties are skipped.
+* For a quick look at an entity, `var_dump($entity)` is enough: `NotifyProperty::__debugInfo()` hides the listeners.
+
 Generator
 ---------
 
