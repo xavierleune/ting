@@ -26,6 +26,7 @@
 
 namespace CCMBenchmark\Ting\Cache;
 
+use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
 use Symfony\Contracts\Cache\CacheInterface as SymfonyCacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
@@ -37,11 +38,23 @@ class Cache implements CacheInterface
 {
     private ?CacheLoggerInterface $logger = null;
 
-    private SymfonyCacheInterface $cache;
+    private ?SymfonyCacheInterface $cache = null;
 
     public function setCache(SymfonyCacheInterface $cache): void
     {
         $this->cache = $cache;
+    }
+
+    /**
+     * @throws ConfigException when setCache() has not been called
+     */
+    private function pool(): SymfonyCacheInterface
+    {
+        if ($this->cache === null) {
+            throw new ConfigException('No cache pool: call Cache::setCache() first');
+        }
+
+        return $this->cache;
     }
 
     /**
@@ -83,10 +96,11 @@ class Cache implements CacheInterface
      */
     public function get(string $key, callable $callback, ?float $beta = null, ?array &$metadata = null): mixed
     {
+        $pool = $this->pool();
         $this->log(CacheLoggerInterface::OPERATION_GET, $key);
         $miss = false;
         try {
-            return $this->cache->get(
+            return $pool->get(
                 $key,
                 function (ItemInterface $item, bool &$save) use ($callback, &$miss): mixed {
                     $miss = true;
@@ -106,8 +120,9 @@ class Cache implements CacheInterface
      */
     public function delete(string $key): bool
     {
+        $pool = $this->pool();
         $this->log(CacheLoggerInterface::OPERATION_DELETE, $key);
-        $result = $this->cache->delete($key);
+        $result = $pool->delete($key);
         $this->stopLog();
 
         return $result;
