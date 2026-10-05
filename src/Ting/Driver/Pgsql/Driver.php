@@ -76,6 +76,12 @@ class Driver implements DriverInterface
     protected array $preparedQueries = [];
 
     /**
+     * Names of the statements forgotten when the connection was reset, that closeStatement() still accepts
+     * @var array<string, true>
+     */
+    protected array $forgottenPreparedQueries = [];
+
+    /**
      * @var string
      */
     protected $dsn;
@@ -121,6 +127,7 @@ class Driver implements DriverInterface
         if ($this->connection !== null) {
             pg_close($this->connection);
             $this->connection = null;
+            $this->forgetPreparedQueries();
         }
 
         return $this;
@@ -485,10 +492,24 @@ class Driver implements DriverInterface
      */
     public function closeStatement(string $statement): void
     {
-        if (isset($this->preparedQueries[$statement]) === false) {
+        if (!isset($this->preparedQueries[$statement]) && !isset($this->forgottenPreparedQueries[$statement])) {
             throw new StatementException('Cannot close non prepared statement');
         }
-        unset($this->preparedQueries[$statement]);
+        unset($this->preparedQueries[$statement], $this->forgottenPreparedQueries[$statement]);
+    }
+
+    /**
+     * The prepared statements live in the server session: forget them when the connection is reset or closed
+     */
+    private function forgetPreparedQueries(): void
+    {
+        foreach ($this->preparedQueries as $statementName => $statement) {
+            if ($statement instanceof Statement) {
+                $statement->detach();
+            }
+            $this->forgottenPreparedQueries[$statementName] = true;
+        }
+        $this->preparedQueries = [];
     }
 
     /**
@@ -499,7 +520,12 @@ class Driver implements DriverInterface
     {
         $this->validateConnection();
 
+        // pg_ping() re-establishes a lost connection: the new backend has none of the prepared statements
+        $backendPid = pg_get_pid($this->connection);
         $result = pg_ping($this->connection);
+        if ($result === false || pg_get_pid($this->connection) !== $backendPid) {
+            $this->forgetPreparedQueries();
+        }
 
         if ($result && $this->currentCharset !== null) {
             pg_set_client_encoding($this->connection, $this->currentCharset);
@@ -530,6 +556,7 @@ class Driver implements DriverInterface
     public function reconnect(): bool
     {
         $this->connection = null;
+        $this->forgetPreparedQueries();
         try {
             $this->setDatabase($this->database);
             if ($this->currentTimezone !== null) {

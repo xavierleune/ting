@@ -226,6 +226,37 @@ class StatementTest extends TestCase
         $this->assertNull($thrown);
     }
 
+    public function testDetachedStatementShouldNotDeallocateNorExecute()
+    {
+        $calls = 0;
+        NativeFunctionMock::override('pg_query', function () use (&$calls): bool {
+            $calls++;
+
+            return true;
+        });
+        NativeFunctionMock::override('pg_execute', function () use (&$calls): bool {
+            $calls++;
+
+            return true;
+        });
+
+        $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+        $statement->setConnection('reset connection');
+        $statement->detach();
+
+        $this->assertThrows(
+            QueryException::class,
+            function () use ($statement): void {
+                $statement->execute([]);
+            },
+            'The prepared statement MyStatementName is no longer valid: the connection was reset, prepare it again'
+        );
+        unset($statement);
+
+        // The DEALLOCATE would run on the new session, where a statement of the same name may have been prepared
+        $this->assertSame(0, $calls);
+    }
+
     public function testExecuteShouldReturnTrueIfNoError()
     {
         NativeFunctionMock::override('pg_execute', true);
