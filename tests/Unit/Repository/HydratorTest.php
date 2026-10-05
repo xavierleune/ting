@@ -966,6 +966,42 @@ class HydratorTest extends TestCase
         $this->assertInstanceOf(\tests\fixtures\model\CitySecond::class, $data['cit']);
     }
 
+    public function testObjectDatabaseIsShouldOnlyApplyToItsAlias()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        // T_CITY_CIT is City in bouh_world and CitySecond in bouh_world_2: only cit2 lives in bouh_world_2
+        $cit2 = [
+            $this->field('cit_id', 'cit_id', 'cit2', 'T_CITY_CIT', MYSQLI_TYPE_LONG),
+            $this->field('cit_name', 'cit_name', 'cit2', 'T_CITY_CIT'),
+        ];
+        $cit = [
+            $this->field('cit_id', 'cit_id', 'cit', 'T_CITY_CIT', MYSQLI_TYPE_LONG),
+            $this->field('cit_name', 'cit_name', 'cit', 'T_CITY_CIT'),
+        ];
+
+        foreach ([[...$cit2, ...$cit], [...$cit, ...$cit2]] as $fields) {
+            $mockMysqliResult = new MysqliResult([[1, 'Paris', 2, 'Lyon']]);
+            $mockMysqliResult->setFields($fields);
+
+            $result = new Result();
+            $result->setResult($mockMysqliResult);
+            $result->setConnectionName('main');
+            $result->setDatabase('bouh_world');
+
+            $hydrator = new Hydrator();
+            $hydrator->setMetadataRepository($services->metadataRepository());
+            $hydrator->setUnitOfWork($services->unitOfWork());
+            $hydrator->objectDatabaseIs('cit2', 'bouh_world_2');
+            $data = $hydrator->setResult($result)->getIterator()->current();
+
+            $this->assertInstanceOf(\tests\fixtures\model\CitySecond::class, $data['cit2']);
+            $this->assertInstanceOf(City::class, $data['cit']);
+        }
+    }
+
     public function testHydrateReturnSameResultWhenChangingPrimaryKeyOrder()
     {
         $services = new TingServices();
@@ -1352,5 +1388,17 @@ class HydratorTest extends TestCase
         $nextObject = $iterator->current()['bouh'];
         $this->assertIsString(spl_object_hash($currentObject));
         $this->assertEquals(spl_object_hash($nextObject), spl_object_hash($currentObject));
+    }
+
+    private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass
+    {
+        $field = new \stdClass();
+        $field->name     = $name;
+        $field->orgname  = $orgName;
+        $field->table    = $table;
+        $field->orgtable = $orgTable;
+        $field->type     = $type;
+
+        return $field;
     }
 }

@@ -279,13 +279,11 @@ class Hydrator implements HydratorInterface
 
             // We have the information table, it's not a virtual column like COUNT(*)
             if (isset($result[$column['table']]) === false && isset($this->metadataList[$column['table']]) === false) {
-                if (isset($this->objectDatabase[$column['table']])) {
-                    $database = $this->objectDatabase[$column['table']];
-                }
                 $schema = $this->extractSchemaFromColumn($column);
                 $this->metadataRepository->findMetadataForTable(
                     $connectionName,
-                    $database,
+                    // objectDatabaseIs() applies to its alias only, not to the tables read after it
+                    $this->objectDatabase[$column['table']] ?? $database,
                     $schema,
                     $column['orgTable'],
 
