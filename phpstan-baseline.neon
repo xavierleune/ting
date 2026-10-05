@@ -1,0 +1,56 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method CCMBenchmark\\Ting\\Driver\\Pgsql\\Driver\:\:getAffectedRows\(\) should return int\<0, max\> but returns int\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Ting/Driver/Pgsql/Driver.php
+
+		-
+			message: '#^Offset ''table'' might not exist on array\{complex\: bool, column\: string, table\?\: string, alias\?\: non\-falsy\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Ting/Driver/Pgsql/Result.php
+
+		-
+			message: '#^Trait CCMBenchmark\\Ting\\Entity\\NotifyProperty is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: src/Ting/Entity/NotifyProperty.php
+
+		-
+			message: '#^Parameter \#1 \$repositoryClass of method CCMBenchmark\\Ting\\MetadataRepository\:\:addMetadata\(\) expects class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<object\>\>, \(int\|string\) given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Ting/MetadataRepository.php
+
+		-
+			message: '#^Parameter \#1 \$repositoryClass of method CCMBenchmark\\Ting\\MetadataRepository\:\:addMetadata\(\) expects class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<object\>\>, class\-string\<CCMBenchmark\\Ting\\Repository\\MetadataInitializer\>\|class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<mixed\>\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Ting/MetadataRepository.php
+
+		-
+			message: '#^Generator expects value type stdClass\|T, array\<int, stdClass\|T\> given\.$#'
+			identifier: generator.valueType
+			count: 1
+			path: src/Ting/Repository/Hydrator.php
+
+		-
+			message: '#^Property CCMBenchmark\\Ting\\Repository\\Metadata\<T\>\:\:\$fields \(array\<string, array\{fieldName\: string, columnName\: string, type\: string, primary\?\: bool, autoincrement\?\: bool, serializer\?\: class\-string\<CCMBenchmark\\Ting\\Serializer\\SerializerInterface\>, serializer_options\?\: array\{serialize\?\: array\<mixed\>, unserialize\?\: array\<mixed\>\}, setter\?\: string, \.\.\.\}\>\) does not accept non\-empty\-array\<non\-empty\-array\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Ting/Repository/Metadata.php
+
+		-
+			message: '#^Property CCMBenchmark\\Ting\\Repository\\Metadata\<T\>\:\:\$fieldsByProperty \(array\<string, array\{fieldName\: string, columnName\: string, type\: string, primary\?\: bool, autoincrement\?\: bool, serializer\?\: class\-string\<CCMBenchmark\\Ting\\Serializer\\SerializerInterface\>, serializer_options\?\: array\{serialize\?\: array\<mixed\>, unserialize\?\: array\<mixed\>\}, setter\?\: string, \.\.\.\}\>\) does not accept non\-empty\-array\<non\-empty\-array\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Ting/Repository/Metadata.php
+
+		-
+			message: '#^Parameter \#1 \$object_or_class of function method_exists expects object\|string, array\|object given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Ting/Util/PropertyAccessor.php
+

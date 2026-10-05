@@ -32,36 +32,32 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 
 class Statement implements StatementInterface
 {
-    protected $connection    = null;
-    protected $paramsOrder   = [];
-    protected $queryType     = null;
-    protected $query         = null;
+    /**
+     * @var \PgSql\Connection|null
+     */
+    protected $connection = null;
+    protected ?string $query = null;
+
+    protected ?DriverLoggerInterface $logger = null;
 
     /**
-     * @var DriverLoggerInterface|null
+     * @param string              $statementName
      */
-    protected $logger = null;
-
-    /**
-     * Statement constructor.
-     *
-     * @param \mysqli_stmt|Object $statementName
-     * @param array               $paramsOrder
-     * @param string              $connectionName
-     * @param string              $database
-     */
-    public function __construct(protected $statementName, array $paramsOrder, protected $connectionName, protected $database)
-    {
-        $this->paramsOrder    = $paramsOrder;
+    public function __construct(
+        protected $statementName,
+        protected array $paramsOrder,
+        protected string $connectionName,
+        protected string $database
+    ) {
     }
 
     /**
-     * @param $connection
+     * @param \PgSql\Connection $connection
      * @return $this
      *
      * @internal
      */
-    public function setConnection($connection)
+    public function setConnection($connection): static
     {
         $this->connection = $connection;
 
@@ -69,14 +65,11 @@ class Statement implements StatementInterface
     }
 
     /**
-     * @param $query
-     * @return $this
-     *
      * @internal
      */
-    public function setQuery($query)
+    public function setQuery(string $query): static
     {
-        $this->query = (string) $query;
+        $this->query = $query;
 
         return $this;
     }
@@ -85,7 +78,7 @@ class Statement implements StatementInterface
      * @param DriverLoggerInterface $logger
      * @return void
      */
-    public function setLogger(?DriverLoggerInterface $logger = null)
+    public function setLogger(?DriverLoggerInterface $logger = null): void
     {
         $this->logger = $logger;
     }
@@ -95,10 +88,9 @@ class Statement implements StatementInterface
      * Execute the actual statement with the given parameters
      * @param array               $params
      * @param CollectionInterface $collection
-     * @return bool|mixed
      * @throws QueryException
      */
-    public function execute(array $params, ?CollectionInterface $collection = null)
+    public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
     {
         $values = [];
         foreach (array_keys($this->paramsOrder) as $key) {
@@ -114,7 +106,7 @@ class Statement implements StatementInterface
         }
 
         if ($result === false) {
-            throw new QueryException(pg_errormessage($this->connection));
+            throw new QueryException(pg_last_error($this->connection));
         }
 
         if ($collection !== null) {
@@ -125,14 +117,12 @@ class Statement implements StatementInterface
     }
 
     /**
-     * @param $resultResource
-     * @param CollectionInterface $collection
-     * @return bool
+     * @param \PgSql\Result $resultResource
      * @throws QueryException
      *
      * @internal
      */
-    public function setCollectionWithResult($resultResource, ?CollectionInterface $collection = null)
+    public function setCollectionWithResult($resultResource, ?CollectionInterface $collection = null): bool
     {
         $result = new Result();
         $result->setConnectionName($this->connectionName);
@@ -147,7 +137,7 @@ class Statement implements StatementInterface
     /**
      * Deallocate the current prepared statement
      */
-    protected function close()
+    protected function close(): void
     {
         pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"');
     }

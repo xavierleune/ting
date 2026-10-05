@@ -25,6 +25,8 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+use stdClass;
+
 class Json implements SerializerInterface
 {
     public const JSON_DEFAULT_DEPTH   = 512;
@@ -33,30 +35,21 @@ class Json implements SerializerInterface
     /**
      * @param mixed $toSerialize
      * @param array $options
-     * @return string|null
      * @throws RuntimeException
      */
-    public function serialize($toSerialize, array $options = [])
+    public function serialize($toSerialize, array $options = []): ?string
     {
         if ($toSerialize === null) {
             return null;
         }
 
-        if (isset($options['options']) === true) {
-            $jsonOptions = $options['options'];
-        } else {
-            $jsonOptions = self::JSON_DEFAULT_OPTIONS;
-        }
+        $jsonOptions = isset($options['options']) === true ? $options['options'] : self::JSON_DEFAULT_OPTIONS;
 
-        if (isset($options['depth']) === true) {
-            $jsonDepth = $options['depth'];
-        } else {
-            $jsonDepth = self::JSON_DEFAULT_DEPTH;
-        }
+        $jsonDepth = isset($options['depth']) === true ? $options['depth'] : self::JSON_DEFAULT_DEPTH;
 
         $json = json_encode($toSerialize, $jsonOptions, $jsonDepth);
 
-        if (json_last_error() !== JSON_ERROR_NONE) {
+        if ($json === false || json_last_error() !== JSON_ERROR_NONE) {
             throw new RuntimeException('Could not convert value to json. Error was : ' . json_last_error_msg());
         }
 
@@ -64,34 +57,22 @@ class Json implements SerializerInterface
     }
 
     /**
-     * @param string $serialized
+     * @param string|null $serialized
      * @param array $options
+     * @return null|stdClass|array<mixed>
      * @throws RuntimeException
-     * @return mixed
      */
-    public function unserialize($serialized, array $options = [])
+    public function unserialize($serialized, array $options = []): mixed
     {
         if ($serialized === null) {
             return null;
         }
 
-        if (isset($options['assoc']) === true) {
-            $jsonAssoc = $options['assoc'];
-        } else {
-            $jsonAssoc = false;
-        }
+        $jsonAssoc = isset($options['assoc']) === true ? $options['assoc'] : false;
 
-        if (isset($options['depth']) === true) {
-            $jsonDepth = $options['depth'];
-        } else {
-            $jsonDepth = self::JSON_DEFAULT_DEPTH;
-        }
+        $jsonDepth = isset($options['depth']) === true ? $options['depth'] : self::JSON_DEFAULT_DEPTH;
 
-        if (isset($options['options']) === true) {
-            $jsonOptions = $options['options'];
-        } else {
-            $jsonOptions = self::JSON_DEFAULT_OPTIONS;
-        }
+        $jsonOptions = isset($options['options']) === true ? $options['options'] : self::JSON_DEFAULT_OPTIONS;
 
         $value = json_decode($serialized, $jsonAssoc, $jsonDepth, $jsonOptions);
 

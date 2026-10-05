@@ -1,8 +1,31 @@
-Unreleased:
-    * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence() (backport from 4.0.0-rc.1)
-    * Drop Symfony 6 and PHP 8.1 support, PHP >= 8.2 is now required
-    * Add Symfony 8 support
+4.0.0 (unreleased):
+    * BC PHP 8.1 dropped, minimum version is now PHP 8.2
+    * BC Symfony 6 dropped, add Symfony 8 support
+    * BC Remove constructors from Interfaces (Liskov Substitution Principle violation)
+    * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
+    * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit
+
+4.0.0-rc.1 (2025-12-15):
+    * BC PHP 8.0 dropped, minimum version is now PHP 8.1
+    * BC All classes now fully typehinted with strict types and return types
+    * BC Pgsql Driver now uses native PHP 8.1+ PgSql\Connection and PgSql\Result classes instead of resources
+    * BC Serialization interfaces typehinted: SerializeInterface::serialize() and UnserializeInterface::unserialize()
+    * BC Added ping() and setTimezone() methods to DriverInterface
+    * BC Added ConnectionPoolInterface::setDatabaseOptions() method
+    * BC Deleted Metadata::getGetter() and Metadata::getSetter() methods
+    * BC Deleted deprecated getInsertId() methods on Mysqli and Pgsql drivers (use getInsertedId() instead)
+    * BC Deleted deprecated getInsertIdForSequence() on Pgsql driver (use getInsertedIdForSequence() instead)
+    * BC Deleted deprecated getInsertId() on QueryInterface and Query class (use getInsertedId() instead)
+    * BC Deleted Generator::getByCriteriaWithOrderAndLimit(), merged into Generator::getByCriteria() with $order and $limit parameters
+    * BC Deleted UnitOfWork::generateUid() and UnitOfWork::generateUUID() methods
+    * New feature: HydratorValueObject allows hydrating simple objects without metadata using native fetch_object() methods
+    * New feature: ResultInterface now exposes fetchObject() method for value object hydration
+    * Improvement: UnitOfWork now uses WeakMap exclusively for internal entity storage (enhanced from PHP 8.0 implementation)
+    * Improvement: PHPStan analysis raised to level 7 with baseline significantly reduced (from ~2200 to <50 errors)
+    * Improvement: Type coverage tool added (tomasvotruba/type-coverage) with minimum thresholds: 97% return types, 85% param types, 83% property types
+    * Improvement: Rector configuration added for automated refactoring and code quality improvements (targeting PHP 8.0+)
+    * Improvement: PHPStan custom extension for properties (CCMBenchmark\Ting\PHPStan\PropertiesExtension)
 
 3.13.0 (2026-09-24):
     * Drop PHP 8.0 support, PHP >= 8.1 is now required

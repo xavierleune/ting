@@ -30,31 +30,19 @@ use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 
 interface ConnectionPoolInterface
 {
-    /**
-     * @param DriverLoggerInterface $logger
-     */
-    public function __construct(DriverLoggerInterface $logger);
+    public function setConfig(array $config): void;
 
     /**
-     * @param array $config
-     */
-    public function setConfig($config);
-
-    /**
-     * @param string $name
-     * @param string $database
-     * @return DriverInterface
      * @throws Exception
      */
-    public function master($name, $database);
+    public function master(string $name, string $database): DriverInterface;
 
     /**
-     * @param string $name
-     * @param string $database
-     * @return DriverInterface
      * @throws Exception
      */
-    public function slave($name, $database);
+    public function slave(string $name, string $database): DriverInterface;
 
-    public function closeAll();
+    public function closeAll(): void;
+
+    public function setDatabaseOptions(array $options): void;
 }

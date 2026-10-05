@@ -38,14 +38,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public const STATE_NEW     = 1;
     public const STATE_MANAGED = 2;
     public const STATE_DELETE  = 3;
-
-    protected $connectionPool            = null;
-    protected $metadataRepository        = null;
-    protected $queryFactory              = null;
+    /** @var WeakMap<NotifyPropertyInterface, NotifyPropertyInterface|bool> */
     protected WeakMap $entities;
+    /** @var WeakMap<NotifyPropertyInterface, array<string, array<mixed, mixed>>>  */
     protected WeakMap $entitiesChanged;
-    protected array $entitiesShouldBePersisted;
-    protected $statements = [];
+    protected array $entitiesShouldBePersisted = [];
+    /** @var array<string, array<string, DriverInterface>>  */
+    protected array $statements = [];
 
     /**
      * @param ConnectionPool        $connectionPool
@@ -53,35 +52,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * @param QueryFactoryInterface $queryFactory
      */
     public function __construct(
-        ConnectionPool $connectionPool,
-        MetadataRepository $metadataRepository,
-        QueryFactoryInterface $queryFactory
+        protected ConnectionPool $connectionPool,
+        protected MetadataRepository $metadataRepository,
+        protected QueryFactoryInterface $queryFactory
     ) {
-        $this->connectionPool     = $connectionPool;
-        $this->metadataRepository = $metadataRepository;
-        $this->queryFactory       = $queryFactory;
         $this->entities = new WeakMap();
         $this->entitiesChanged = new WeakMap();
-        $this->entitiesShouldBePersisted = [];
-    }
-
-    /**
-     * @return string
-     */
-    protected function generateUid()
-    {
-        return uniqid(mt_rand(), true);
-    }
-
-    /**
-     * @return string
-     * @deprecated generateUUID() method is deprecated as of version 3.6 of Ting and will be removed in 4.0. Use generateUid() instead.
-     */
-    protected function generateUUID()
-    {
-        error_log(sprintf('%s::generateUUID() method is deprecated as of version 3.6 of Ting and will be removed in 4.0. Use %s::generateUid() instead.', self::class, self::class), E_USER_DEPRECATED);
-
-        return $this->generateUid();
     }
 
     /**
@@ -114,21 +90,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function isNew(NotifyPropertyInterface $entity): bool
     {
         $hash = spl_object_hash($entity);
-        if (isset($this->entitiesShouldBePersisted[$hash]) === true
-            && $this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_NEW
-        ) {
-            return true;
-        }
-        return false;
+        return isset($this->entitiesShouldBePersisted[$hash])
+            && $this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_NEW;
     }
 
     /**
      * Flag the entity to be persisted (insert or update) on next process
-     *
-     * @param NotifyPropertyInterface $entity
-     * @return $this
      */
-    public function pushSave(NotifyPropertyInterface $entity): self
+    public function pushSave(NotifyPropertyInterface $entity): static
     {
         $state = self::STATE_MANAGED;
 
@@ -150,20 +119,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function shouldBePersisted(NotifyPropertyInterface $entity): bool
     {
         $hash = spl_object_hash($entity);
-        if (isset($this->entitiesShouldBePersisted[$hash]) === true) {
-            return true;
-        }
-
-        return false;
+        return isset($this->entitiesShouldBePersisted[$hash]);
     }
 
-    /**
-     * @param NotifyPropertyInterface $entity
-     * @param string $propertyName
-     * @param mixed $oldValue
-     * @param mixed $newValue
-     */
-    public function propertyChanged(NotifyPropertyInterface $entity, $propertyName, $oldValue, $newValue): void
+    public function propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue, mixed $newValue): void
     {
         if ($oldValue === $newValue) {
             return;
@@ -187,11 +146,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     public function isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName): bool
     {
-        if (isset($this->entitiesChanged[$entity][$propertyName]) === true) {
-            return true;
-        }
-
-        return false;
+        return isset($this->entitiesChanged[$entity][$propertyName]);
     }
 
     /**
@@ -230,11 +185,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * Flag the entity to be deleted on next process
-     *
-     * @param NotifyPropertyInterface $entity
-     * @return $this
      */
-    public function pushDelete(NotifyPropertyInterface $entity)
+    public function pushDelete(NotifyPropertyInterface $entity): static
     {
         $hash = spl_object_hash($entity);
         $this->entitiesShouldBePersisted[$hash] = ['state' => self::STATE_DELETE, 'entity' => $entity];
@@ -252,13 +204,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function shouldBeRemoved(NotifyPropertyInterface $entity): bool
     {
         $hash = spl_object_hash($entity);
-        if (isset($this->entitiesShouldBePersisted[$hash]) === true
-            && $this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_DELETE
-        ) {
-            return true;
-        }
-
-        return false;
+        return isset($this->entitiesShouldBePersisted[$hash])
+            && $this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_DELETE;
     }
 
     /**
@@ -344,7 +291,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * Insert all applicable entities in database
-     * @param  string $hash
+     * @param  NotifyPropertyInterface $entity
      * @throws Exception
      * @throws QueryException
      */
@@ -413,7 +360,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         );
     }
 
-    protected function addStatementToClose($statementName, DriverInterface $connection): void
+    protected function addStatementToClose(string $statementName, DriverInterface $connection): void
     {
         if (isset($this->statements[$statementName]) === false) {
             $this->statements[$statementName] = [];

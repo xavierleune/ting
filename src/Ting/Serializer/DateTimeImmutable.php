@@ -25,6 +25,9 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+use DateTimeInterface;
+use Exception;
+
 class DateTimeImmutable implements SerializerInterface
 {
     /**
@@ -33,16 +36,15 @@ class DateTimeImmutable implements SerializerInterface
      * unSerializeUseFormat => if false, any valid datetime format is automatically used
      * @see http://php.net/manual/en/datetime.formats.compound.php
      */
-    private static $defaultOptions = ['format' => \DateTimeInterface::ATOM, 'unSerializeUseFormat' => true];
-    private static $deserialisationFormat = 'Y-m-d\TH:i:sO';
+    private static array $defaultOptions = ['format' => DateTimeInterface::ATOM, 'unSerializeUseFormat' => true];
 
     /**
-     * @param \DateTime $toSerialize
+     * @param mixed $toSerialize
      * @param array $options
      * @return string|null
      * @throws RuntimeException
      */
-    public function serialize($toSerialize, array $options = []): ?string
+    public function serialize(mixed $toSerialize, array $options = []): ?string
     {
         if ($toSerialize === null) {
             return null;
@@ -59,7 +61,7 @@ class DateTimeImmutable implements SerializerInterface
     }
 
     /**
-     * @param string $serialized
+     * @param string|null $serialized
      * @param array  $options
      * @return \DateTimeImmutable|null
      * @throws RuntimeException
@@ -70,7 +72,6 @@ class DateTimeImmutable implements SerializerInterface
             return null;
         }
 
-        //$this->parseSerialized($serialized);
         $options = array_merge(self::$defaultOptions, $options);
         if ($options['unSerializeUseFormat'] === true) {
             $value = \DateTimeImmutable::createFromFormat($options['format'], $serialized);
@@ -80,7 +81,7 @@ class DateTimeImmutable implements SerializerInterface
         } else {
             try {
                 $value = new \DateTimeImmutable($serialized);
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 throw new RuntimeException(
                     'Cannot convert ' . $serialized . ' to DateTimeImmutable. Error is : ' . $e->getMessage()
                 );

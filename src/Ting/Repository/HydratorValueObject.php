@@ -25,8 +25,8 @@
 
 namespace CCMBenchmark\Ting\Repository;
 
-use Generator;
 use CCMBenchmark\Ting\Driver\ResultInterface;
+use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\UnitOfWork;
 
@@ -35,23 +35,55 @@ use CCMBenchmark\Ting\UnitOfWork;
  *
  * @template-implements HydratorInterface<T>
  */
-class HydratorArray implements HydratorInterface
+class HydratorValueObject implements HydratorInterface
 {
+    /**
+     * @var class-string<T>
+     */
+    protected string $objectToHydrate;
+    /**
+     * @var ResultInterface<T>
+     */
     protected ?ResultInterface $result = null;
 
+
     /**
-     * @param MetadataRepository $metadataRepository
-     * @return void
+     * @param class-string<T> $objectToHydrate
      */
+    public function __construct(string $objectToHydrate)
+    {
+        $this->objectToHydrate = $objectToHydrate;
+    }
+
+    /**
+     * @return \Generator<int, T>
+     */
+    public function getIterator(): \Generator
+    {
+        $this->result->setObjectToFetch($this->objectToHydrate);
+
+        foreach ($this->result as $key => $row) {
+            yield $key => $row;
+        }
+    }
+
+    /**
+     * @return int
+     */
+    public function count(): int
+    {
+        if ($this->result === null) {
+            return 0;
+        }
+
+        return $this->result->getNumRows();
+    }
+
     public function setMetadataRepository(MetadataRepository $metadataRepository): void
     {
         // Useless for this hydrator
     }
 
-    /**
-     * @param UnitOfWork $unitOfWork
-     * @return void
-     */
     public function setUnitOfWork(UnitOfWork $unitOfWork): void
     {
         // Useless for this hydrator
@@ -61,32 +93,5 @@ class HydratorArray implements HydratorInterface
     {
         $this->result = $result;
         return $this;
-    }
-
-    /**
-     * @return Generator<int, array>
-     */
-    public function getIterator(): Generator
-    {
-        foreach ($this->result as $key => $row) {
-            $data = [];
-            foreach ($row as $column) {
-                $data[$column['name']] = $column['value'];
-            }
-
-            yield $key => $data;
-        }
-    }
-
-    /**
-     * @return int<0, max>|string
-     */
-    public function count(): int|string
-    {
-        if ($this->result === null) {
-            return 0;
-        }
-
-        return $this->result->getNumRows();
     }
 }
