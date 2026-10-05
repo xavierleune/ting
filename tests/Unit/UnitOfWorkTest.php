@@ -360,6 +360,41 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
     }
 
+    public function testProcessAnUnchangedManagedEntityShouldUnqueueIt()
+    {
+        $entity = new Bouh();
+
+        $unitOfWork = new UnitOfWork(
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
+        );
+        $unitOfWork->manage($entity);
+        $unitOfWork->pushSave($entity);
+        $this->assertTrue($unitOfWork->shouldBePersisted($entity));
+        $unitOfWork->process();
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    public function testProcessAManagedEntityWithRevertedChangesShouldUnqueueIt()
+    {
+        $entity = new Bouh();
+        $entity->setName('name');
+
+        $unitOfWork = new UnitOfWork(
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
+        );
+        $unitOfWork->manage($entity);
+        $entity->setName('newName');
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity);
+        $unitOfWork->process();
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testTryingToProcessAnEntityWithoutRepositoryShouldRaiseAnException()
     {

@@ -11,6 +11,7 @@
     * BC Fix Util\Debug, broken by typed properties since 4.0.0-rc.1: objects are now exported as arrays with a __CLASS__ key
     * Fix HydratorValueObject on cached queries (a cache hit returned raw rows): the hydrator now builds the objects itself, from the rows, with or without cache; ResultInterface::setObjectToFetch(), added in 4.0.0-rc.1, is removed
     * Fix cached prepared queries ignoring selectMaster(true): they were always prepared on a slave
+    * Fix UnitOfWork keeping a saved entity queued when it had no change: shouldBePersisted() stayed true and the entity was retained until detach/reset (leak in worker mode)
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit
