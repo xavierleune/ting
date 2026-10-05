@@ -152,6 +152,19 @@ class PreparedQueryTest extends TestCase
         $this->assertSame($query->prepareExecute(), $prepared);
     }
 
+    public function testPrepareQueryShouldUseTheMasterWhenSelected()
+    {
+        $statement = new Statement($this->createStub(MysqliStatement::class), [], 'connectionName', 'database');
+        $master = $this->createMock(Driver::class);
+        $master->expects($this->once())->method('prepare')->with('SELECT')->willReturn($statement);
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->never())->method('slave');
+        $connection->method('master')->willReturn($master);
+
+        $query = new PreparedQuery('SELECT', $connection);
+        $query->selectMaster(true)->prepareQuery();
+    }
+
     public function testExecuteShouldCallStatementExecute()
     {
         $mockConnection      = $this->createStub(Connection::class);
