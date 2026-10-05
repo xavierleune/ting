@@ -96,11 +96,20 @@ class Driver implements DriverInterface
     public function connect(string $hostname, ?string $username, ?string $password, int $port): static
     {
         // Without user or password, libpq uses its defaults (current user, .pgpass)
-        $this->dsn = 'host=' . $hostname
-            . ($username !== null ? ' user=' . $username : '')
-            . ($password !== null ? ' password=' . $password : '')
-            . ' port=' . $port;
+        $this->dsn = 'host=' . self::quoteDsnValue($hostname)
+            . ($username !== null ? ' user=' . self::quoteDsnValue($username) : '')
+            . ($password !== null ? ' password=' . self::quoteDsnValue($password) : '')
+            . ' port=' . self::quoteDsnValue((string) $port);
         return $this;
+    }
+
+    /**
+     * Quote a value of the connection string: empty values and values with spaces, quotes
+     * or backslashes are only read as a whole by libpq when single-quoted and escaped
+     */
+    private static function quoteDsnValue(string $value): string
+    {
+        return "'" . addcslashes($value, "'\\") . "'";
     }
 
     /**
@@ -150,12 +159,14 @@ class Driver implements DriverInterface
             return $this;
         }
 
-        $resource = pg_connect($this->dsn . ' dbname=' . $database);
+        $dsn = $this->dsn . ' dbname=' . self::quoteDsnValue($database);
+        $resource = pg_connect($dsn);
         $this->database = $database;
 
         if ($resource === false) {
-            $dsn = preg_replace('/((user|password)=[^\s]+)/', '$2=<REDACTED>', $this->dsn);
-            throw new DriverException('Connect Error: ' . $dsn . ' dbname=' . $database);
+            // Values are quoted by connect(): redact the whole quoted value, escaped quotes included
+            $dsn = preg_replace("/\\b(user|password)='(?:[^'\\\\]|\\\\.)*'/", '$1=<REDACTED>', $dsn);
+            throw new DriverException('Connect Error: ' . $dsn);
         }
         $this->connection = $resource;
 
