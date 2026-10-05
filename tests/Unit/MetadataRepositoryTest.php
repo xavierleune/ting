@@ -106,6 +106,22 @@ class MetadataRepositoryTest extends TestCase
         $this->assertNull($outerCallbackFound);
     }
 
+    public function testAddMetadataWithoutEntityShouldNotRegisterAnEntity()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setTable('T_BOUH_BOO');
+
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+
+        $this->assertSame([], $this->collectErrorTypes(function () use ($metadataRepository, $metadata): void {
+            $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        }));
+        $this->assertSame([], $metadataRepository->getAllEntities());
+    }
+
     public function testFindMetadataForTableShouldCallCallbackFound()
     {
         $services = new TingServices();

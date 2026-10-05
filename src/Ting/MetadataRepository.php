@@ -168,7 +168,10 @@ class MetadataRepository
         $this->tableWithConnectionToMetadata
             [$metadataConnection . '#' . $metadataTable]
             [$metadata->getSchema() . '#' . $metadata->getDatabase()] = $repositoryClass;
-        $this->entityToRepository[$metadata->getEntity()] = $repositoryClass;
+        $entity = $metadata->getEntity();
+        if ($entity !== null) {
+            $this->entityToRepository[$entity] = $repositoryClass;
+        }
     }
 
     /**
@@ -267,7 +270,7 @@ class MetadataRepository
     }
 
     /**
-     * @return int[]|string[]
+     * @return list<string>
      */
     public function getAllEntities(): array
     {

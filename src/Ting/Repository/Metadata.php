@@ -188,11 +188,11 @@ class Metadata
     }
 
     /**
-     * @return class-string<T>
+     * @return class-string<T>|null null until setEntity() is called
      *
      * @internal
      */
-    public function getEntity()
+    public function getEntity(): ?string
     {
         return $this->entity;
     }
