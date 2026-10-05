@@ -37,6 +37,7 @@ class Country implements NotifyPropertyInterface
     protected $continent = null;
     protected $region    = null;
     protected $president = null;
+    protected $countryLanguage  = null;
     protected $countryLanguages = [];
 
     public function setCode($code)
@@ -56,15 +57,9 @@ class Country implements NotifyPropertyInterface
         $this->name = (string) $name;
     }
 
-    public function getName($withUUID = false)
+    public function getName()
     {
-        $append = '';
-
-        if ($withUUID === true) {
-            $append = " (" . $this->tingUUID . ")";
-        }
-
-        return (string) $this->name . $append;
+        return (string) $this->name;
     }
 
     public function setContinent($continent)

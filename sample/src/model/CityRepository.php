@@ -25,15 +25,19 @@
 
 namespace sample\src\model;
 
+use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Repository\MetadataInitializer;
+use CCMBenchmark\Ting\Repository\Repository;
 use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
 
-class CityRepository extends \CCMBenchmark\Ting\Repository\Repository implements MetadataInitializer
+/**
+ * @extends Repository<City>
+ */
+class CityRepository extends Repository implements MetadataInitializer
 {
-    public function getZCountryWithLotsPopulation()
+    public function getZCountryWithLotsPopulation(): CollectionInterface
     {
-
         $query = $this->getQuery(
             'select cit_id, cit_name, cou_code, cit_district, cit_population
                     from t_city_cit as a where cit_name like :name and cit_population > :population limit 3'
@@ -42,15 +46,17 @@ class CityRepository extends \CCMBenchmark\Ting\Repository\Repository implements
         return $query->setParams(['name' => 'Z%', 'population' => 200000])->query();
     }
 
-    public function getNumberOfCities()
+    public function getNumberOfCities(): int
     {
-
         $query = $this->getQuery('select COUNT(*) AS nb from t_city_cit as a WHERE cit_population > :population');
 
-        return $query->setParams(['population' => 20000])->query()->first();
+        // COUNT(*) belongs to no mapped table: the default hydrator puts it in a stdClass under the key 0
+        $row = $query->setParams(['population' => 20000])->query()->first();
+
+        return (int) $row[0]->nb;
     }
 
-    public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = [])
+    public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
     {
         $metadata = new Metadata($serializerFactory);
 

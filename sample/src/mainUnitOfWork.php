@@ -25,12 +25,15 @@
 
 namespace sample\src;
 
-// ting autoloader
-require __DIR__ . '/../../vendor/autoload.php';
-// sample autoloader
+use CCMBenchmark\Ting\Exception;
+use sample\src\model\City;
+use sample\src\model\CityRepository;
+use sample\src\model\CountryLanguageRepository;
+
+// Ting and the sample are both autoloaded by the sample's own vendor (run "composer install" in sample/)
 require __DIR__ . '/../vendor/autoload.php';
 
-$services = new \sample\src\TingServices();
+$services = new TingServices();
 $repositories =
     $services
         ->metadataRepository()
@@ -66,17 +69,11 @@ $connections = [
     ]
 ];
 
-$services = new \sample\src\TingServices();
-$repositoriesNumber =
-    $services
-        ->metadataRepository()
-        ->batchLoadMetadata('sample\src\model', __DIR__ . '/model/*Repository.php');
-
 $services->connectionPool()->setConfig($connections);
 $unitOfWork = $services->unitOfWork();
 
 try {
-    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get(CityRepository::class);
     $city = $cityRepository->get(3);
     var_dump($city);
 
@@ -85,7 +82,7 @@ try {
     $city->setDistrict('Yolé');
     $unitOfWork->pushSave($city);
 
-    $city2 = new model\City();
+    $city2 = new City();
     $city2->setName('Bouh');
     $city2->setDistrict('Yo');
     $unitOfWork->pushSave($city2);
@@ -109,9 +106,9 @@ try {
 
 try {
     $countryLanguageRepository =
-        $services->repositoryFactory()->get('\sample\src\model\CountryLanguageRepository');
+        $services->repositoryFactory()->get(CountryLanguageRepository::class);
 
-    $countryLanguage = $countryLanguageRepository->get(['code' => 'AGO', 'language' => 'Kongo']);
+    $countryLanguage = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
     var_dump($countryLanguage);
 
 } catch (Exception $e) {

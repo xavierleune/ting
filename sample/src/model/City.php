@@ -39,6 +39,8 @@ class City implements NotifyPropertyInterface
     protected $population  = null;
     protected $dt          = null;
     protected $country     = null;
+    protected $tutu        = null;
+    protected $broum       = null;
 
     public function setId($id)
     {
@@ -57,15 +59,9 @@ class City implements NotifyPropertyInterface
         $this->name = (string) $name;
     }
 
-    public function getName($withUUID = false)
+    public function getName()
     {
-        $append = '';
-
-        if ($withUUID === true) {
-            $append = " (" . $this->tingUUID . ")";
-        }
-
-        return (string) $this->name . $append;
+        return (string) $this->name;
     }
 
     public function setCountryCode($countryCode)
@@ -101,7 +97,7 @@ class City implements NotifyPropertyInterface
         return (int) $this->population;
     }
 
-    public function setDt(\DateTime $dt = null)
+    public function setDt(?\DateTime $dt = null)
     {
         $this->propertyChanged('dt', $this->dt, $dt);
         $this->dt = $dt;

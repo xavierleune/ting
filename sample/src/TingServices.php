@@ -37,6 +37,7 @@ use CCMBenchmark\Ting\Repository\HydratorSingleObject;
 use CCMBenchmark\Ting\Repository\RepositoryFactory;
 use CCMBenchmark\Ting\Serializer\SerializerFactory;
 use CCMBenchmark\Ting\UnitOfWork;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 /**
  * Wires Ting objects without a framework. With Symfony, ting_bundle does it for you.
@@ -90,7 +91,13 @@ final class TingServices
 
     public function cache(): Cache
     {
-        return $this->cache ??= new Cache();
+        if ($this->cache === null) {
+            $this->cache = new Cache();
+            // Any Symfony cache pool works (Redis, Memcached, APCu...): an ArrayAdapter only lives for the process
+            $this->cache->setCache(new ArrayAdapter());
+        }
+
+        return $this->cache;
     }
 
     public function repositoryFactory(): RepositoryFactory
