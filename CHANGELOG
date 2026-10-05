@@ -26,6 +26,7 @@
     * Fix Pgsql Driver::execute() never stopping the query log when the query fails
     * Fix Mysqli prepared queries without result set (INSERT, UPDATE, DELETE) returning false on success since 4.0.0-rc.1; they return true again, as Pgsql
     * Fix Serializer\BackedEnum::serialize() returning an int for an int-backed enum since 4.0.0-rc.1; it returns a string again, as in 3.x
+    * Fix MetadataRepository registering an empty entity for a metadata without entity (PHP 8.5 deprecation "Using null as an array offset", '' listed by getAllEntities())
     * Docs: UPGRADE-4.0.md lists the typed extension points (loggers, entity listeners, Repository::getCollection()); the 4.0.0-rc.1 entry on serialization interfaces is corrected
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
