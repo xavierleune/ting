@@ -52,6 +52,7 @@
     * Fix HydratorRelational silently dropping a relation when two relations share the same source alias (since 3.x)
     * Fix Mysqli prepared queries without parameter failing with a ValueError (bind_param() called with no type)
     * Fix the Pgsql connection string built without quoting: an empty password made libpq read the next keyword ("port=...") as the password, values with spaces, quotes or backslashes broke it, and the connect error leaked the end of a password containing a space; every value is now quoted and escaped, and the user and password are fully redacted
+    * Fix Pgsql getAffectedRows() after a prepared query (PreparedQuery::getAffectedRows()): it returned the count of the last non-prepared query; the driver now reports the last query, prepared or not
     * BC HydratorRelational throws a HydratorException when the relations form a cycle (bidirectional relation, alias related to itself); they were partially ignored
     * Fix a cached collection without result (e.g. a cached prepared query whose statement has no result set) throwing a TypeError on a cache hit since 4.0.0-rc.1: it comes back as an empty collection
     * Fix Hydrator::objectDatabaseIs() leaking to the other aliases (since 3.x): every table first read after the alias in a row was looked up in its database

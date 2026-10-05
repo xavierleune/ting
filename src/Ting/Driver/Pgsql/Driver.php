@@ -285,9 +285,17 @@ class Driver implements DriverInterface
             });
         }
 
+        // getAffectedRows() reports the last query, prepared or not. Weak: the driver holds the statement
+        $driver = \WeakReference::create($this);
         $statement
             ->setConnection($this->connection)
-            ->setQuery($sql);
+            ->setQuery($sql)
+            ->setResultHandler(static function ($result) use ($driver): void {
+                $driver = $driver->get();
+                if ($driver !== null) {
+                    $driver->result = $result;
+                }
+            });
 
         $this->preparedQueries[$statementName] = $statement;
 
