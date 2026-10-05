@@ -64,8 +64,10 @@ jobs:
 
     strategy:
       matrix:
+        # Tooling PHP version only: phpstan.neon.dist targets PHP 8.2 (phpVersion),
+        # and tomasvotruba/type-coverage (type_perfect rules) requires PHP >= 8.4
         php-version:
-          - "8.2"
+          - "8.5"
         dependencies:
           - "highest"
     steps:
