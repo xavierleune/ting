@@ -136,7 +136,12 @@ class Collection implements CollectionInterface, JsonSerializable
      */
     public function getIterator(): \Generator
     {
-        return $this->hydrator->getIterator();
+        // Without result (e.g. new Collection() returned as an empty collection), there is nothing to hydrate
+        if ($this->result === null) {
+            return;
+        }
+
+        yield from $this->hydrator->getIterator();
     }
 
     public function count(): int
@@ -146,6 +151,6 @@ class Collection implements CollectionInterface, JsonSerializable
 
     public function jsonSerialize(): array
     {
-        return iterator_to_array($this->hydrator->getIterator());
+        return iterator_to_array($this->getIterator());
     }
 }
