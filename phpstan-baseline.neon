@@ -7,12 +7,6 @@ parameters:
 			path: src/Ting/Driver/Pgsql/Driver.php
 
 		-
-			message: '#^Offset ''table'' might not exist on array\{complex\: bool, column\: string, table\?\: string, alias\?\: non\-falsy\-string\}\.$#'
-			identifier: offsetAccess.notFound
-			count: 1
-			path: src/Ting/Driver/Pgsql/Result.php
-
-		-
 			message: '#^Trait CCMBenchmark\\Ting\\Entity\\NotifyProperty is used zero times and is not analysed\.$#'
 			identifier: trait.unused
 			count: 1

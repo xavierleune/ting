@@ -174,9 +174,8 @@ class Result implements ResultInterface
                             'column' => $matches['column']
                         ];
 
-                        if (isset($matches['table'])) {
-                            $columnComponent['table'] = $matches['table'];
-                        }
+                        // An unmatched named group is an empty string, never unset
+                        $columnComponent['table'] = $matches['table'];
 
                         if (isset($matches['alias'])) {
                             $columnComponent['alias'] = $matches['alias'];
@@ -216,7 +215,7 @@ class Result implements ResultInterface
                     continue;
                 }
 
-                if (in_array($scope, ['column', 'string', 'condition'], true) && isset($tokensWithCase[$index])) {
+                if (isset($tokensWithCase[$index])) {
                     $column .= $tokensWithCase[$index];
                 }
 
