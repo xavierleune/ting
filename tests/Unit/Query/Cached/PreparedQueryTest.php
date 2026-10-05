@@ -47,7 +47,7 @@ class PreparedQueryTest extends TestCase
     {
         $services       = new TingServices();
         $mockConnection = $this->createMock(Connection::class);
-        $mockConnection->expects($this->never())->method('slave');
+        $mockConnection->expects($this->never())->method('replica');
         // Spy: counts calls to get() while keeping the real implementation (a real Collection is expected)
         $mockCollectionFactory = new class (
             $services->metadataRepository(),
@@ -109,7 +109,7 @@ class PreparedQueryTest extends TestCase
             ->getMock();
         $cache = new ArrayAdapter();
 
-        $mockConnection->method('slave')->willReturn($mockDriver);
+        $mockConnection->method('replica')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
         $mockMysqliResult->method('getConnectionName')->willReturn('connectionName');
@@ -142,7 +142,7 @@ class PreparedQueryTest extends TestCase
         // atoum used a \mock\CCMBenchmark\Ting\Cache\Memcached ghost mock (get/store) that was never given
         // to the query: it has no effect and is not converted
 
-        $mockConnection->method('master')->willReturn($mockDriver);
+        $mockConnection->method('primary')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->expects($this->once())->method('prepare')->willReturn($mockStatement);
 
@@ -152,17 +152,17 @@ class PreparedQueryTest extends TestCase
         $this->assertSame($query->prepareExecute(), $prepared);
     }
 
-    public function testPrepareQueryShouldUseTheMasterWhenSelected()
+    public function testPrepareQueryShouldUseThePrimaryWhenSelected()
     {
         $statement = new Statement($this->createStub(MysqliStatement::class), [], 'connectionName', 'database');
-        $master = $this->createMock(Driver::class);
-        $master->expects($this->once())->method('prepare')->with('SELECT')->willReturn($statement);
+        $primary = $this->createMock(Driver::class);
+        $primary->expects($this->once())->method('prepare')->with('SELECT')->willReturn($statement);
         $connection = $this->createMock(Connection::class);
-        $connection->expects($this->never())->method('slave');
-        $connection->method('master')->willReturn($master);
+        $connection->expects($this->never())->method('replica');
+        $connection->method('primary')->willReturn($primary);
 
         $query = new PreparedQuery('SELECT', $connection);
-        $query->selectMaster(true)->prepareQuery();
+        $query->selectPrimary(true)->prepareQuery();
     }
 
     public function testExecuteShouldCallStatementExecute()
@@ -183,7 +183,7 @@ class PreparedQueryTest extends TestCase
         // atoum used a \mock\CCMBenchmark\Ting\Cache\Memcached ghost mock (get/store) that was never given
         // to the query: it has no effect and is not converted
 
-        $mockConnection->method('master')->willReturn($mockDriver);
+        $mockConnection->method('primary')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
         $mockMysqliStatement->errno = 0;

@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -181,14 +182,14 @@ abstract class Repository implements ResetInterface
      * @param $primariesKeyValue array|int|string column => value or if one primary : just the value
      * @return T|null
      */
-    public function get(mixed $primariesKeyValue, bool $forceMaster = false)
+    public function get(mixed $primariesKeyValue, bool $forcePrimary = false)
     {
         $query = $this->metadata->getByPrimaries(
             $this->connection,
             $this->queryFactory,
             $this->collectionFactory,
             $primariesKeyValue,
-            (bool)$forceMaster
+            (bool)$forcePrimary
         );
 
         $collection = $query->query();
@@ -201,16 +202,16 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * @param bool $forceMaster
+     * @param bool $forcePrimary
      * @return CollectionInterface<T>
      */
-    public function getAll($forceMaster = false): CollectionInterface
+    public function getAll($forcePrimary = false): CollectionInterface
     {
         $query = $this->metadata->getAll(
             $this->connection,
             $this->queryFactory,
             $this->collectionFactory,
-            (bool)$forceMaster
+            (bool)$forcePrimary
         );
 
         return $query->query($this->getCollection(new HydratorSingleObject()));
@@ -220,7 +221,7 @@ abstract class Repository implements ResetInterface
      * @param array $criteria
      * @return CollectionInterface<T>
      */
-    public function getBy(array $criteria, bool $forceMaster = false, array $order = [], int $limit = 0): CollectionInterface
+    public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface
     {
         $query = $this->metadata->getByCriteriaWithOrderAndLimit(
             $criteria,
@@ -229,7 +230,7 @@ abstract class Repository implements ResetInterface
             $this->connection,
             $this->queryFactory,
             $this->collectionFactory,
-            (bool)$forceMaster
+            (bool)$forcePrimary
         );
 
         return $query->query($this->getCollection(new HydratorSingleObject()));
@@ -238,14 +239,14 @@ abstract class Repository implements ResetInterface
     /**
      * @return T|null
      */
-    public function getOneBy(array $criteria, bool $forceMaster = false)
+    public function getOneBy(array $criteria, bool $forcePrimary = false)
     {
         $query = $this->metadata->getOneByCriteria(
             $this->connection,
             $this->queryFactory,
             $this->collectionFactory,
             $criteria,
-            (bool)$forceMaster
+            (bool)$forcePrimary
         );
         $collection = $query->query();
         if ($collection->count() === 0) {
@@ -273,33 +274,33 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * Start a transaction against the master connection
+     * Start a transaction against the primary connection
      *
      * @return void
      */
     public function startTransaction(): void
     {
-        $this->connection->master()->startTransaction();
+        $this->connection->primary()->startTransaction();
     }
 
     /**
-     * Rollback the transaction opened on the master connection
+     * Rollback the transaction opened on the primary connection
      *
      * @return void
      */
     public function rollback(): void
     {
-        $this->connection->master()->rollback();
+        $this->connection->primary()->rollback();
     }
 
     /**
-     * Commit the transaction opened on the master connection
+     * Commit the transaction opened on the primary connection
      *
      * @return void
      */
     public function commit(): void
     {
-        $this->connection->master()->commit();
+        $this->connection->primary()->commit();
     }
 
     /**
@@ -307,16 +308,16 @@ abstract class Repository implements ResetInterface
      */
     public function ping(): bool
     {
-        return $this->connection->slave()->ping();
+        return $this->connection->replica()->ping();
     }
 
     /**
      * @throws NeverConnectedException when you have not been connected to your database before trying to ping it.
      * @return bool
      */
-    public function pingMaster(): bool
+    public function pingPrimary(): bool
     {
-        return $this->connection->master()->ping();
+        return $this->connection->primary()->ping();
     }
 
     /**

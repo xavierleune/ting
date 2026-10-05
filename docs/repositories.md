@@ -274,15 +274,15 @@ $metadata->addField([
 ## Reading
 
 ```php
-public function get(mixed $primariesKeyValue, bool $forceMaster = false);
-public function getOneBy(array $criteria, bool $forceMaster = false);
-public function getBy(array $criteria, bool $forceMaster = false, array $order = [], int $limit = 0): CollectionInterface;
-public function getAll($forceMaster = false): CollectionInterface;
+public function get(mixed $primariesKeyValue, bool $forcePrimary = false);
+public function getOneBy(array $criteria, bool $forcePrimary = false);
+public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface;
+public function getAll($forcePrimary = false): CollectionInterface;
 ```
 
 `get()` and `getOneBy()` return the entity, or `null` when no row matches. `getBy()` and `getAll()` return a
-collection of entities. Reads go to a slave connection when the connection has slaves; pass `$forceMaster = true` to
-read from the master, for instance right after a write.
+collection of entities. Reads go to a replica connection when the connection has replicas; pass `$forcePrimary = true`
+to read from the primary, for instance right after a write.
 
 ```php
 use App\Entity\CityStatus;
@@ -416,7 +416,7 @@ See [Queries](queries.md#query-builder).
 
 ## Transactions
 
-`startTransaction()`, `commit()` and `rollback()` act on the master connection of the repository. Repositories whose
+`startTransaction()`, `commit()` and `rollback()` act on the primary connection of the repository. Repositories whose
 connection resolves to the same server share that connection, hence the transaction (with PostgreSQL, the database
 must be the same too).
 
@@ -438,7 +438,7 @@ throws a `CCMBenchmark\Ting\Exceptions\TransactionException`.
 ## Other methods
 
 * `getMetadata(): Metadata` returns the metadata of the repository.
-* `ping(): bool` and `pingMaster(): bool` check that the slave / master connection of the repository is alive.
+* `ping(): bool` and `pingPrimary(): bool` check that the replica / primary connection of the repository is alive.
 * `reset(): void` resets the repository between two requests of a long-running process: see
   [Worker mode](unit-of-work.md#worker-mode).
 

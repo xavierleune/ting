@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Tests\Unit;
 
 use CCMBenchmark\Ting\ConnectionPool;
+use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\FakeLogger\FakeDriverLogger;
 
@@ -40,7 +41,7 @@ class ConnectionPoolTest extends TestCase
         $this->assertThrows(
             \Throwable::class,
             function () use ($connectionPool): void {
-                $connectionPool->master(
+                $connectionPool->primary(
                     'bouh',
                     'bouhDb'
                 );
@@ -50,7 +51,7 @@ class ConnectionPoolTest extends TestCase
         $this->assertThrows(
             \Throwable::class,
             function () use ($connectionPool): void {
-                $connectionPool->slave(
+                $connectionPool->replica(
                     'bouh',
                     'bouhDb'
                 );
@@ -59,28 +60,28 @@ class ConnectionPoolTest extends TestCase
         );
     }
 
-    public function testConnectSlaveShouldAlwaysReturnTheSameInstance()
+    public function testConnectReplicaShouldAlwaysReturnTheSameInstance()
     {
         $connectionPool = new ConnectionPool();
         $connectionPool->setConfig(
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
                     ],
-                    'slaves'    => [
+                    'replicas'  => [
                         [
-                            'host'      => 'slave1',
+                            'host'      => 'replica1',
                             'user'      => 'test',
                             'password'  => 'test',
                             'port'      => 3306
                         ],
                         [
-                            'host'      => 'slave2',
+                            'host'      => 'replica2',
                             'user'      => 'test',
                             'password'  => 'test',
                             'port'      => 3306
@@ -90,32 +91,32 @@ class ConnectionPoolTest extends TestCase
             ]
         );
 
-        $slave = $connectionPool->slave('bouh', 'bouhDb');
-        $this->assertSame($slave, $connectionPool->slave('bouh', 'bouhDb'));
-        $this->assertSame($slave, $connectionPool->slave('bouh', 'bouhDb'));
-        $this->assertSame($slave, $connectionPool->slave('bouh', 'bouhDb'));
-        $this->assertSame($slave, $connectionPool->slave('bouh', 'bouhDb'));
+        $replica = $connectionPool->replica('bouh', 'bouhDb');
+        $this->assertSame($replica, $connectionPool->replica('bouh', 'bouhDb'));
+        $this->assertSame($replica, $connectionPool->replica('bouh', 'bouhDb'));
+        $this->assertSame($replica, $connectionPool->replica('bouh', 'bouhDb'));
+        $this->assertSame($replica, $connectionPool->replica('bouh', 'bouhDb'));
     }
 
-    public function testConnectSlaveShouldReturnMasterIfNoMasterDefined()
+    public function testConnectReplicaShouldReturnPrimaryIfNoReplicaDefined()
     {
         $connectionPool = new ConnectionPool();
         $connectionPool->setConfig(
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
                     ],
-                    'slaves'    => []
+                    'replicas'  => []
                 ]
             ]
         );
 
-        $this->assertSame($connectionPool->master('bouh', 'bouhDb'), $connectionPool->slave('bouh', 'bouhDb'));
+        $this->assertSame($connectionPool->primary('bouh', 'bouhDb'), $connectionPool->replica('bouh', 'bouhDb'));
     }
 
     public function testConnectWithoutUserNorPasswordShouldReturnADriver()
@@ -125,15 +126,15 @@ class ConnectionPoolTest extends TestCase
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'port'      => 3306
                     ]
                 ]
             ]
         );
 
-        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->master('bouh', 'bouhDb'));
+        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->primary('bouh', 'bouhDb'));
     }
 
     public function testConnectShouldReturnADriver()
@@ -143,15 +144,15 @@ class ConnectionPoolTest extends TestCase
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
                     ],
-                    'slaves'    => [
+                    'replicas'  => [
                         [
-                            'host'      => 'slave1',
+                            'host'      => 'replica1',
                             'user'      => 'test',
                             'password'  => 'test',
                             'port'      => 3306
@@ -161,8 +162,8 @@ class ConnectionPoolTest extends TestCase
             ]
         );
 
-        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->master('bouh', 'bouhDb'));
-        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->slave('bouh', 'bouhDb'));
+        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->primary('bouh', 'bouhDb'));
+        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->replica('bouh', 'bouhDb'));
     }
 
 
@@ -176,15 +177,15 @@ class ConnectionPoolTest extends TestCase
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
                     ],
-                    'slaves'    => [
+                    'replicas'  => [
                         [
-                            'host'      => 'slave1',
+                            'host'      => 'replica1',
                             'user'      => 'test',
                             'password'  => 'test',
                             'port'      => 3306
@@ -193,11 +194,11 @@ class ConnectionPoolTest extends TestCase
                 ]
             ]
         );
-        $connectionPool->master('bouh', 'bouhDb');
-        $connectionPool->slave('bouh', 'bouhDb');
+        $connectionPool->primary('bouh', 'bouhDb');
+        $connectionPool->replica('bouh', 'bouhDb');
         $connectionPool->closeAll();
-        $connectionPool->master('bouh', 'bouhDb');
-        $connectionPool->slave('bouh', 'bouhDb');
+        $connectionPool->primary('bouh', 'bouhDb');
+        $connectionPool->replica('bouh', 'bouhDb');
     }
 
     public function testResetShouldCloseAllConnections()
@@ -210,8 +211,8 @@ class ConnectionPoolTest extends TestCase
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
@@ -219,10 +220,10 @@ class ConnectionPoolTest extends TestCase
                 ]
             ]
         );
-        $driver = $connectionPool->master('bouh', 'bouhDb');
-        $this->assertSame($driver, $connectionPool->master('bouh', 'bouhDb'));
+        $driver = $connectionPool->primary('bouh', 'bouhDb');
+        $this->assertSame($driver, $connectionPool->primary('bouh', 'bouhDb'));
         $connectionPool->reset();
-        $this->assertNotSame($driver, $connectionPool->master('bouh', 'bouhDb'));
+        $this->assertNotSame($driver, $connectionPool->primary('bouh', 'bouhDb'));
     }
 
     public function testConnectionPoolShouldLogConnections()
@@ -235,15 +236,15 @@ class ConnectionPoolTest extends TestCase
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
                     ],
-                    'slaves'    => [
+                    'replicas'  => [
                         [
-                            'host'      => 'slave1',
+                            'host'      => 'replica1',
                             'user'      => 'test',
                             'password'  => 'test',
                             'port'      => 3306
@@ -252,9 +253,9 @@ class ConnectionPoolTest extends TestCase
                 ]
             ]
         );
-        $connectionPool->master('bouh', 'bouhDb');
+        $connectionPool->primary('bouh', 'bouhDb');
         $this->assertSame(1, $addConnection->numberOfInvocations());
-        $connectionPool->slave('bouh', 'bouhDb');
+        $connectionPool->replica('bouh', 'bouhDb');
         $this->assertSame(2, $addConnection->numberOfInvocations());
     }
 
@@ -265,8 +266,8 @@ class ConnectionPoolTest extends TestCase
             [
                 'connectionName' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
@@ -285,7 +286,7 @@ class ConnectionPoolTest extends TestCase
             [
                 'connection1' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
+                    'primary'   => [
                         'host'      => '127.0.0.1',
                         'user'      => 'test',
                         'password'  => 'test',
@@ -294,7 +295,7 @@ class ConnectionPoolTest extends TestCase
                 ],
                 'connection2' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
+                    'primary'   => [
                         'host'      => '127.0.0.1',
                         'user'      => 'test',
                         'password'  => 'test',
@@ -304,9 +305,9 @@ class ConnectionPoolTest extends TestCase
             ]
         );
 
-        $driver = $connectionPool->master('connection1', 'databaseOnConnection1');
+        $driver = $connectionPool->primary('connection1', 'databaseOnConnection1');
         $this->assertSame('connection1', $driver->getName());
-        $driver2 = $connectionPool->master('connection2', 'databaseOnConnection1');
+        $driver2 = $connectionPool->primary('connection2', 'databaseOnConnection1');
         $this->assertSame('connection2', $driver2->getName());
     }
 
@@ -317,8 +318,8 @@ class ConnectionPoolTest extends TestCase
             [
                 'bouh' => [
                     'namespace' => '\tests\fixtures\FakeDriver',
-                    'master'    => [
-                        'host'      => 'master',
+                    'primary'   => [
+                        'host'      => 'primary',
                         'user'      => 'test',
                         'password'  => 'test',
                         'port'      => 3306
@@ -332,6 +333,66 @@ class ConnectionPoolTest extends TestCase
             ]
         ]);
 
-        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->master('bouh', 'bouhDb'));
+        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->primary('bouh', 'bouhDb'));
+    }
+
+    public function testSetConfigShouldRejectTheMasterKeyRemovedInTing4()
+    {
+        $connectionPool = new ConnectionPool();
+
+        $this->assertThrows(
+            ConfigException::class,
+            fn () => $connectionPool->setConfig([
+                'main' => [
+                    'namespace' => '\tests\fixtures\FakeDriver',
+                    'master'    => ['host' => 'primary', 'port' => 3306],
+                ]
+            ]),
+            'Connection "main": the "master" key was renamed "primary" in Ting 4.0'
+        );
+    }
+
+    public function testSetConfigShouldRejectTheSlavesKeyRemovedInTing4()
+    {
+        $connectionPool = new ConnectionPool();
+
+        $this->assertThrows(
+            ConfigException::class,
+            fn () => $connectionPool->setConfig([
+                'main' => [
+                    'namespace' => '\tests\fixtures\FakeDriver',
+                    'primary'   => ['host' => 'primary', 'port' => 3306],
+                ],
+                'other' => [
+                    'namespace' => '\tests\fixtures\FakeDriver',
+                    'primary'   => ['host' => 'primary', 'port' => 3306],
+                    'slaves'    => [['host' => 'replica1', 'port' => 3306]],
+                ]
+            ]),
+            'Connection "other": the "slaves" key was renamed "replicas" in Ting 4.0'
+        );
+    }
+
+    public function testSetConfigShouldNotKeepARejectedConfig()
+    {
+        $connectionPool = new ConnectionPool();
+        $connectionPool->setConfig([
+            'main' => [
+                'namespace' => '\tests\fixtures\FakeDriver',
+                'primary'   => ['host' => 'primary', 'port' => 3306],
+            ]
+        ]);
+
+        $this->assertThrows(
+            ConfigException::class,
+            fn () => $connectionPool->setConfig([
+                'main' => [
+                    'namespace' => '\tests\fixtures\FakeDriver',
+                    'master'    => ['host' => 'primary', 'port' => 3306],
+                ]
+            ])
+        );
+
+        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->primary('main', 'db'));
     }
 }

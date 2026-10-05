@@ -69,7 +69,7 @@ class QueryTest extends TestCase
     {
         $services       = new TingServices();
         $mockConnection = $this->createMock(Connection::class);
-        $mockConnection->expects($this->never())->method('slave');
+        $mockConnection->expects($this->never())->method('replica');
         // Spy: counts calls to get() while keeping the real implementation (a real Collection is expected)
         $mockCollectionFactory = new class (
             $services->metadataRepository(),
@@ -126,7 +126,7 @@ class QueryTest extends TestCase
             ->getMock();
 
         $cache = new ArrayAdapter();
-        $mockConnection->method('slave')->willReturn($mockDriver);
+        $mockConnection->method('replica')->willReturn($mockDriver);
         $mockMysqliResult->method('getConnectionName')->willReturn('main');
         $mockMysqliResult->method('getDatabase')->willReturn('database');
         $mockDriver->method('execute')->willReturnCallback(
@@ -206,7 +206,7 @@ class QueryTest extends TestCase
     }
 
     /**
-     * Connection whose slave driver fills the collection with one row, counting executions in $executions
+     * Connection whose replica driver fills the collection with one row, counting executions in $executions
      */
     private function createConnectionReturning(string $value, ?int &$executions): Connection
     {
@@ -222,7 +222,7 @@ class QueryTest extends TestCase
             }
         );
         $connection = $this->createStub(Connection::class);
-        $connection->method('slave')->willReturn($driver);
+        $connection->method('replica')->willReturn($driver);
 
         return $connection;
     }

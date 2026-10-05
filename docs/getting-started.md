@@ -452,7 +452,7 @@ $connectionPool->setConfig([
     'main' => [
         'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
         'charset'   => 'utf8mb4',
-        'master'    => [
+        'primary'   => [
             'host'     => 'localhost',
             'user'     => 'root',
             'password' => '',
@@ -494,8 +494,8 @@ $repositoryFactory = new RepositoryFactory(
 | Key         | Description                                                                                                                                   |
 |-------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
 | `namespace` | Driver namespace: `\CCMBenchmark\Ting\Driver\Mysqli` or `\CCMBenchmark\Ting\Driver\Pgsql`                                                     |
-| `master`    | `host`, `port`, and optionally `user` and `password`. Used for writes, and for reads when there is no slave                                   |
-| `slaves`    | Optional list of servers with the same keys as `master`. Reads go to one of them, picked at random once per connection                        |
+| `primary`   | `host`, `port`, and optionally `user` and `password`. Used for writes, and for reads when there is no replica                                 |
+| `replicas`  | Optional list of servers with the same keys as `primary`. Reads go to one of them, picked at random once per connection                       |
 | `charset`   | Optional connection charset                                                                                                                   |
 
 Connections are opened lazily, on the first query. Per-database options can be set with

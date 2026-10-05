@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -51,7 +52,7 @@ interface QueryInterface
      */
     public function setParams(array $params): static;
 
-    public function selectMaster(bool $useMaster): static;
+    public function selectPrimary(bool $usePrimary): static;
 
     public function getInsertedId(): int;
 

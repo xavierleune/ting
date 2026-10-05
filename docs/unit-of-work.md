@@ -155,5 +155,5 @@ instances between requests, reset them too. With Symfony, [ting_bundle](https://
 integrates Ting with the framework.
 
 Closing the connections after each request costs a reconnection on the next one. If you prefer to keep them open, reset
-the unit of work only, and check the connections with `Repository::ping()` / `pingMaster()` (see
+the unit of work only, and check the connections with `Repository::ping()` / `pingPrimary()` (see
 [Repositories](repositories.md#other-methods)).

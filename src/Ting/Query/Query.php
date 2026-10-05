@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -32,7 +33,7 @@ use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
 class Query implements QueryInterface
 {
-    protected bool $selectMaster = false;
+    protected bool $selectPrimary = false;
 
     protected array $params = [];
 
@@ -49,11 +50,11 @@ class Query implements QueryInterface
     }
 
     /**
-     * Force the query to be executed on the master connection. Applicable only on a reading query.
+     * Force the query to be executed on the primary connection. Applicable only on a reading query.
      */
-    public function selectMaster(bool $useMaster): static
+    public function selectPrimary(bool $usePrimary): static
     {
-        $this->selectMaster = $useMaster;
+        $this->selectPrimary = $usePrimary;
 
         return $this;
     }
@@ -82,10 +83,10 @@ class Query implements QueryInterface
             $collection = $this->collectionFactory->get();
         }
 
-        if ($this->selectMaster === true) {
-            return $this->connection->master()->execute($this->sql, $this->params, $collection);
+        if ($this->selectPrimary === true) {
+            return $this->connection->primary()->execute($this->sql, $this->params, $collection);
         }
-        return $this->connection->slave()->execute($this->sql, $this->params, $collection);
+        return $this->connection->replica()->execute($this->sql, $this->params, $collection);
     }
 
     /**
@@ -96,7 +97,7 @@ class Query implements QueryInterface
      */
     public function execute(): mixed
     {
-        return $this->connection->master()->execute($this->sql, $this->params);
+        return $this->connection->primary()->execute($this->sql, $this->params);
     }
 
     /**
@@ -104,7 +105,7 @@ class Query implements QueryInterface
      */
     public function getInsertedId(): int
     {
-        return $this->connection->master()->getInsertedId();
+        return $this->connection->primary()->getInsertedId();
     }
 
     /**
@@ -113,6 +114,6 @@ class Query implements QueryInterface
      */
     public function getAffectedRows(): int|string
     {
-        return $this->connection->master()->getAffectedRows();
+        return $this->connection->primary()->getAffectedRows();
     }
 }

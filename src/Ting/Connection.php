@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -43,49 +44,49 @@ class Connection
     }
 
     /**
-     * Return the master connection
+     * Return the primary connection
      * @throws Exception
      * @return Driver\DriverInterface
      */
-    public function master(): Driver\DriverInterface
+    public function primary(): Driver\DriverInterface
     {
-        return $this->connectionPool->master($this->name, $this->database);
+        return $this->connectionPool->primary($this->name, $this->database);
     }
 
     /**
-     * Return a slave connection
+     * Return a replica connection, or the primary connection when no replica is configured
      * @return Driver\DriverInterface
      * @throws Exception
      */
-    public function slave(): Driver\DriverInterface
+    public function replica(): Driver\DriverInterface
     {
-        return $this->connectionPool->slave($this->name, $this->database);
+        return $this->connectionPool->replica($this->name, $this->database);
     }
 
     /**
-     * Start a transaction against the master connection
+     * Start a transaction against the primary connection
      * @throws Exception
      */
     public function startTransaction(): void
     {
-        $this->master()->startTransaction();
+        $this->primary()->startTransaction();
     }
 
     /**
-     * Commit the opened transaction on the master connection
+     * Commit the opened transaction on the primary connection
      * @throws Exception
      */
     public function commit(): void
     {
-        $this->master()->commit();
+        $this->primary()->commit();
     }
 
     /**
-     * Rollback the opened transaction on the master connection
+     * Rollback the opened transaction on the primary connection
      * @throws Exception
      */
     public function rollback(): void
     {
-        $this->master()->rollback();
+        $this->primary()->rollback();
     }
 }

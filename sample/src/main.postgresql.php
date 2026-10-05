@@ -44,7 +44,7 @@ echo str_repeat("-", 40) . "\n";
 $connections = [
     'main' => [
         'namespace' => '\CCMBenchmark\Ting\Driver\Pgsql',
-        'master'    => [
+        'primary'   => [
             'host'      => 'localhost',
             'user'      => 'postgres',
             'password'  => '',

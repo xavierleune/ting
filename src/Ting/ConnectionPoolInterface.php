@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -33,14 +34,18 @@ interface ConnectionPoolInterface
     public function setConfig(array $config): void;
 
     /**
+     * Return the primary connection
+     *
      * @throws Exception
      */
-    public function master(string $name, string $database): DriverInterface;
+    public function primary(string $name, string $database): DriverInterface;
 
     /**
+     * Return a replica connection, or the primary connection when no replica is configured
+     *
      * @throws Exception
      */
-    public function slave(string $name, string $database): DriverInterface;
+    public function replica(string $name, string $database): DriverInterface;
 
     public function closeAll(): void;
 

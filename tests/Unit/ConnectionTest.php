@@ -34,54 +34,54 @@ use CCMBenchmark\Ting\Tests\Support\TestCase;
 
 class ConnectionTest extends TestCase
 {
-    public function testMasterShouldReturnMasterDriver()
+    public function testPrimaryShouldReturnPrimaryDriver()
     {
         $mockDriver = $this->createStub(DriverInterface::class);
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $connection = new Connection($mockConnectionPool, 'main', 'db');
-        $this->assertSame($mockDriver, $connection->master());
+        $this->assertSame($mockDriver, $connection->primary());
     }
 
-    public function testSlaveShouldReturnSlaveDriver()
+    public function testReplicaShouldReturnReplicaDriver()
     {
         $mockDriver = $this->createStub(DriverInterface::class);
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
-        $mockConnectionPool->method('slave')->willReturn($mockDriver);
+        $mockConnectionPool->method('replica')->willReturn($mockDriver);
 
         $connection = new Connection($mockConnectionPool, 'main', 'db');
-        $this->assertSame($mockDriver, $connection->slave());
+        $this->assertSame($mockDriver, $connection->replica());
     }
 
-    public function testStartTransactionShouldCallMasterStartTransaction()
+    public function testStartTransactionShouldCallPrimaryStartTransaction()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockDriver->expects($this->once())->method('startTransaction');
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $connection = new Connection($mockConnectionPool, 'main', 'db');
         $connection->startTransaction();
     }
 
-    public function testRollbackShouldCallMasterRollback()
+    public function testRollbackShouldCallPrimaryRollback()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockDriver->expects($this->once())->method('rollback');
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $connection = new Connection($mockConnectionPool, 'main', 'db');
         $connection->rollback();
     }
 
-    public function testCommitShouldCallMasterCommit()
+    public function testCommitShouldCallPrimaryCommit()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockDriver->expects($this->once())->method('commit');
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $connection = new Connection($mockConnectionPool, 'main', 'db');
         $connection->commit();

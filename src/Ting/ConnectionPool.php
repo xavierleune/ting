@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -27,6 +28,7 @@ namespace CCMBenchmark\Ting;
 
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver;
+use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Exceptions\ConnectionException;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 
@@ -45,7 +47,7 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     /**
      * @var array
      */
-    protected $connectionSlaves = [];
+    protected $connectionReplicas = [];
 
     /**
      * @var array<string, DriverInterface>
@@ -56,8 +58,28 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     {
     }
 
+    /**
+     * @throws ConfigException when a connection still uses the "master" or "slaves" keys removed in Ting 4.0
+     */
     public function setConfig(array $config): void
     {
+        $renamedKeys = ['master' => 'primary', 'slaves' => 'replicas'];
+        foreach ($config as $name => $connection) {
+            if (is_array($connection) === false) {
+                continue;
+            }
+            foreach ($renamedKeys as $oldKey => $newKey) {
+                if (array_key_exists($oldKey, $connection)) {
+                    throw new ConfigException(sprintf(
+                        'Connection "%s": the "%s" key was renamed "%s" in Ting 4.0',
+                        $name,
+                        $oldKey,
+                        $newKey
+                    ));
+                }
+            }
+        }
+
         $this->connectionConfig = $config;
     }
 
@@ -67,16 +89,16 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     }
 
     /**
-     * Return the master connection
+     * Return the primary connection
      *
      * @throws ConnectionException
      */
-    public function master(string $name, string $database): DriverInterface
+    public function primary(string $name, string $database): DriverInterface
     {
-        if (isset($this->connectionConfig[$name]['master']) === false) {
+        if (isset($this->connectionConfig[$name]['primary']) === false) {
             throw new ConnectionException('Connection not found: ' . $name);
         }
-        $config = $this->connectionConfig[$name]['master'];
+        $config = $this->connectionConfig[$name]['primary'];
         /** @var class-string<DriverInterface> $driverClass */
         $driverClass = $this->connectionConfig[$name]['namespace'] . '\\Driver';
 
@@ -90,11 +112,11 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     }
 
     /**
-     * Return always the same slave connection
+     * Return always the same replica connection, or the primary connection when no replica is configured
      *
      * @throws ConnectionException
      */
-    public function slave(string $name, string $database): DriverInterface
+    public function replica(string $name, string $database): DriverInterface
     {
         if (isset($this->connectionConfig[$name]) === false) {
             throw new ConnectionException('Connection not found: ' . $name);
@@ -102,23 +124,23 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
         /** @var class-string<DriverInterface> $driverClass */
         $driverClass = $this->connectionConfig[$name]['namespace'] . '\\Driver';
 
-        if (isset($this->connectionConfig[$name]['slaves']) === false
-            || $this->connectionConfig[$name]['slaves'] === []
+        if (isset($this->connectionConfig[$name]['replicas']) === false
+            || $this->connectionConfig[$name]['replicas'] === []
         ) {
-            return $this->master($name, $database);
+            return $this->primary($name, $database);
         }
 
-        if (isset($this->connectionSlaves[$name]) === false) {
+        if (isset($this->connectionReplicas[$name]) === false) {
             /**
-             * It's a slave connection and we do not have choosen a slave. We randomly take one & store datas.
-             * In this way we avoid opening one connection per slave because of round-robin.
+             * No replica has been chosen yet for this connection: pick one randomly and keep it,
+             * so that we don't open one connection per replica.
              */
 
-            $randomKey = array_rand($this->connectionConfig[$name]['slaves']);
-            $this->connectionSlaves[$name] = $this->connectionConfig[$name]['slaves'][$randomKey];
+            $randomKey = array_rand($this->connectionConfig[$name]['replicas']);
+            $this->connectionReplicas[$name] = $this->connectionConfig[$name]['replicas'][$randomKey];
         }
 
-        $connectionConfig = $this->connectionSlaves[$name];
+        $connectionConfig = $this->connectionReplicas[$name];
 
         $charset = null;
 

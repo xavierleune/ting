@@ -108,7 +108,7 @@ All of them return the query, so calls can be chained. Calling `query()` without
 The cache key must be unique for each distinct query and set of parameters: include the parameters in the key, hashed
 if needed, since Symfony rejects keys containing `{}()/\@:`.
 
-Only `query()` uses the cache. `execute()` runs a writing query on the master as usual and doesn't touch the cache.
+Only `query()` uses the cache. `execute()` runs a writing query on the primary as usual and doesn't touch the cache.
 
 ### Invalidation
 

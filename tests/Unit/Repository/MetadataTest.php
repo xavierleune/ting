@@ -424,8 +424,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetByPrimariesShouldRaiseExceptionIfIncorrectPrimaries()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
-        $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
+        $mockConnectionPool->method('replica')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $services = new TingServices();
@@ -461,8 +461,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetByPrimariesShouldReturnAQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
-        $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
+        $mockConnectionPool->method('replica')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $services = new TingServices();
@@ -498,8 +498,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetOneByCriteriaShouldReturnAQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
-        $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
+        $mockConnectionPool->method('replica')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $services = new TingServices();
@@ -531,8 +531,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetOneByCriteriaShouldRaiseExceptionOnUnknownField()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
-        $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
+        $mockConnectionPool->method('replica')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $services = new TingServices();
@@ -566,8 +566,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetAllShouldReturnAQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
-        $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
+        $mockConnectionPool->method('replica')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $services = new TingServices();
@@ -593,8 +593,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetByCriteriaShouldReturnAQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
-        $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['replica'])->getMock();
+        $mockConnectionPool->method('replica')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $services = new TingServices();
@@ -626,7 +626,7 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldReturnAPreparedQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $mockDriver = $this->getMockBuilder(FakeDriver::class)->onlyMethods(['prepare'])->getMock();
@@ -637,7 +637,7 @@ class MetadataTest extends TestCase
             ->with('INSERT INTO bouh (boo_id, boo_name) VALUES (:boo_id, :boo_name)')
             ->willReturn($mockStatement);
         // atoum first returned a FakeDriver, then replaced it with $mockDriver before any call
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockStatement
             ->expects($this->once())
             ->method('execute')
@@ -795,7 +795,7 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForUpdateShouldReturnAPreparedQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $mockDriver = $this->getMockBuilder(FakeDriver::class)->onlyMethods(['prepare'])->getMock();
         $mockStatement = $this->createMock(StatementInterface::class);
         $mockDriver
@@ -803,7 +803,7 @@ class MetadataTest extends TestCase
             ->method('prepare')
             ->with('UPDATE bouh SET firstname = :firstname WHERE boo_id = :#boo_id AND firstname = :#firstname')
             ->willReturn($mockStatement);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
         $mockStatement
             ->expects($this->once())
@@ -844,7 +844,7 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForDeleteShouldReturnAPreparedQuery()
     {
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $mockDriver = $this->getMockBuilder(FakeDriver::class)->onlyMethods(['prepare'])->getMock();
         $mockStatement = $this->createMock(StatementInterface::class);
         $mockDriver
@@ -852,7 +852,7 @@ class MetadataTest extends TestCase
             ->method('prepare')
             ->with('DELETE FROM bouh WHERE boo_id = :#boo_id')
             ->willReturn($mockStatement);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
         $mockStatement
             ->expects($this->once())
@@ -889,7 +889,7 @@ class MetadataTest extends TestCase
         $mockDriver = $this->createStub(FakeDriver::class);
         $mockStatement = $this->createMock(StatementInterface::class);
         $mockDriver->method('prepare')->willReturn($mockStatement);
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockStatement
             ->expects($this->once())
             ->method('execute')
@@ -1017,7 +1017,7 @@ class MetadataTest extends TestCase
 
     /**
      * Builds the mocks shared by the generateQueryForInsert() tests: a Mysqli driver whose escapeField() returns the
-     * field as is, a connection pool returning it as master, a prepared query capturing its params and a query factory
+     * field as is, a connection pool returning it as primary, a prepared query capturing its params and a query factory
      * returning this prepared query (and capturing the SQL).
      *
      * @return array{0: Connection, 1: QueryFactory}
@@ -1027,8 +1027,8 @@ class MetadataTest extends TestCase
         $mockDriver = $this->getMockBuilder(MysqliDriver::class)->onlyMethods(['escapeField'])->getMock();
         $mockDriver->method('escapeField')->willReturnCallback(fn ($field) => (string) $field);
 
-        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
-        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
+        $mockConnectionPool->method('primary')->willReturn($mockDriver);
 
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
