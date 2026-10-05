@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Driver\Pgsql;
 
 use CCMBenchmark\Ting\Driver\Pgsql\Result;
+use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
@@ -137,6 +138,163 @@ class ResultTest extends TestCase
         $this->assertSame(
             [['name' => 'x', 'orgName' => 'x', 'table' => '', 'orgTable' => '', 'schema' => '', 'value' => '1']],
             $result->current()
+        );
+    }
+
+    /**
+     * @param array<int, string> $tables pg_field_table() of each column, false when missing
+     * @return list<array{name: string, orgName: string, table: string, schema: string}>
+     */
+    private function parseColumns(string $query, array $tables = []): array
+    {
+        NativeFunctionMock::override('pg_field_table', fn ($result, $index) => $tables[$index] ?? false);
+        NativeFunctionMock::override('pg_result_seek', true);
+        NativeFunctionMock::override('pg_fetch_array', array_fill(0, 20, 'v'));
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult('result resource');
+        $result->setQuery($query);
+        $result->rewind();
+
+        return array_map(
+            fn (array $column) => [
+                'name' => $column['name'],
+                'orgName' => $column['orgName'],
+                'table' => $column['table'],
+                'schema' => $column['schema'],
+            ],
+            $result->current()
+        );
+    }
+
+    public static function asteriskColumnProvider(): array
+    {
+        return [
+            'star' => ['SELECT * FROM users'],
+            'alias star' => ['SELECT id, u.* FROM users u'],
+            'quoted alias star' => ['SELECT "u" . * FROM users u'],
+            'star in a CTE query' => ['WITH x AS (SELECT 1 AS a) SELECT * FROM x'],
+            'distinct star' => ['SELECT DISTINCT * FROM users'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('asteriskColumnProvider')]
+    public function testSetQueryShouldRaiseExceptionOnAnAsteriskColumn(string $query)
+    {
+        $result = new Result();
+        $result->setResult('result resource');
+
+        $this->assertThrows(
+            QueryException::class,
+            function () use ($result, $query): void {
+                $result->setQuery($query);
+            },
+            'Query invalid: usage of asterisk in column definition is forbidden'
+        );
+    }
+
+    public function testSetQueryShouldAcceptCountStar()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
+                ['name' => 'c', 'orgName' => 'count(*)', 'table' => '', 'schema' => ''],
+            ],
+            $this->parseColumns('SELECT id, count(*) AS c FROM users GROUP BY id', ['users'])
+        );
+    }
+
+    public function testSetQueryShouldAcceptAMultiplication()
+    {
+        $this->assertSame(
+            [['name' => 'd', 'orgName' => '2 * id', 'table' => '', 'schema' => '']],
+            $this->parseColumns('SELECT 2 * id AS d FROM users')
+        );
+    }
+
+    public function testSetQueryShouldIgnoreFromInAStringLiteral()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'kw', 'orgName' => "'from'", 'table' => '', 'schema' => ''],
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
+            ],
+            $this->parseColumns("SELECT 'from' AS kw, id FROM users", [1 => 'users'])
+        );
+    }
+
+    public function testSetQueryShouldIgnoreCommasInStringLiterals()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'lbl', 'orgName' => "name || ', ' || id", 'table' => '', 'schema' => ''],
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
+                ['name' => 'q', 'orgName' => "'it''s, ok'", 'table' => '', 'schema' => ''],
+            ],
+            $this->parseColumns("SELECT name || ', ' || id AS lbl, id, 'it''s, ok' AS q FROM users", [1 => 'users'])
+        );
+    }
+
+    public function testSetQueryShouldIgnoreEscapeStringsAndDollarQuotes()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'e', 'orgName' => "E'a\\', from b'", 'table' => '', 'schema' => ''],
+                ['name' => 'd', 'orgName' => '$$x, from y$$', 'table' => '', 'schema' => ''],
+                ['name' => 't', 'orgName' => "\$tag\$x, ' from\$tag\$", 'table' => '', 'schema' => ''],
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
+            ],
+            $this->parseColumns(
+                "SELECT E'a\\', from b' AS e, \$\$x, from y\$\$ AS d, \$tag\$x, ' from\$tag\$ AS t, id FROM users",
+                [3 => 'users']
+            )
+        );
+    }
+
+    public function testSetQueryShouldIgnoreComments()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
+                ['name' => 'name', 'orgName' => 'name', 'table' => 'users', 'schema' => ''],
+            ],
+            $this->parseColumns(
+                "SELECT id, -- the id, then the name from users\n name /* a, b from c */ FROM users",
+                ['users', 'users']
+            )
+        );
+    }
+
+    public function testSetQueryShouldParseTheMainSelectOfACte()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => 'public'],
+                ['name' => 'n', 'orgName' => 'name', 'table' => 'u', 'schema' => 'public'],
+                ['name' => 'nb', 'orgName' => 'nb', 'table' => 'r', 'schema' => ''],
+            ],
+            $this->parseColumns(
+                'WITH recent (user_id, nb) AS (SELECT user_id, count(id) FROM books GROUP BY user_id)
+                SELECT u.id, u.name AS n, r.nb AS nb FROM public.users u INNER JOIN recent r ON r.user_id = u.id',
+                ['users', 'users']
+            )
+        );
+    }
+
+    public function testSetQueryShouldReadSchemaQualifiedTables()
+    {
+        $this->assertSame(
+            [
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => 'public'],
+                ['name' => 'title', 'orgName' => 'title', 'table' => 'b', 'schema' => 'app'],
+                ['name' => 'name', 'orgName' => 'name', 'table' => 'u', 'schema' => 'public'],
+            ],
+            $this->parseColumns(
+                'SELECT u.id, b.title, name FROM public.users u JOIN "app"."books" AS b ON b.user_id = u.id',
+                ['users', 'books', 'users']
+            )
         );
     }
 

@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -34,6 +35,28 @@ class Result implements ResultInterface
     public const SQL_TABLE_SEPARATOR = 'inner|join|left|right|full|cross|where|group|having|window|union|intersect|except|order|limit|offset|fetch|for|on|using|natural';
     public const PARSE_RAW_COLUMN = '/^\s*(?:"?(?P<table>[a-z_][a-z0-9_$]*)"?\.)?"?(?P<column>[a-z_][a-z0-9_$]*)"?(?:\s+as\s+"?(?P<alias>["a-z_]["a-z0-9_$]*))?"?\s*$/i';
     public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?"?(?P<alias>[a-z_][a-z0-9_$]*)?"?\s*$/i';
+
+    /**
+     * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$), a quoted identifier,
+     * a word, or any other character
+     */
+    private const SQL_TOKEN = <<<'REGEX'
+        ~
+            --[^\n]*
+          | /\*.*?(?:\*/|\z)
+          | (?<![\w$])[eE]'(?:[^'\\]|\\.|'')*+(?:'|\z)
+          | '(?:[^']|'')*+(?:'|\z)
+          | "(?:[^"]|"")*+(?:"|\z)
+          | (?<![\w$])(?<tag>\$(?:[a-zA-Z_]\w*)?\$).*?(?:\k<tag>|\z)
+          | \w+
+          | .
+        ~sx
+        REGEX;
+
+    /**
+     * A whole column made of an asterisk: *, alias.* or DISTINCT *
+     */
+    private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]|"")*"|\w+)\s*\.\s*)?\*$/i';
 
     protected ?string $connectionName = null;
     protected ?string $database = null;
@@ -89,10 +112,17 @@ class Result implements ResultInterface
         $aliasToSchema = [];
         $fields = [];
 
+        $tokensWithCase = self::tokenize($query);
+        // String literals can't hold a table: blank them for the table search
+        $tableSearch = implode('', array_map(
+            static fn (string $token): string => self::isStringLiteral($token) ? "''" : $token,
+            $tokensWithCase
+        ));
+
         preg_match_all(
             '/(?:join|from)\s+(?:"?(?<schema>[a-z_][a-z0-9_$]+)"?.)*?"?(?<table>[a-z_][a-z0-9_$]+)"?\s*(?:as)?\s*"?(?!\b('
             . self::SQL_TABLE_SEPARATOR . ')\b)(?<alias>[a-z_][a-z0-9_$]*)?"?(\s|$)/is',
-            (string) $query,
+            $tableSearch,
             $matches,
             PREG_SET_ORDER
         );
@@ -108,11 +138,7 @@ class Result implements ResultInterface
             }
         }
 
-        $tokens = preg_split('/(\W)/', strtolower((string) $query), -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
-        if ($tokens === false) {
-            $tokens = [];
-        }
-        $tokensWithCase = preg_split('/(\W)/', (string) $query, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+        $tokens = array_map(strtolower(...), $tokensWithCase);
 
         $startCapture = false;
         $columnsMatches = [];
@@ -123,20 +149,18 @@ class Result implements ResultInterface
         $noAlias = false;
 
         foreach ($tokens as $index => $token) {
-            if ($token === '\'') {
-                $scope = $scope === 'string' ? 'column' : 'string';
-            } elseif ($token === 'case' && $scope === 'column') {
+            if ($token === 'case' && $scope === 'column') {
                 $scope = 'condition';
                 $noAlias = true;
             } elseif ($token === 'end' && $scope === 'condition') {
                 $scope = 'column';
             }
 
-            if ($token === '(' && $scope !== 'string') {
+            if ($token === '(') {
                 $brackets++;
             }
 
-            if ($token === ')' && $scope !== 'string') {
+            if ($token === ')') {
                 $brackets--;
             }
 
@@ -145,7 +169,12 @@ class Result implements ResultInterface
                     $scope = 'column';
 
                     if ($index === $totalTokens - 1 && $token !== ';') {
-                        $column .= $token;
+                        $column .= $tokensWithCase[$index];
+                    }
+
+                    // Only a whole column is forbidden: COUNT(*) or 2 * id are not
+                    if (preg_match(self::ASTERISK_COLUMN, trim($column)) === 1) {
+                        throw new QueryException('Query invalid: usage of asterisk in column definition is forbidden');
                     }
 
                     /**
@@ -204,20 +233,15 @@ class Result implements ResultInterface
                     continue;
                 }
 
-                if (isset($tokensWithCase[$index])) {
-                    $column .= $tokensWithCase[$index];
-                }
-
-                if ($scope === 'column' && $token === '*') {
-                    throw new QueryException('Query invalid: usage of asterisk in column definition is forbidden');
-                }
+                $column .= $tokensWithCase[$index];
 
                 if ($scope === 'column' && $token !== 'end') {
                     $noAlias = false;
                 }
             }
 
-            if ($token === 'select') {
+            // The columns of the main SELECT: not those of a sub-query, nor of the CTEs of a WITH query
+            if ($token === 'select' && $brackets === 0) {
                 $startCapture = true;
             }
         }
@@ -259,6 +283,27 @@ class Result implements ResultInterface
         }
 
         $this->fields = $fields;
+    }
+
+    /**
+     * Split the query into tokens, comments replaced by a space: concatenated, the tokens give the query back
+     * @return list<string>
+     */
+    private static function tokenize(string $query): array
+    {
+        preg_match_all(self::SQL_TOKEN, $query, $matches);
+
+        return array_map(
+            static fn (string $token): string => str_starts_with($token, '--') || str_starts_with($token, '/*')
+                ? ' '
+                : $token,
+            $matches[0]
+        );
+    }
+
+    private static function isStringLiteral(string $token): bool
+    {
+        return preg_match('/^(?:\'|[eE]\'|\$(?:[a-zA-Z_]\w*)?\$)/', $token) === 1;
     }
 
     /**
