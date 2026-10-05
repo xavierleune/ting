@@ -42,7 +42,8 @@ $cache->setCache(new RedisAdapter(RedisAdapter::createConnection('redis://localh
 // $cache is then given to the RepositoryFactory
 ```
 
-`setCache()` must be called before the cache is used. To disable caching (in tests for instance), use
+`setCache()` must be called before the cache is used, otherwise `get()` and `delete()` throw a
+`CCMBenchmark\Ting\Exceptions\ConfigException`. To disable caching (in tests for instance), use
 `Symfony\Component\Cache\Adapter\NullAdapter`: every read is a miss and cached queries always hit the database.
 
 ## Cached queries

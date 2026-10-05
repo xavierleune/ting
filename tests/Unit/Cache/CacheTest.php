@@ -27,12 +27,31 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Cache;
 
 use CCMBenchmark\Ting\Cache\Cache;
+use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 class CacheTest extends TestCase
 {
+    public function testGetWithoutPoolShouldRaiseConfigException()
+    {
+        $cache = new Cache();
+
+        $this->assertThrows(ConfigException::class, function () use ($cache): void {
+            $cache->get('bouh', fn () => 'value');
+        }, 'No cache pool: call Cache::setCache() first');
+    }
+
+    public function testDeleteWithoutPoolShouldRaiseConfigException()
+    {
+        $cache = new Cache();
+
+        $this->assertThrows(ConfigException::class, function () use ($cache): void {
+            $cache->delete('bouh');
+        }, 'No cache pool: call Cache::setCache() first');
+    }
+
     public function testDeleteShouldCallLogger()
     {
         $mockLogger = $this->createMock(CacheLoggerInterface::class);
