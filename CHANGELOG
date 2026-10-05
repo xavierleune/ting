@@ -21,6 +21,9 @@
     * Fix drivers used without ConnectionPool: a TypeError when no name (Mysqli, Pgsql) or no database (Mysqli) had been set; both default to an empty string
     * BC Remove the unused SerializerFactoryInterface argument from RepositoryFactory::__construct() (already removed from Repository::__construct() in 4.0.0-rc.1, now documented)
     * Fix connections without user or password (optional since 3.x) failing with a TypeError since 4.0.0-rc.1: DriverInterface::connect() accepts null; Pgsql leaves them out of the DSN so libpq uses its defaults
+    * Fix Pgsql reads of a column without table (function, VALUES, CTE...) failing with a TypeError since 4.0.0-rc.1
+    * Fix Pgsql Driver::execute() logging the rewritten SQL ($1) instead of the query with its named parameters since 4.0.0-rc.1
+    * Fix Pgsql Driver::execute() never stopping the query log when the query fails
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit

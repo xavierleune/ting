@@ -686,6 +686,46 @@ class DriverTest extends TestCase
         $driver->execute('SELECT 1 FROM myTable WHERE id = :id', ['id' => 12]);
     }
 
+    public function testExecuteShouldLogTheOriginalQuery()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_result_status', \PGSQL_TUPLES_OK);
+        NativeFunctionMock::override('pg_fetch_assoc', null);
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startQuery')->with(
+            $this->identicalTo('SELECT 1 FROM myTable WHERE id = :id'),
+            $this->identicalTo(['id' => 12]),
+            $this->anything(),
+            $this->identicalTo('myDatabase')
+        );
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->setLogger($mockLogger);
+        $driver->execute('SELECT 1 FROM myTable WHERE id = :id', ['id' => 12]);
+    }
+
+    public function testExecuteShouldStopTheQueryLogWhenTheQueryFails()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query_params', false);
+        NativeFunctionMock::override('pg_last_error', 'unknown error');
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startQuery');
+        $mockLogger->expects($this->once())->method('stopQuery');
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->setLogger($mockLogger);
+
+        $this->assertThrows(QueryException::class, function () use ($driver): void {
+            $driver->execute('SELECT 1 FROM myTable WHERE id = :id', ['id' => 12]);
+        });
+    }
+
     public function testPrepareShouldLogQuery()
     {
         NativeFunctionMock::override('pg_connect', true);

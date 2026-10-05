@@ -119,6 +119,27 @@ class ResultTest extends TestCase
         $this->assertNull($result->setQuery('select NOW(1)'));
     }
 
+    public function testSetQueryWithAColumnFromAnUnresolvedTableShouldHaveNoTable()
+    {
+        // A column from a function (or VALUES, a CTE...): pg_field_table() returns false
+        NativeFunctionMock::override('pg_num_fields', 1);
+        NativeFunctionMock::override('pg_field_table', false);
+        NativeFunctionMock::override('pg_result_seek', true);
+        NativeFunctionMock::override('pg_fetch_array', ['1']);
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult('result resource');
+        $result->setQuery('SELECT x FROM generate_series(1, 3) AS x');
+        $result->rewind();
+
+        $this->assertSame(
+            [['name' => 'x', 'orgName' => 'x', 'table' => '', 'orgTable' => '', 'schema' => '', 'value' => '1']],
+            $result->current()
+        );
+    }
+
     public function testIterator()
     {
         NativeFunctionMock::override('pg_result_seek', true);
