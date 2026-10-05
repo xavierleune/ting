@@ -31,6 +31,9 @@ use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\Hydrator;
+use CCMBenchmark\Ting\Repository\HydratorArray;
+use CCMBenchmark\Ting\Repository\HydratorSingleObject;
+use CCMBenchmark\Ting\Repository\HydratorValueObject;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\FakeDriver\MysqliResult;
@@ -91,6 +94,21 @@ class CollectionTest extends TestCase
         $collection->set($result);
 
         $this->assertInstanceOf(\Iterator::class, $collection->getIterator());
+    }
+
+    public function testACollectionWithoutResultShouldBeEmptyWithEveryHydrator()
+    {
+        // new Collection() is how a repository returns an empty collection without querying
+        foreach ([new Hydrator(), new HydratorArray(), new HydratorSingleObject(), new HydratorValueObject(\stdClass::class)] as $hydrator) {
+            $collection = new Collection($hydrator);
+
+            $this->assertSame([], $this->collectErrorTypes(function () use ($collection, &$items, &$json): void {
+                $items = iterator_to_array($collection);
+                $json = json_encode($collection);
+            }), $hydrator::class);
+            $this->assertSame([], $items, $hydrator::class);
+            $this->assertSame('[]', $json, $hydrator::class);
+        }
     }
 
     public function testIsFromCache()
