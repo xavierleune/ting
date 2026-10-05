@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
+use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\PreparedQuery;
@@ -468,6 +469,98 @@ class UnitOfWorkTest extends TestCase
             ],
             array_map($read, $queries)
         );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testPushSaveShouldNotManageANewEntityBeforeItIsInserted()
+    {
+        $entity = new Bouh();
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushSave($entity);
+        $this->assertFalse($unitOfWork->isManaged($entity));
+        $this->assertTrue($unitOfWork->isNew($entity));
+
+        $unitOfWork->pushSave($entity);
+        $this->assertFalse($unitOfWork->isManaged($entity));
+        $this->assertTrue($unitOfWork->isNew($entity));
+
+        $unitOfWork->process();
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(1, $entity->getId());
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAgainANewEntityWhoseInsertFailedShouldInsertIt()
+    {
+        $entity = new Bouh();
+        $entity->setName('name');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $failOn = 'INSERT';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $entity): void {
+            $unitOfWork->pushSave($entity)->process();
+        });
+        $this->assertFalse($unitOfWork->isManaged($entity));
+        $this->assertNull($entity->getId());
+
+        $failOn = null;
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(1, $entity->getId());
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    /**
+     * Builds a UnitOfWork on Bouh whose queries are recorded instead of executed.
+     *
+     * @param list<string>|null $queries SQL of each successfully executed query
+     * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException
+     * @param list<string>|null $closed  names of the closed statements
+     */
+    private function createRecordingUnitOfWork(?array &$queries, ?string &$failOn, ?array &$closed): UnitOfWork
+    {
+        $queries = [];
+        $closed = [];
+        $metadataRepository = new MetadataRepository($this->services->serializerFactory());
+        $metadataRepository->addMetadata(
+            'tests\fixtures\model\BouhRepository',
+            BouhRepository::initMetadata($this->services->serializerFactory())
+        );
+
+        $connectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
+        $driver = $this->getMockBuilder(Driver::class)->onlyMethods(['getInsertedId', 'closeStatement'])->getMock();
+        $driver->method('getInsertedId')->willReturn(1);
+        $driver->method('closeStatement')->willReturnCallback(function (string $statement) use (&$closed): void {
+            $closed[] = $statement;
+        });
+        $connectionPool->method('primary')->willReturn($driver);
+
+        $queryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getPrepared'])->getMock();
+        $queryFactory->method('getPrepared')->willReturnCallback(
+            function (string $sql, Connection $connection) use (&$queries, &$failOn): PreparedQuery {
+                $query = $this->getMockBuilder(PreparedQuery::class)
+                    ->setConstructorArgs([$sql, $connection])
+                    ->onlyMethods(['prepareExecute', 'execute'])
+                    ->getMock();
+                $query->method('prepareExecute')->willReturnSelf();
+                $query->method('execute')->willReturnCallback(function () use ($sql, &$queries, &$failOn): bool {
+                    if ($failOn !== null && str_contains($sql, $failOn)) {
+                        throw new QueryException('Forced failure');
+                    }
+                    $queries[] = $sql;
+
+                    return true;
+                });
+
+                return $query;
+            }
+        );
+
+        return new UnitOfWork($connectionPool, $metadataRepository, $queryFactory);
     }
 
     /**

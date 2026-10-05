@@ -32,6 +32,7 @@
     * Fix UnitOfWork updates and deletes sending the primary key of the WHERE clause without its serializer: an enum or DateTime key reached the driver as an object (error), a serializer whose output differs from __toString() matched no row; this includes primary keys whose serializer comes from their type (datetime, uuid, json...), which never got it
     * Fix the columns of the WHERE clause of get(), getBy() and getOneBy() not being escaped (reserved words such as "order" made invalid SQL; PostgreSQL lowercased mixed-case columns), unlike the SELECT and the UPDATE / DELETE clauses
     * Fix iterating or JSON-encoding a Collection without result (e.g. new Collection() returned as an empty collection): every hydrator raised a "foreach() argument must be of type array|object" warning
+    * Fix UnitOfWork::pushSave() managing a new entity before its INSERT ran: saving it again after a failed INSERT (or pushing it twice before process()) ran nothing, without error, and left it without id; a new entity is now managed only once inserted (isManaged() is false until then)
     * Docs: UPGRADE-4.0.md lists the typed extension points (loggers, entity listeners, Repository::getCollection()); the 4.0.0-rc.1 entry on serialization interfaces is corrected
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
