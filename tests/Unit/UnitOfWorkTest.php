@@ -40,6 +40,8 @@ use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
+use tests\fixtures\model\Event;
+use tests\fixtures\model\EventRepository;
 
 class UnitOfWorkTest extends TestCase
 {
@@ -377,21 +379,19 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
     }
 
+    #[AllowMockObjectsWithoutExpectations]
     public function testProcessAManagedEntityWithRevertedChangesShouldUnqueueIt()
     {
         $entity = new Bouh();
         $entity->setName('name');
 
-        $unitOfWork = new UnitOfWork(
-            $this->services->connectionPool(),
-            $this->services->metadataRepository(),
-            $this->services->queryFactory()
-        );
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
         $unitOfWork->manage($entity);
         $entity->setName('newName');
         $entity->setName('name');
         $unitOfWork->pushSave($entity);
         $unitOfWork->process();
+        $this->assertSame([], $queries);
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
     }
@@ -614,6 +614,123 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testSavingADateTimeModifiedInPlaceShouldUpdateIt()
+    {
+        $entity = $this->createEvent(1, '2026-01-01 10:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        // The old value given to propertyChanged() is the object already modified
+        $startAt = $entity->getStartAt();
+        $startAt->modify('+1 day');
+        $entity->setStartAt($startAt);
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'startAt'));
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['UPDATE `T_EVENT_EVT` SET `evt_start_at` = :evt_start_at WHERE `evt_id` = :#evt_id'], $queries);
+        $this->assertSame([['evt_start_at' => '2026-01-02 10:00:00', '#evt_id' => 1]], $params);
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'startAt'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingADateTimeReplacedByAnEqualOneShouldRunNoQuery()
+    {
+        $entity = $this->createEvent(1, '2026-01-01 10:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $entity->setStartAt(new \DateTime('2026-01-01 10:00:00'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'startAt'));
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame([], $queries);
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnUpdateShouldRefreshTheDatabaseValuesOfTheEntity()
+    {
+        $entity = $this->createEvent(1, '2026-01-01 10:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+        $unitOfWork->pushSave($entity)->process();
+        // Equal to the value written by the UPDATE
+        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+        $unitOfWork->pushSave($entity)->process();
+        // Back to the value read at first
+        $entity->getStartAt()->modify('-1 day');
+        $entity->setStartAt($entity->getStartAt());
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(
+            [['evt_start_at' => '2026-01-02 10:00:00', '#evt_id' => 1], ['evt_start_at' => '2026-01-01 10:00:00', '#evt_id' => 1]],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnInsertShouldTakeTheDatabaseValuesOfTheEntity()
+    {
+        $entity = $this->createEvent(null, '2026-01-01 10:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->pushSave($entity)->process();
+
+        $entity->setStartAt(new \DateTime('2026-01-01 10:00:00'));
+        $unitOfWork->pushSave($entity)->process();
+        $entity->getStartAt()->modify('+1 hour');
+        $entity->setStartAt($entity->getStartAt());
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['evt_start_at' => '2026-01-01 11:00:00', '#evt_id' => 1], $params[1]);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testChangingThePrimaryKeyShouldUpdateTheRowStoredWithTheOldOne()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        $entity->setId(4);
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity)->process();
+        $entity->setName('other');
+        $unitOfWork->pushSave($entity)->process();
+        $entity->setId(5);
+        $unitOfWork->pushDelete($entity)->process();
+
+        $this->assertSame(
+            [
+                ['boo_id' => 4, 'boo_name' => 'name', '#boo_id' => 3],
+                ['boo_name' => 'other', '#boo_id' => 4],
+                ['#boo_id' => 4],
+            ],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testDetachShouldForgetTheDatabaseValuesOfTheEntity()
+    {
+        $entity = $this->createEvent(1, '2026-01-01 10:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+        $unitOfWork->detach($entity);
+
+        // Read again from the database, as it is now
+        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+        $unitOfWork->manage($entity);
+        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame([], $queries);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAFailedPrepareShouldRethrowItsException()
     {
         $metadataRepository = new MetadataRepository($this->services->serializerFactory());
@@ -635,21 +752,40 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
     }
 
+    private function createEvent(?int $id, string $startAt): Event
+    {
+        $entity = new Event();
+        $entity->setId($id);
+        $entity->setStartAt(new \DateTime($startAt));
+
+        return $entity;
+    }
+
     /**
-     * Builds a UnitOfWork on Bouh whose queries are recorded instead of executed.
+     * Builds a UnitOfWork on Bouh and Event whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query
      * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException
      * @param list<string>|null $closed  names of the closed statements
+     * @param list<array<string, mixed>>|null $params parameters of each successfully executed query
      */
-    private function createRecordingUnitOfWork(?array &$queries, ?string &$failOn, ?array &$closed): UnitOfWork
-    {
+    private function createRecordingUnitOfWork(
+        ?array &$queries,
+        ?string &$failOn,
+        ?array &$closed,
+        ?array &$params = null
+    ): UnitOfWork {
         $queries = [];
         $closed = [];
+        $params = [];
         $metadataRepository = new MetadataRepository($this->services->serializerFactory());
         $metadataRepository->addMetadata(
             'tests\fixtures\model\BouhRepository',
             BouhRepository::initMetadata($this->services->serializerFactory())
+        );
+        $metadataRepository->addMetadata(
+            EventRepository::class,
+            EventRepository::initMetadata($this->services->serializerFactory())
         );
 
         $connectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
@@ -662,17 +798,18 @@ class UnitOfWorkTest extends TestCase
 
         $queryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getPrepared'])->getMock();
         $queryFactory->method('getPrepared')->willReturnCallback(
-            function (string $sql, Connection $connection) use (&$queries, &$failOn): PreparedQuery {
+            function (string $sql, Connection $connection) use (&$queries, &$failOn, &$params): PreparedQuery {
                 $query = $this->getMockBuilder(PreparedQuery::class)
                     ->setConstructorArgs([$sql, $connection])
                     ->onlyMethods(['prepareExecute', 'execute'])
                     ->getMock();
                 $query->method('prepareExecute')->willReturnSelf();
-                $query->method('execute')->willReturnCallback(function () use ($sql, &$queries, &$failOn): bool {
+                $query->method('execute')->willReturnCallback(function () use ($query, $sql, &$queries, &$failOn, &$params): bool {
                     if ($failOn !== null && str_contains($sql, $failOn)) {
                         throw new QueryException('Forced failure');
                     }
                     $queries[] = $sql;
+                    $params[] = (fn (): array => $this->params)->call($query);
 
                     return true;
                 });

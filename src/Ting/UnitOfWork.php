@@ -41,8 +41,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public const STATE_DELETE  = 3;
     /** @var WeakMap<NotifyPropertyInterface, NotifyPropertyInterface|bool> */
     protected WeakMap $entities;
-    /** @var WeakMap<NotifyPropertyInterface, array<string, array{0: mixed, 1: mixed}>> property => [old value, new value] */
+    /** @var WeakMap<NotifyPropertyInterface, array<string, true>> properties notified by propertyChanged() since the last write */
     protected WeakMap $entitiesChanged;
+    /**
+     * Database values of the managed entities (serialized by the serializer of their field), as last read from or
+     * written to the database: a notified property changed when its current database value differs.
+     *
+     * @var WeakMap<NotifyPropertyInterface, array<string, mixed>> property => database value
+     */
+    protected WeakMap $databaseValues;
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
@@ -59,10 +66,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     ) {
         $this->entities = new WeakMap();
         $this->entitiesChanged = new WeakMap();
+        $this->databaseValues = new WeakMap();
     }
 
     /**
-     * Watch changes on provided entity
+     * Watch changes on provided entity.
+     * Its current values are taken as the values stored in the database: changes are detected against them.
      *
      * @param NotifyPropertyInterface $entity
      */
@@ -70,6 +79,18 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         if (isset($this->entities[$entity]) === false) {
             $this->entities[$entity] = true;
+        }
+
+        if (isset($this->databaseValues[$entity]) === false) {
+            $this->metadataRepository->findMetadataForEntity(
+                $entity,
+                function (Metadata $metadata) use ($entity): void {
+                    $this->databaseValues[$entity] = $metadata->getEntityDatabaseValues($entity);
+                },
+                static function (): void {
+                    // Without metadata, the entity cannot be saved: there is nothing to compare
+                }
+            );
         }
 
         $entity->addPropertyListener($this);
@@ -123,9 +144,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         return isset($this->entitiesShouldBePersisted[$hash]);
     }
 
+    /**
+     * Record that the property may have changed: whether it did is decided on save, by comparing its database value
+     * with the one read from or last written to the database.
+     * The same object given as old and new value is recorded: it may have been modified in place.
+     */
     public function propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue, mixed $newValue): void
     {
-        if ($oldValue === $newValue) {
+        if ($oldValue === $newValue && is_object($newValue) === false) {
             return;
         }
 
@@ -133,21 +159,31 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             $this->entitiesChanged[$entity] = [];
         }
 
-        if (isset($this->entitiesChanged[$entity][$propertyName]) === false) {
-            $this->entitiesChanged[$entity][$propertyName] = [$oldValue, null];
-        }
-
-        $this->entitiesChanged[$entity][$propertyName][1] = $newValue;
+        $this->entitiesChanged[$entity][$propertyName] = true;
     }
 
     /**
-     * @param NotifyPropertyInterface $entity
-     * @param string $propertyName
-     * @return bool
+     * @return bool true if the property has been notified as changed and its database value differs from the one read
+     *              from or last written to the database (when known)
      */
     public function isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName): bool
     {
-        return isset($this->entitiesChanged[$entity][$propertyName]);
+        if (isset($this->entitiesChanged[$entity][$propertyName]) === false) {
+            return false;
+        }
+
+        $changed = true;
+        $this->metadataRepository->findMetadataForEntity(
+            $entity,
+            function (Metadata $metadata) use ($entity, $propertyName, &$changed): void {
+                $changed = $this->getChange($entity, $metadata, $propertyName) !== null;
+            },
+            static function (): void {
+                // Without metadata, the notification is all there is
+            }
+        );
+
+        return $changed;
     }
 
     /**
@@ -159,6 +195,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
         $this->entitiesChanged->offsetUnset($entity);
+        $this->databaseValues->offsetUnset($entity);
         $this->entities->offsetUnset($entity);
     }
 
@@ -168,6 +205,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function detachAll(): void
     {
         $this->entitiesChanged = new WeakMap();
+        $this->databaseValues = new WeakMap();
         $this->entitiesShouldBePersisted = [];
         $this->entities = new WeakMap();
     }
@@ -263,27 +301,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected function processManaged(NotifyPropertyInterface $entity): void
     {
-        $properties = [];
-        foreach ($this->entitiesChanged[$entity] ?? [] as $property => $values) {
-            if ($values[0] !== $values[1]) {
-                $properties[$property] = $values;
-            }
-        }
-
-        if ($properties === []) {
+        if (isset($this->entitiesChanged[$entity]) === false) {
             $this->markSaved($entity);
             return;
         }
 
         $this->metadataRepository->findMetadataForEntity(
             $entity,
-            function (Metadata $metadata) use ($entity, $properties): void {
-                // A setter may notify a property that is not mapped: it has no column to update
-                $properties = array_filter(
-                    $properties,
-                    fn (string $property): bool => $metadata->hasProperty($property),
-                    ARRAY_FILTER_USE_KEY
-                );
+            function (Metadata $metadata) use ($entity): void {
+                $properties = $this->getChanges($entity, $metadata);
                 if ($properties === []) {
                     $this->markSaved($entity);
                     return;
@@ -302,6 +328,9 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
 
+                foreach ($properties as $property => [, $value]) {
+                    $this->databaseValues[$entity][$property] = $value;
+                }
                 $this->markSaved($entity);
             },
             function () use ($entity): void {
@@ -317,6 +346,49 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $this->entitiesChanged->offsetUnset($entity);
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: mixed}> changed properties: name => [database value before the change,
+     *                                                  current database value]
+     */
+    private function getChanges(NotifyPropertyInterface $entity, Metadata $metadata): array
+    {
+        $changes = [];
+        foreach (array_keys($this->entitiesChanged[$entity] ?? []) as $property) {
+            $change = $this->getChange($entity, $metadata, $property);
+            if ($change !== null) {
+                $changes[$property] = $change;
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * @return array{0: mixed, 1: mixed}|null [database value before the change, current database value], or null when
+     *                                       the property did not change, is not mapped (a setter may notify such a
+     *                                       property: it has no column) or cannot be read
+     */
+    private function getChange(NotifyPropertyInterface $entity, Metadata $metadata, string $property): ?array
+    {
+        if ($metadata->hasProperty($property) === false
+            || $metadata->isEntityPropertyReadable($entity, $property) === false
+        ) {
+            return null;
+        }
+
+        $value = $metadata->getEntityPropertyByFieldName($entity, $property);
+        if (isset($this->databaseValues[$entity]) === false
+            || array_key_exists($property, $this->databaseValues[$entity]) === false
+        ) {
+            // Database value unknown (e.g. a typed property not initialized when the entity became managed)
+            return [$value, $value];
+        }
+
+        $databaseValue = $this->databaseValues[$entity][$property];
+
+        return $databaseValue === $value ? null : [$databaseValue, $value];
     }
 
     /**
@@ -346,6 +418,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->entitiesChanged->offsetUnset($entity);
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
 
+                $this->databaseValues[$entity] = $metadata->getEntityDatabaseValues($entity);
                 $this->manage($entity);
             },
             function () use ($entity): void {
@@ -363,23 +436,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected function processDelete(NotifyPropertyInterface $entity): void
     {
-        $properties = [];
-        if (isset($this->entitiesChanged[$entity])) {
-            foreach ($this->entitiesChanged[$entity] as $property => $values) {
-                if ($values[0] !== $values[1]) {
-                    $properties[$property] = $values;
-                }
-            }
-        }
-
         $this->metadataRepository->findMetadataForEntity(
             $entity,
-            function (Metadata $metadata) use ($entity, $properties): void {
+            function (Metadata $metadata) use ($entity): void {
                 $connection = $metadata->getConnection($this->connectionPool);
                 $query = $metadata->generateQueryForDelete(
                     $connection,
                     $this->queryFactory,
-                    $properties,
+                    // A changed primary key: the row is still stored with the old one
+                    $this->getChanges($entity, $metadata),
                     $entity
                 );
                 $query->prepareExecute();

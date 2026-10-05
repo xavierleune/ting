@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -38,14 +39,15 @@ trait NotifyProperty
     }
 
     /**
-     * Notify all observers with old and new values
+     * Notify all observers with old and new values.
+     * The same object given as old and new value is notified: it may have been modified in place.
      * @param $propertyName
      * @param $oldValue
      * @param $newValue
      */
     public function propertyChanged($propertyName, $oldValue, $newValue): void
     {
-        if ($oldValue === $newValue) {
+        if ($oldValue === $newValue && is_object($newValue) === false) {
             return;
         }
 

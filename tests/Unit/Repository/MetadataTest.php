@@ -1251,7 +1251,7 @@ class MetadataTest extends TestCase
             $mockConnection,
             $services->queryFactory(),
             $entity,
-            // As UnitOfWork passes them: property => [old value, new value]
+            // As UnitOfWork passes them: property => [database value before the change, new database value]
             ['name' => ['Sylvain', 'Xavier']]
         );
         $this->assertInstanceOf(PreparedQuery::class, $query);
@@ -1351,7 +1351,7 @@ class MetadataTest extends TestCase
         $this->assertSame(['name' => 'Xavier', '#color' => 'blue'], $this->readQuery($query)[1]);
     }
 
-    public function testGenerateQueryForUpdateShouldSerializeTheOldValueOfAChangedPrimaryKey()
+    public function testGenerateQueryForUpdateShouldTargetTheOldDatabaseValueOfAChangedPrimaryKey()
     {
         [$metadata, $connection, $services, $entity] = $this->createEnumPrimaryKeyMetadata();
 
@@ -1359,7 +1359,8 @@ class MetadataTest extends TestCase
             $connection,
             $services->queryFactory(),
             $entity,
-            ['color' => [ColorsEnum::RED, ColorsEnum::BLUE]]
+            // As UnitOfWork passes them: property => [database value before the change, new database value]
+            ['color' => ['red', 'blue']]
         );
 
         $this->assertSame(['color' => 'blue', '#color' => 'red'], $this->readQuery($query)[1]);
