@@ -249,18 +249,17 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected function processManaged(NotifyPropertyInterface $entity): void
     {
-        if (isset($this->entitiesChanged[$entity]) === false) {
-            return;
-        }
-
         $properties = [];
-        foreach ($this->entitiesChanged[$entity] as $property => $values) {
+        foreach ($this->entitiesChanged[$entity] ?? [] as $property => $values) {
             if ($values[0] !== $values[1]) {
                 $properties[$property] = $values;
             }
         }
 
         if ($properties === []) {
+            // Nothing to update: the save is done
+            $this->entitiesChanged->offsetUnset($entity);
+            unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
             return;
         }
 
