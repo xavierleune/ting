@@ -9,7 +9,7 @@ class BackedEnum implements SerializerInterface
     /**
      * @inheritDoc
      */
-    public function serialize($toSerialize, array $options = []): mixed
+    public function serialize($toSerialize, array $options = []): ?string
     {
         if ($toSerialize === null) {
             return null;
@@ -21,8 +21,9 @@ class BackedEnum implements SerializerInterface
             throw new RuntimeException('BackedEnumSerializer can only serialize enums');
         }
 
+        // A string, as in 3.x: an int-backed enum is stored like its other values
         /** @var T $toSerialize */
-        return $toSerialize->value;
+        return (string) $toSerialize->value;
     }
 
     /**
