@@ -583,6 +583,37 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAnEntityWhoseOnlyChangeIsNotMappedShouldRunNoQuery()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        // "enabled" notifies its changes but is not a field of BouhRepository
+        $entity->setEnabled(true);
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame([], $queries);
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAnEntityShouldIgnoreItsChangesOnPropertiesNotMapped()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $entity->setEnabled(true);
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['UPDATE `T_BOUH_BOO` SET `boo_name` = :boo_name WHERE `boo_id` = :#boo_id'], $queries);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAFailedPrepareShouldRethrowItsException()
     {
         $metadataRepository = new MetadataRepository($this->services->serializerFactory());
