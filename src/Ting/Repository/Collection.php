@@ -139,10 +139,7 @@ class Collection implements CollectionInterface, JsonSerializable
         return $this->hydrator->getIterator();
     }
 
-    /**
-     * @return int<0, max>|string
-     */
-    public function count(): int|string
+    public function count(): int
     {
         return $this->hydrator->count();
     }

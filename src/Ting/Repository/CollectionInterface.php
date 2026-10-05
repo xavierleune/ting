@@ -35,7 +35,7 @@ use CCMBenchmark\Ting\Driver\ResultInterface;
  *
  * @template-extends IteratorAggregate<int, T>
  */
-interface CollectionInterface extends IteratorAggregate
+interface CollectionInterface extends IteratorAggregate, Countable
 {
     /**
      * Fill collection from iterator
@@ -69,8 +69,5 @@ interface CollectionInterface extends IteratorAggregate
      */
     public function getIterator(): \Generator;
 
-    /**
-     * @return int<0, max>|string
-     */
-    public function count(): int|string;
+    public function count(): int;
 }

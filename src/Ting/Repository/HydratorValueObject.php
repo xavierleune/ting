@@ -76,7 +76,8 @@ class HydratorValueObject implements HydratorInterface
             return 0;
         }
 
-        return $this->result->getNumRows();
+        // mysqli reports the number of rows as a string beyond PHP_INT_MAX
+        return (int) $this->result->getNumRows();
     }
 
     public function setMetadataRepository(MetadataRepository $metadataRepository): void

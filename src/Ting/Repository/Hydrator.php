@@ -120,15 +120,16 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * @return int<0, max>|string
+     * @return int Not int<0, max> as Countable states: the number of rows comes from the driver, untyped
      */
-    public function count(): int|string
+    public function count(): int
     {
         if ($this->result === null) {
             return 0;
         }
 
-        return $this->result->getNumRows();
+        // mysqli reports the number of rows as a string beyond PHP_INT_MAX
+        return (int) $this->result->getNumRows();
     }
 
     /**
