@@ -26,12 +26,18 @@
 
 namespace CCMBenchmark\Ting\Tests\Unit\Serializer;
 
+use CCMBenchmark\Ting\Serializer\ArrayValueInterface;
 use CCMBenchmark\Ting\Serializer\Json;
 use CCMBenchmark\Ting\Serializer\RuntimeException;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 
 class JsonTest extends TestCase
 {
+    public function testJsonValuesAreArraysSerializedAsAWholeInCriteria()
+    {
+        $this->assertInstanceOf(ArrayValueInterface::class, new Json());
+    }
+
     public function testSerializeShouldReturnJsonEncodedValue()
     {
         $jsonSerializer = new Json();

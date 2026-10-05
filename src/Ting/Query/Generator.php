@@ -345,7 +345,8 @@ class Generator
             $i++;
         }
 
-        if (count($orderList) > 0) {
+        // Every direction may have been ignored: no clause rather than an empty " ORDER BY "
+        if ($orderCriteria !== []) {
             return ' ORDER BY ' . implode(',', $orderCriteria);
         }
 

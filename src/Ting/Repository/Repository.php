@@ -37,6 +37,7 @@ use CCMBenchmark\Ting\Driver\Mysqli;
 use CCMBenchmark\Ting\Driver\SphinxQL;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Exceptions\RepositoryException;
+use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Query\Query;
@@ -179,8 +180,10 @@ abstract class Repository implements ResetInterface
     /**
      * Retrieve one object from database
      *
-     * @param $primariesKeyValue array|int|string column => value or if one primary : just the value
+     * @param mixed $primariesKeyValue property name => value, or just the value when there is one primary key.
+     *                                 Values are converted like the criteria of getBy().
      * @return T|null
+     * @throws ValueException on an unknown property (or a column name) or an invalid value
      */
     public function get(mixed $primariesKeyValue, bool $forcePrimary = false)
     {
@@ -218,8 +221,12 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * @param array $criteria
+     * @param array<string, mixed> $criteria property name => value: null (IS NULL), a scalar, an object converted by
+     *                                       the serializer of the field, or an array (IN list, or a single value
+     *                                       serialized as a whole when the serializer implements ArrayValueInterface)
+     * @param array<string, string> $order property name => "ASC" or "DESC"
      * @return CollectionInterface<T>
+     * @throws ValueException on an unknown property (or a column name), an invalid value or an invalid direction
      */
     public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface
     {
@@ -237,7 +244,9 @@ abstract class Repository implements ResetInterface
     }
 
     /**
+     * @param array<string, mixed> $criteria property name => value, as in getBy()
      * @return T|null
+     * @throws ValueException on an unknown property (or a column name) or an invalid value
      */
     public function getOneBy(array $criteria, bool $forcePrimary = false)
     {

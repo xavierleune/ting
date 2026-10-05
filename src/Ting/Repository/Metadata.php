@@ -26,6 +26,7 @@
 
 namespace CCMBenchmark\Ting\Repository;
 
+use CCMBenchmark\Ting\Serializer\ArrayValueInterface;
 use CCMBenchmark\Ting\Serializer\DateTime;
 use CCMBenchmark\Ting\Serializer\DateTimeImmutable;
 use CCMBenchmark\Ting\Serializer\DateTimeZone;
@@ -459,28 +460,176 @@ class Metadata
             $fields
         );
 
-        $criteriaColumn = $this->getColumnsFromCriteria($criteria);
+        $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getOneBy()');
 
         return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
     }
 
     /**
-     * @param array $criteria
-     * @return array
+     * Convert criteria keyed by property name into database-ready values keyed by column name
+     *
+     * @param array<string, mixed> $criteria property name => value
+     * @return array<string, mixed> column name => value (null, scalar, or list of scalars for an IN list)
      * @throws ValueException
      */
     protected function getColumnsFromCriteria(array $criteria): array
     {
+        return $this->convertCriteria($criteria, 'the criteria');
+    }
+
+    /**
+     * @param array<string, mixed> $criteria property name => value
+     * @param string $context where the criteria come from, for the exception messages
+     * @return array<string, mixed> column name => value (null, scalar, or list of scalars for an IN list)
+     * @throws ValueException
+     */
+    private function convertCriteria(array $criteria, string $context): array
+    {
         $criteriaColumn = [];
         foreach ($criteria as $property => $value) {
-            if (isset($this->fieldsByProperty[$property]) === false) {
-                throw new ValueException(sprintf('Undefined property %s in your criteria', $property));
-            }
-            $column = $this->fieldsByProperty[$property]['columnName'];
-            $criteriaColumn[$column] = $value;
+            $field = $this->getFieldByProperty((string) $property, $context);
+            $criteriaColumn[$field['columnName']] = $this->getDatabaseValue($field, $value, $context);
         }
 
         return $criteriaColumn;
+    }
+
+    /**
+     * Convert an order keyed by property name into directions keyed by column name
+     *
+     * @param array<string, mixed> $order property name => "ASC" or "DESC" (case-insensitive)
+     * @return array<string, string> column name => "ASC" or "DESC"
+     * @throws ValueException
+     */
+    private function getColumnsFromOrder(array $order): array
+    {
+        $context = 'the order of Repository::getBy()';
+        $orderColumn = [];
+        foreach ($order as $property => $direction) {
+            $field = $this->getFieldByProperty((string) $property, $context);
+            $normalizedDirection = is_string($direction) ? strtoupper($direction) : null;
+            if ($normalizedDirection !== 'ASC' && $normalizedDirection !== 'DESC') {
+                throw new ValueException(sprintf(
+                    'Invalid direction "%s" for property "%s" in %s: use "ASC" or "DESC"',
+                    is_string($direction) ? $direction : get_debug_type($direction),
+                    $property,
+                    $context
+                ));
+            }
+            $orderColumn[$field['columnName']] = $normalizedDirection;
+        }
+
+        return $orderColumn;
+    }
+
+    /**
+     * @return Field
+     * @throws ValueException when the property is unknown, naming the property to use when a column name is given
+     */
+    private function getFieldByProperty(string $property, string $context): array
+    {
+        if (isset($this->fieldsByProperty[$property])) {
+            return $this->fieldsByProperty[$property];
+        }
+
+        if (isset($this->fields[$property])) {
+            throw new ValueException(sprintf(
+                '"%s" is a column name: use the property name "%s" in %s',
+                $property,
+                $this->fields[$property]['fieldName'],
+                $context
+            ));
+        }
+
+        throw new ValueException(sprintf('Undefined property "%s" in %s', $property, $context));
+    }
+
+    /**
+     * Convert a criterion value into a value for the database:
+     * - null is kept (IS NULL);
+     * - an array is serialized as a whole when the serializer of the field implements ArrayValueInterface,
+     *   otherwise each element is converted (IN list);
+     * - an object is serialized by the serializer of the field (a Stringable object without serializer is sent as is);
+     * - a scalar is sent as is.
+     *
+     * @param Field $field
+     * @throws ValueException
+     */
+    private function getDatabaseValue(array $field, mixed $value, string $context): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $serializer = isset($field['serializer']) ? $this->serializerFactory->get($field['serializer']) : null;
+
+        if (is_array($value) === false) {
+            return $this->getDatabaseScalarValue($field, $serializer, $value, $context);
+        }
+
+        if ($serializer instanceof ArrayValueInterface) {
+            return $serializer->serialize($value, $field['serializer_options']['serialize'] ?? []);
+        }
+
+        if ($value === []) {
+            throw new ValueException(sprintf(
+                'Empty array for property "%s" in %s: nothing can match',
+                $field['fieldName'],
+                $context
+            ));
+        }
+
+        $databaseValues = [];
+        foreach ($value as $key => $element) {
+            if ($element === null) {
+                throw new ValueException(sprintf(
+                    'Null in the array for property "%s" in %s: an IN list never matches NULL',
+                    $field['fieldName'],
+                    $context
+                ));
+            }
+            if (is_array($element)) {
+                throw new ValueException(sprintf(
+                    'Nested array for property "%s" in %s',
+                    $field['fieldName'],
+                    $context
+                ));
+            }
+            $databaseValues[$key] = $this->getDatabaseScalarValue($field, $serializer, $element, $context);
+        }
+
+        return $databaseValues;
+    }
+
+    /**
+     * @param Field $field
+     * @throws ValueException
+     */
+    private function getDatabaseScalarValue(
+        array $field,
+        ?SerializerInterface $serializer,
+        mixed $value,
+        string $context
+    ): mixed {
+        if (is_object($value) === false) {
+            return $value;
+        }
+
+        if ($serializer === null) {
+            if ($value instanceof \Stringable) {
+                // Cast to string by the driver, e.g. a Symfony Uuid on a plain string field
+                return $value;
+            }
+
+            throw new ValueException(sprintf(
+                'Cannot use an object of class "%s" for property "%s" in %s: its field has no serializer',
+                $value::class,
+                $field['fieldName'],
+                $context
+            ));
+        }
+
+        return $serializer->serialize($value, $field['serializer_options']['serialize'] ?? []);
     }
 
     /**
@@ -533,7 +682,7 @@ class Metadata
             $fields
         );
 
-        $criteriaColumn = $this->getColumnsFromCriteria($criteria);
+        $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
 
         return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
     }
@@ -555,28 +704,31 @@ class Metadata
             $this->table,
             $fields
         );
-        $criteriaColumn = $this->getColumnsFromCriteria($criteria);
+        $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
+        $orderColumn = $this->getColumnsFromOrder($orderBy);
 
-        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary, $orderBy, $limit);
+        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary, $orderColumn, $limit);
     }
 
     /**
-     * @param $originalValue
-     * @return array
+     * @param mixed $originalValue property name => value, or just the value when there is one primary key
+     * @return array<string, mixed> column name => database-ready value
      * @throws Exception
+     * @throws ValueException
      */
     protected function getPrimariesKeyValuesAsArray(mixed $originalValue): array
     {
+        $context = 'Repository::get()';
+
         if (is_array($originalValue) === false) {
-            $primariesKeyValue = [];
             if (count($this->primaries) == 1) {
                 $columnName = array_key_first($this->primaries);
-                $primariesKeyValue[$columnName] = $originalValue;
-                return $primariesKeyValue;
+                return [$columnName => $this->getDatabaseValue($this->primaries[$columnName], $originalValue, $context)];
             }
             throw new Exception('Incorrect format for primaries');
         }
-        return $originalValue;
+
+        return $this->convertCriteria($originalValue, $context);
     }
 
     /**

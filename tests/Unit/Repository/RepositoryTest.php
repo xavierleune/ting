@@ -34,6 +34,7 @@ use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\Cached\PreparedQuery as CachedPreparedQuery;
 use CCMBenchmark\Ting\Query\Cached\Query as CachedQuery;
@@ -52,6 +53,7 @@ use tests\fixtures\Fake\Mysqli;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
+use tests\fixtures\model\CityRepository;
 
 class RepositoryTest extends TestCase
 {
@@ -797,6 +799,37 @@ class RepositoryTest extends TestCase
         });
 
         return $mockMysqliResult;
+    }
+
+    public function testReadMethodsShouldRejectColumnNamesAndNameTheProperty()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../../fixtures/model/CityRepository.php'
+        );
+        $cityRepository = $services->repositoryFactory()->get(CityRepository::class);
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $cityRepository->get(['cit_id' => 3]),
+            '"cit_id" is a column name: use the property name "id" in Repository::get()'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $cityRepository->getOneBy(['cit_name' => 'Paris']),
+            '"cit_name" is a column name: use the property name "name" in the criteria of Repository::getOneBy()'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $cityRepository->getBy(['name' => 'Paris'], order: ['cit_name' => 'ASC']),
+            '"cit_name" is a column name: use the property name "name" in the order of Repository::getBy()'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $cityRepository->getBy(['name' => 'Paris'], order: ['name' => 'UP']),
+            'Invalid direction "UP" for property "name" in the order of Repository::getBy(): use "ASC" or "DESC"'
+        );
     }
 
     /**

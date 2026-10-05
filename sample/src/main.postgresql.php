@@ -65,7 +65,7 @@ $services->connectionPool()->setDatabaseOptions($options);
 
 try {
     $cityRepository = $services->repositoryFactory()->get(CityRepository::class);
-    var_dump($cityRepository->get(['cit_id' => 3]));
+    var_dump($cityRepository->get(['id' => 3]));
     echo str_repeat("-", 40) . "\n";
 
     $query = $cityRepository->getQuery(

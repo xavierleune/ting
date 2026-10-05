@@ -65,6 +65,69 @@ $city = $cityRepository->get(3, forcePrimary: true);
   `usePrimary:`), otherwise PHP throws an `Error` (unknown named parameter).
 * As before, a replica falls back to the primary when no replica is configured.
 
+Repository reads: property names and entity values
+--------------------------------------------------
+
+`Repository::get()`, `getBy()` and `getOneBy()` now take **property names** (`fieldName`) everywhere, and convert the
+values of the criteria with the serializers of the fields, as `save()` does:
+
+| Argument                                  | Before (3.x)                            | After (4.0)                                    |
+|-------------------------------------------|-----------------------------------------|------------------------------------------------|
+| Composite primary key of `get([...])`     | column names, raw values                | property names, converted values               |
+| Criteria of `getBy()` / `getOneBy()`      | property names, raw values              | property names, converted values               |
+| `$order` of `getBy()`                     | column names                            | property names                                 |
+| Order direction other than `ASC` / `DESC` | silently ignored                        | `ValueException`                               |
+| Empty array in the criteria               | invalid SQL (`IN ()`)                   | `ValueException`                               |
+
+```php
+// Before (3.x):
+$language = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
+$cities = $cityRepository->getBy(
+    ['status' => CityStatus::Active->value, 'createdAt' => $date->format('Y-m-d H:i:s')],
+    order: ['cit_name' => 'ASC'],
+);
+
+// After (4.0):
+$language = $countryLanguageRepository->get(['countryCode' => 'AGO', 'language' => 'Kongo']);
+$cities = $cityRepository->getBy(
+    ['status' => CityStatus::Active, 'createdAt' => $date],
+    order: ['name' => 'ASC'],
+);
+```
+
+Each value of the criteria (and of a composite key given to `get()`) is converted as follows:
+
+| Value                             | Field                                                               | Sent as                                       |
+|-----------------------------------|---------------------------------------------------------------------|-----------------------------------------------|
+| `null`                            | any                                                                 | `IS NULL`                                     |
+| array                             | serializer implementing `Serializer\ArrayValueInterface` (`Json`)   | serialized as a whole, `=`                    |
+| empty array                       | other fields                                                        | `ValueException`: nothing can match           |
+| array                             | other fields                                                        | `IN (...)`, each element converted as below   |
+| object                            | with a serializer                                                   | serialized, `=` (or element of the `IN` list) |
+| `Stringable` object               | without serializer                                                  | as is (the driver casts it to string)         |
+| other object                      | without serializer                                                  | `ValueException`                              |
+| scalar (string, int, float, bool) | any                                                                 | as is                                         |
+
+* An unknown key throws a `CCMBenchmark\Ting\Exceptions\ValueException`. When the key is a column name, the message
+  names the property to use, e.g.
+  `"cit_name" is a column name: use the property name "name" in the order of Repository::getBy()`.
+* An order direction other than `ASC` or `DESC` (case-insensitive) throws a `ValueException`, e.g.
+  `Invalid direction "UP" for property "name" in the order of Repository::getBy(): use "ASC" or "DESC"`.
+* An empty array throws a `ValueException`
+  (`Empty array for property "id" in the criteria of Repository::getBy(): nothing can match`)
+  instead of sending invalid SQL: return early when the list may be empty (`if ($ids === []) { return ...; }`).
+* `null` or a nested array inside an `IN` list throws a `ValueException`: an `IN` list never matches `NULL`.
+* Scalars are still sent as is: database values (`CityStatus::Active->value`, a formatted date) keep working, only
+  column-name keys must be renamed. Passing the PHP value (enum, `DateTime`...) is now possible.
+* With a `Json` field, an array is now compared as a whole with the JSON encoding of the value, instead of becoming an
+  `IN` list. See [the caveats on JSON equality](docs/repositories.md#criteria-keys-and-values).
+* A custom serializer whose PHP value is an array can implement the marker interface
+  `CCMBenchmark\Ting\Serializer\ArrayValueInterface` to get the same behaviour.
+* `get()` with a single value (one primary key) follows the same rules: scalars and `null` are unchanged, an object is
+  now serialized.
+* Ting 3.15 already accepts both the 3.x and the 4.0 forms, and deprecates the 3.x ones: you can migrate on 3.x first,
+  fix the deprecations, then upgrade to 4.0.
+
 Services Container Removed
 --------------------------
 
