@@ -26,6 +26,7 @@
     * Fix Pgsql Driver::execute() never stopping the query log when the query fails
     * Fix Mysqli prepared queries without result set (INSERT, UPDATE, DELETE) returning false on success since 4.0.0-rc.1; they return true again, as Pgsql
     * Fix Serializer\BackedEnum::serialize() returning an int for an int-backed enum since 4.0.0-rc.1; it returns a string again, as in 3.x
+    * Docs: UPGRADE-4.0.md lists the typed extension points (loggers, entity listeners, Repository::getCollection()); the 4.0.0-rc.1 entry on serialization interfaces is corrected
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit
@@ -34,7 +35,7 @@
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
     * BC All classes now fully typehinted with strict types and return types
     * BC Pgsql Driver now uses native PHP 8.1+ PgSql\Connection and PgSql\Result classes instead of resources
-    * BC Serialization interfaces typehinted: SerializeInterface::serialize() and UnserializeInterface::unserialize()
+    * Serializers typehinted (SerializeInterface and UnserializeInterface keep their 3.x signatures: the native return types were removed before this release)
     * BC Added ping() and setTimezone() methods to DriverInterface
     * BC Added ConnectionPoolInterface::setDatabaseOptions() method
     * BC Deleted Metadata::getGetter() and Metadata::getSetter() methods
