@@ -81,7 +81,7 @@ class DriverTest extends TestCase
         }
 
         // libpq then uses its defaults (current user, .pgpass)
-        $this->assertSame('host=hostname.test port=1234 dbname=bouh', $outerDsn);
+        $this->assertSame("host='hostname.test' port='1234' dbname='bouh'", $outerDsn);
     }
 
     public function testCloseShouldReturnSelf()
@@ -178,8 +178,57 @@ class DriverTest extends TestCase
         $driver->setDatabase('database.test');
 
         $this->assertSame(
-            'host=hostname.test user=user.test password=password.test port=1234 dbname=database.test',
+            "host='hostname.test' user='user.test' password='password.test' port='1234' dbname='database.test'",
             $outerDsn
+        );
+    }
+
+    public function testConnectShouldQuoteEveryValueOfTheDsn()
+    {
+        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): void {
+            $outerDsn = $dsn;
+        });
+
+        $driver = new Driver();
+        // An empty password must not swallow the next keyword (libpq read "password= port=1234" as the password)
+        $driver->connect('hostname.test', 'user name', '', 1234);
+        $driver->setDatabase("data'base\\");
+
+        $this->assertSame(
+            "host='hostname.test' user='user name' password='' port='1234' dbname='data\\'base\\\\'",
+            $outerDsn
+        );
+    }
+
+    public function testConnectShouldEscapeQuotesAndBackslashesOfThePassword()
+    {
+        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): void {
+            $outerDsn = $dsn;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', "p ass'wo\\rd", 1234);
+        $driver->setDatabase('database.test');
+
+        $this->assertSame(
+            "host='hostname.test' user='user.test' password='p ass\\'wo\\\\rd' port='1234' dbname='database.test'",
+            $outerDsn
+        );
+    }
+
+    public function testConnectErrorShouldRedactTheWholeUserAndPassword()
+    {
+        NativeFunctionMock::override('pg_connect', false);
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', "us er", "sec ret' \\' tail", 1234);
+
+        $this->assertThrows(
+            DriverException::class,
+            function () use ($driver): void {
+                $driver->setDatabase('bouh');
+            },
+            "Connect Error: host='hostname.test' user=<REDACTED> password=<REDACTED> port='1234' dbname='bouh'"
         );
     }
 
