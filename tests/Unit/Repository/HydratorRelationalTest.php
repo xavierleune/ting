@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\Hydrator\AggregateFrom;
 use CCMBenchmark\Ting\Repository\Hydrator\AggregateTo;
 use CCMBenchmark\Ting\Repository\Hydrator\RelationMany;
@@ -35,10 +36,15 @@ use CCMBenchmark\Ting\Repository\HydratorRelational;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\CityWithPublicPropertiesRepository;
 use tests\fixtures\model\CountryWithPublicPropertiesRepository;
+
+use function array_keys;
+use function array_map;
+use function array_values;
 
 use const MYSQLI_TYPE_VAR_STRING;
 
@@ -981,5 +987,200 @@ class HydratorRelationalTest extends TestCase
         $this->assertSame('Tokyo', $data->name);
         $country = $data->getCountry();
         $this->assertNull($country);
+    }
+
+    /**
+     * Every permutation of the relations of a three-level tree (bouh <- c <- dep <- auth), with two relations sharing
+     * the source c.
+     */
+    public static function relationOrders(): iterable
+    {
+        $relations = ['citiesAre', 'setCity', 'setDepartment', 'setAuthority'];
+        foreach (self::permutations($relations) as $permutation) {
+            yield implode(', ', $permutation) => [$permutation];
+        }
+    }
+
+    private static function permutations(array $items): array
+    {
+        if (count($items) <= 1) {
+            return [$items];
+        }
+
+        $permutations = [];
+        foreach ($items as $index => $item) {
+            $rest = $items;
+            unset($rest[$index]);
+            foreach (self::permutations(array_values($rest)) as $permutation) {
+                $permutations[] = [$item, ...$permutation];
+            }
+        }
+
+        return $permutations;
+    }
+
+    /**
+     * @param list<string> $order
+     */
+    #[DataProvider('relationOrders')]
+    public function testHydrateDoesNotDependOnTheOrderOfTheRelations(array $order): void
+    {
+        $services = new TingServices();
+        $hydrator = $this->getTreeHydrator($services, [
+            [1, 'Leune', 10, 'Paris', 100, 1000],
+            [1, 'Leune', 11, 'Lyon', 101, 1001],
+            [2, 'Robez-Masson', 12, 'Nancy', 100, 1000],
+        ]);
+        $relations = [
+            'citiesAre'     => new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'),
+            'setCity'       => new RelationOne(new AggregateFrom('c'), new AggregateTo('bouh'), 'setCity'),
+            'setDepartment' => new RelationOne(new AggregateFrom('dep'), new AggregateTo('c'), 'setDepartment'),
+            'setAuthority'  => new RelationOne(new AggregateFrom('auth'), new AggregateTo('dep'), 'setAuthority'),
+        ];
+        foreach ($order as $name) {
+            $hydrator->addRelation($relations[$name]);
+        }
+
+        $rows = iterator_to_array($hydrator->getIterator(), false);
+
+        $this->assertCount(2, $rows);
+        foreach ($rows as $row) {
+            $this->assertSame(['bouh'], array_keys($row));
+        }
+
+        $describe = static fn ($city) => $city->getName() . '/' . $city->getDepartment()?->getId()
+            . '/' . $city->getDepartment()?->getAuthority()?->getId();
+
+        $first = $rows[0]['bouh'];
+        $this->assertSame('Leune', $first->getName());
+        $this->assertSame(['Paris/100/1000', 'Lyon/101/1001'], array_map($describe, array_values($first->getCities())));
+        $this->assertSame('Lyon/101/1001', $describe($first->getCity()));
+        // Leaves first: the city given to setCity() (cloned by the setter) already has its department
+        $this->assertSame('Lyon/101/1001', $describe($first->getOriginalCity()));
+
+        $second = $rows[1]['bouh'];
+        $this->assertSame('Robez-Masson', $second->getName());
+        $this->assertSame(['Nancy/100/1000'], array_map($describe, array_values($second->getCities())));
+        $this->assertSame('Nancy/100/1000', $describe($second->getOriginalCity()));
+        $this->assertSame(
+            array_values($first->getCities())[0]->getDepartment(),
+            $second->getCity()->getDepartment()
+        );
+    }
+
+    public function testHydrateAppliesEveryRelationOfTheSameSource(): void
+    {
+        $result = $this->getResult();
+        $hydrator = new HydratorRelational();
+        $hydrator->setMetadataRepository($this->services->metadataRepository());
+        $hydrator->setUnitOfWork($this->services->unitOfWork());
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('c'), new AggregateTo('bouh'), 'setCity'));
+
+        $rows = iterator_to_array($hydrator->setResult($result)->getIterator(), false);
+
+        $this->assertCount(2, $rows);
+        $names = static fn (array $cities) => array_map(static fn ($city) => $city->getName(), array_values($cities));
+        $this->assertSame(['Boulogne-Billancourt', 'Palaiseau'], $names($rows[0]['bouh']->getCities()));
+        $this->assertSame('Palaiseau', $rows[0]['bouh']->getCity()->getName());
+        $this->assertSame(['Palaiseau', 'Montbéliard', 'Luxiol'], $names($rows[1]['bouh']->getCities()));
+        $this->assertSame('Luxiol', $rows[1]['bouh']->getCity()->getName());
+    }
+
+    public function testHydrateRejectsABidirectionalRelation(): void
+    {
+        $hydrator = $this->getTreeHydrator(new TingServices(), [[1, 'Leune', 10, 'Paris', 100, 1000]]);
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('bouh'), new AggregateTo('c'), 'setBouh'));
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator()),
+            'Cannot order the relations c -> bouh, bouh -> c: they contain a cycle. Every relation must lead to a '
+            . 'root alias, which is the source of no relation: set the back reference in the setter instead.'
+        );
+    }
+
+    public function testHydrateRejectsACycle(): void
+    {
+        $hydrator = $this->getTreeHydrator(new TingServices(), [[1, 'Leune', 10, 'Paris', 100, 1000]]);
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('auth'), new AggregateTo('dep'), 'setAuthority'));
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('dep'), new AggregateTo('c'), 'setDepartment'));
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('c'), new AggregateTo('auth'), 'setCity'));
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator()),
+            'Cannot order the relations c -> bouh, auth -> dep, dep -> c, c -> auth: they contain a cycle. Every '
+            . 'relation must lead to a root alias, which is the source of no relation: set the back reference in '
+            . 'the setter instead.'
+        );
+    }
+
+    public function testHydrateRejectsARelationOfAnAliasToItself(): void
+    {
+        $hydrator = $this->getTreeHydrator(new TingServices(), [[1, 'Leune', 10, 'Paris', 100, 1000]]);
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('c'), new AggregateTo('c'), 'setCity'));
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator()),
+            'Cannot order the relations c -> c: they contain a cycle. Every relation must lead to a root alias, '
+            . 'which is the source of no relation: set the back reference in the setter instead.'
+        );
+    }
+
+    /**
+     * A hydrator over rows (bouh.id, bouh.name, c.id, c.name, dep.id, auth.id).
+     */
+    private function getTreeHydrator(TingServices $services, array $rows): HydratorRelational
+    {
+        $tables = [
+            ['tests\fixtures\model\Bouh', 'T_BOUH_BOO', 'bouh', ['id' => 'boo_id', 'name' => 'boo_name']],
+            ['tests\fixtures\model\City', 'T_CITY_CIT', 'c', ['id' => 'cit_id', 'name' => 'cit_name']],
+            ['tests\fixtures\model\Department', 'T_DEPARTMENT', 'dep', ['id' => 'department_id']],
+            ['tests\fixtures\model\Authority', 'T_AUTHORITY', 'auth', ['id' => 'authority_id']],
+        ];
+        $fields = [];
+        foreach ($tables as [$entity, $table, $alias, $columns]) {
+            $metadata = new Metadata($services->serializerFactory());
+            $metadata->setConnectionName('connectionName');
+            $metadata->setDatabase('database');
+            $metadata->setEntity($entity);
+            $metadata->setTable($table);
+            foreach ($columns as $fieldName => $columnName) {
+                $metadata->addField([
+                    'primary'    => $fieldName === 'id',
+                    'fieldName'  => $fieldName,
+                    'columnName' => $columnName,
+                    'type'       => $fieldName === 'id' ? 'int' : 'string',
+                ]);
+
+                $field = new \stdClass();
+                $field->name     = $fieldName;
+                $field->orgname  = $columnName;
+                $field->table    = $alias;
+                $field->orgtable = $table;
+                $field->type     = MYSQLI_TYPE_VAR_STRING;
+                $fields[] = $field;
+            }
+            $services->metadataRepository()->addMetadata($entity . 'Repository', $metadata);
+        }
+
+        $mockMysqliResult = new MysqliResult($rows);
+        $mockMysqliResult->setFieldsCallback(static fn () => $fields);
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new HydratorRelational();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->setResult($result);
+
+        return $hydrator;
     }
 }

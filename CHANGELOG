@@ -48,6 +48,9 @@
     * Fix Mysqli prepared queries running on the wrong database: one driver serves every database of a server, and a statement prepared while another database was selected was reused (reads and writes went to that database, its results reported it); statements are now cached per database, closeStatement() closes the statement of every database
     * Fix startTransaction(), commit() and rollback() ignoring failures (Mysqli and Pgsql): they throw a TransactionException with the driver error, including the PostgreSQL COMMIT of an aborted transaction, which answers ROLLBACK without error; a failed commit() or rollback() leaves no transaction open
     * Fix Mysqli ping() throwing an Error ("mysqli object is not fully initialized") forever once a reconnection had failed, even after the server came back: ping() retries the connection, and queries, prepares and transactions throw a QueryException / TransactionException until it succeeds; the database, charset and timezone set meanwhile are applied on reconnection
+    * Fix HydratorRelational depending on the order of the relations (since 3.x): added in another order than parent to child, it duplicated or lost the roots, left relations unset and leaked joined aliases into the rows; the relations are now sorted topologically (a setter receives entities whose relations are already set), the rows grouped by the root alias, and every source alias removed from the rows, even when its join is empty
+    * Fix HydratorRelational silently dropping a relation when two relations share the same source alias (since 3.x)
+    * BC HydratorRelational throws a HydratorException when the relations form a cycle (bidirectional relation, alias related to itself); they were partially ignored
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

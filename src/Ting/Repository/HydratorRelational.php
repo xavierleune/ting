@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -33,13 +34,14 @@ use CCMBenchmark\Ting\Repository\Hydrator\RelationMany;
 use Generator;
 use SplDoublyLinkedList;
 
-use function array_reverse;
-use function array_search;
-use function array_splice;
-use function array_unshift;
-use function array_values;
+use function array_column;
+use function array_diff;
+use function array_map;
+use function array_unique;
+use function implode;
 use function in_array;
-use function ksort;
+use function iterator_to_array;
+use function sprintf;
 
 /**
  * @template T
@@ -113,108 +115,89 @@ final class HydratorRelational extends Hydrator
         return $this->hydrate();
     }
 
-    private function resolveDependencies(): void
+    /**
+     * Orders the relations so that each one comes after the relations targeting its source: a setter receives
+     * entities whose own relations are already set. Independent relations keep their insertion order.
+     *
+     * @throws HydratorException when the relations form a cycle
+     *
+     * @return list<array{source: string, target: string, targetSetter: string, many: bool}>
+     */
+    private function resolveDependencies(): array
     {
-        $order = [];
-        foreach ($this->config as $item) {
-            if (!in_array($item['target'], $order, true)) {
-                array_unshift($order, $item['target']);
-            }
-            if (!in_array($item['source'], $order, true)) {
-                /** @var int $pos */
-                $pos = array_search($item['target'], $order, true);
-                array_splice($order, $pos + 1, 0, $item['source']);
-            }
-        }
-        $order = array_reverse($order);
+        /** @var list<array{source: string, target: string, targetSetter: string, many: bool}> $pending */
+        $pending = iterator_to_array($this->config, false);
+        $ordered = [];
 
-        $output = [];
-        foreach ($this->config as $config) {
-            $index = array_search($config['source'], $order);
-            $output[$index] = $config;
-        }
-        ksort($output);
+        while ($pending !== []) {
+            $targets = array_column($pending, 'target');
+            foreach ($pending as $index => $relation) {
+                if (in_array($relation['source'], $targets, true) === false) {
+                    $ordered[] = $relation;
+                    unset($pending[$index]);
+                    continue 2;
+                }
+            }
 
-        $this->config = new SplDoublyLinkedList();
-        foreach (array_values($output) as $index => $config) {
-            $this->config->add($index, $config);
+            throw new HydratorException(sprintf(
+                'Cannot order the relations %s: they contain a cycle. Every relation must lead to a root alias, which '
+                . 'is the source of no relation: set the back reference in the setter instead.',
+                implode(', ', array_map(
+                    static fn (array $relation): string => $relation['source'] . ' -> ' . $relation['target'],
+                    $pending
+                ))
+            ));
         }
+
+        return $ordered;
     }
 
     /**
-     * @param array $config
-     * @param array $result
+     * Stores the first instance met for the entity of $alias and returns its reference key
      *
      * @throws Exception
-     *
-     * @return string
      */
-    private function saveTargetReference(array $config, array $result): string
+    private function saveReference(string $alias, array $result): string
     {
-        $keyTarget = $config['target'] . '-' . $this->getIdentifiers($config['target'], $result[$config['target']]);
+        $key = $alias . '-' . $this->getIdentifiers($alias, $result[$alias]);
 
-        if (isset($this->referencesRelation[$keyTarget]) === false) {
-            $this->referencesRelation[$keyTarget] = $result[$config['target']];
+        if (isset($this->referencesRelation[$key]) === false) {
+            $this->referencesRelation[$key] = $result[$alias];
         }
 
-        return $keyTarget;
+        return $key;
     }
 
     /**
-     * @param array $config
-     * @param array $result
-     *
-     * @throws Exception
-     *
-     * @return string
+     * @param array{source: string, target: string, targetSetter: string, many: bool} $relation
      */
-    private function saveSourceReference(array $config, array $result): string
+    private function saveResourceFor(int $index, array $relation, string $keyTarget, string $keySource): void
     {
-        $keySource = $config['source'] . '-' . $this->getIdentifiers($config['source'], $result[$config['source']]);
-
-        if (isset($this->referencesRelation[$keySource]) === false) {
-            $this->referencesRelation[$keySource] = $result[$config['source']];
-        }
-
-        return $keySource;
-    }
-
-    /**
-     * @param array  $config
-     * @param string $keyTarget
-     * @param string $keySource
-     */
-    private function saveResourceFor(array $config, string $keyTarget, string $keySource): void
-    {
-        if (isset($this->resources[$keyTarget][$config['targetSetter']]) === false) {
-            $this->resources[$keyTarget][$config['targetSetter']] = [];
-        }
-
-        if ($config['many'] === true) {
-            if (isset($this->resources[$keyTarget][$config['targetSetter']][$keySource]) === false) {
-                $this->resources[$keyTarget][$config['targetSetter']][$keySource] = $this->referencesRelation[$keySource];
-            }
+        if ($relation['many'] === true) {
+            $this->resources[$index][$keyTarget][$keySource] ??= $this->referencesRelation[$keySource];
         } else {
-            $this->resources[$keyTarget][$config['targetSetter']] = $this->referencesRelation[$keySource];
+            $this->resources[$index][$keyTarget] = $this->referencesRelation[$keySource];
         }
     }
 
-    private function assignResourcesToReferences(): void
+    /**
+     * @param list<array{source: string, target: string, targetSetter: string, many: bool}> $relations
+     */
+    private function assignResourcesToReferences(array $relations): void
     {
-        foreach ($this->referencesRelation as $referenceKey => $reference) {
-            if (isset($this->resources[$referenceKey]) === false) {
-                continue;
-            }
-
-            foreach ($this->resources[$referenceKey] as $setter => $valuesToSet) {
-                $reference->$setter($valuesToSet);
+        foreach ($relations as $index => $relation) {
+            foreach ($this->resources[$index] ?? [] as $keyTarget => $valuesToSet) {
+                $this->referencesRelation[$keyTarget]->{$relation['targetSetter']}($valuesToSet);
             }
         }
     }
 
     private function hydrate(): Generator
     {
-        $this->resolveDependencies();
+        $relations = $this->resolveDependencies();
+        $sources   = array_unique(array_column($relations, 'source'));
+        // The roots receive entities without being given to another one: one row per distinct combination of roots
+        $roots     = array_unique(array_diff(array_column($relations, 'target'), $sources));
 
         $this->referencesRelation = [];
         $this->resources          = [];
@@ -223,26 +206,32 @@ final class HydratorRelational extends Hydrator
         foreach ($this->result as $columns) {
             $result = $this->hydrateColumns($this->result->getConnectionName(), $this->result->getDatabase(), $columns);
 
-            $keyTarget = null;
-            foreach ($this->config as $config) {
-                if (isset($result[$config['target']]) === false) {
+            foreach ($relations as $index => $relation) {
+                if (isset($result[$relation['target']], $result[$relation['source']]) === false) {
                     continue;
                 }
 
-                $keyTarget = $this->saveTargetReference($config, $result);
-                if (isset($result[$config['source']])) {
-                    $keySource = $this->saveSourceReference($config, $result);
-                    $this->saveResourceFor($config, $keyTarget, $keySource);
-                    unset($result[$config['source']]);
-                }
+                $this->saveResourceFor(
+                    $index,
+                    $relation,
+                    $this->saveReference($relation['target'], $result),
+                    $this->saveReference($relation['source'], $result)
+                );
             }
 
-            if (isset($results[$keyTarget]) === false) {
-                $results[$keyTarget] = $result;
+            $keyResult = '';
+            foreach ($roots as $root) {
+                $keyResult .= (isset($result[$root]) ? $this->saveReference($root, $result) : $root . '-') . '|';
             }
+
+            foreach ($sources as $source) {
+                unset($result[$source]);
+            }
+
+            $results[$keyResult] ??= $result;
         }
 
-        $this->assignResourcesToReferences();
+        $this->assignResourcesToReferences($relations);
 
         foreach ($results as $result) {
             yield $this->finalizeAggregate($result);
