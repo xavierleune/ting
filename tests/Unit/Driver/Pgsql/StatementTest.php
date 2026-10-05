@@ -192,6 +192,40 @@ class StatementTest extends TestCase
         }, 'Value has not been set for param id');
     }
 
+    public function testDestructWithoutConnectionShouldNotQuery()
+    {
+        $calls = 0;
+        NativeFunctionMock::override('pg_query', function () use (&$calls): bool {
+            $calls++;
+
+            return true;
+        });
+
+        $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+        unset($statement);
+
+        $this->assertSame(0, $calls);
+    }
+
+    public function testDestructWithAClosedConnectionShouldNotThrow()
+    {
+        // pg_query() on a closed PgSql\Connection throws an Error
+        NativeFunctionMock::override('pg_query', function (): never {
+            throw new \Error('PostgreSQL connection has already been closed');
+        });
+
+        $thrown = null;
+        try {
+            $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+            $statement->setConnection('closed connection');
+            $statement = null; // runs the destructor
+        } catch (\Throwable $throwable) {
+            $thrown = $throwable;
+        }
+
+        $this->assertNull($thrown);
+    }
+
     public function testExecuteShouldReturnTrueIfNoError()
     {
         NativeFunctionMock::override('pg_execute', true);
