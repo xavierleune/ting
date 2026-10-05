@@ -27,28 +27,28 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Repository\RepositoryFactory;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 
 class RepositoryFactoryTest extends TestCase
 {
     public function testGet()
     {
-        $services = new Services();
+        $services = new TingServices();
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $repositoryFactory = new RepositoryFactory(
-            $services->get('ConnectionPool'),
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('UnitOfWork'),
-            $services->get('Cache'),
-            $services->get('SerializerFactory')
+            $services->connectionPool(),
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->unitOfWork(),
+            $services->cache(),
+            $services->serializerFactory()
         );
         $repository = $repositoryFactory->get('\tests\fixtures\model\BouhRepository');
 

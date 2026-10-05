@@ -30,7 +30,6 @@ use Aura\SqlQuery\QueryInterface;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
-use CCMBenchmark\Ting\ContainerInterface;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 use CCMBenchmark\Ting\Driver\Mysqli;
@@ -56,10 +55,6 @@ abstract class Repository implements ResetInterface
     public const QUERY_UPDATE = 'update';
     public const QUERY_DELETE = 'delete';
 
-    /**
-     * @var ContainerInterface
-     */
-    protected $services = null;
     /**
      * @var Metadata
      */

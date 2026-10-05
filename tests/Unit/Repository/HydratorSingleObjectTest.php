@@ -29,7 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Repository\HydratorSingleObject;
 use CCMBenchmark\Ting\Repository\Metadata;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
@@ -38,8 +38,8 @@ class HydratorSingleObjectTest extends TestCase
 {
     public function testHydrateShouldReturnBouhObject()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -57,7 +57,7 @@ class HydratorSingleObjectTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -86,8 +86,8 @@ class HydratorSingleObjectTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new HydratorSingleObject();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $bouh = $iterator->current();
         $this->assertInstanceOf(\tests\fixtures\model\Bouh::class, $bouh);

@@ -31,7 +31,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionFactory;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 
 class QueryTest extends TestCase
@@ -58,12 +58,12 @@ class QueryTest extends TestCase
 
     public function testQueryShouldCallExecuteOnSlaveDriver()
     {
-        $services              = new Services();
+        $services              = new TingServices();
         $mockDriver            = $this->createMock(Driver::class);
         $mockConnection        = $this->createMock(Connection::class);
         $mockCollectionFactory = $this->createMock(CollectionFactory::class);
 
-        $collection = new Collection($services->get('Hydrator'));
+        $collection = new Collection($services->hydrator());
 
         $mockConnection->expects($this->once())->method('slave')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('execute')->willReturn($collection);

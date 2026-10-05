@@ -34,7 +34,7 @@ use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionFactory;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\HydratorInterface;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -45,14 +45,14 @@ class PreparedQueryTest extends TestCase
 {
     public function testQueryShouldCallOnlyCacheGetIfDataInCache()
     {
-        $services       = new Services();
+        $services       = new TingServices();
         $mockConnection = $this->createMock(Connection::class);
         $mockConnection->expects($this->never())->method('slave');
         // Spy: counts calls to get() while keeping the real implementation (a real Collection is expected)
         $mockCollectionFactory = new class (
-            $services->get('MetadataRepository'),
-            $services->get('UnitOfWork'),
-            $services->get('Hydrator')
+            $services->metadataRepository(),
+            $services->unitOfWork(),
+            $services->hydrator()
         ) extends CollectionFactory {
             public int $getCalls = 0;
 

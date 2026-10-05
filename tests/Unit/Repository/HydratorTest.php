@@ -34,7 +34,7 @@ use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Serializer\DateTime;
 use CCMBenchmark\Ting\Serializer\Json;
 use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -48,8 +48,8 @@ class HydratorTest extends TestCase
 {
     public function testHydrate()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -67,7 +67,7 @@ class HydratorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -96,8 +96,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertSame('Robez-Masson', $data['bouh']->getName());
@@ -106,8 +106,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateForEntityWithouNotifyPropertyInterfaceShouldWork()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\BouhReadOnly');
@@ -125,7 +125,7 @@ class HydratorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhReadOnlyRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhReadOnlyRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -154,8 +154,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertSame('Robez-Masson', $data['bouh']->getName());
@@ -165,16 +165,16 @@ class HydratorTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testHydrateWithSchema()
     {
-        $services = new Services();
+        $services = new TingServices();
 
-        $services->get('MetadataRepository')->addMetadata(
+        $services->metadataRepository()->addMetadata(
             'tests\fixtures\model\BouhRepository',
-            \tests\fixtures\model\BouhRepository::initMetadata($services->get('SerializerFactory'))
+            \tests\fixtures\model\BouhRepository::initMetadata($services->serializerFactory())
         );
 
-        $services->get('MetadataRepository')->addMetadata(
+        $services->metadataRepository()->addMetadata(
             'tests\fixtures\model\BouhMySchemaRepository',
-            \tests\fixtures\model\BouhMySchemaRepository::initMetadata($services->get('SerializerFactory'))
+            \tests\fixtures\model\BouhMySchemaRepository::initMetadata($services->serializerFactory())
         );
 
         // Partial mock, like the atoum one: only the overridden iterator methods are replaced
@@ -207,8 +207,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertSame('MySchemaRobez-Masson', $data['bouh']->getName());
@@ -217,8 +217,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithAllNullValueShouldReturnNull()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -236,7 +236,7 @@ class HydratorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([[null, null]]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -265,8 +265,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertNull($data['bouh']);
@@ -274,8 +274,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithSomeNullValueShouldNotReturnNull()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -293,7 +293,7 @@ class HydratorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([[null, 'Robez-Masson']]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -322,8 +322,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertSame('Robez-Masson', $data['bouh']->getName());
@@ -331,8 +331,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateShouldHydrateUnknownColumnIntoKey0()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -350,7 +350,7 @@ class HydratorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson', 'Happy Face']]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -387,8 +387,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertSame('Robez-Masson', $data['bouh']->getName());
@@ -398,8 +398,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateShouldHydrateUnknownColumnOfFromReferenceTable()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -453,8 +453,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $currentObject = $iterator->current();
         $iterator->next();
@@ -475,7 +475,7 @@ class HydratorTest extends TestCase
 
     public function testHydrateShouldHydrateIntoKey0()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $mockMysqliResult = new MysqliResult([['Sylvain', 'Robez-Masson']]);
         $mockMysqliResult->setFieldsCallback(function () {
@@ -504,8 +504,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
         $this->assertSame('Robez-Masson', $data[0]->name);
@@ -530,8 +530,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithMapAliasShouldHydrateToMethodOfObject()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $time = time();
@@ -570,8 +570,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
@@ -581,8 +581,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithMapObjectShouldHydrateToMethodOfObject()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -630,8 +630,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
@@ -643,8 +643,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithMapObjectShouldHydrateToMethodOfObjectWithAManagedEntity()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -692,8 +692,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
@@ -703,8 +703,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithUnserializeAlias()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -736,8 +736,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->unserializeAliasWith('data', new Json(), ['assoc' => true]);
         $iterator = $hydrator->setResult($result)->getIterator();
         $result = $iterator->current();
@@ -748,8 +748,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithUnserializeAliasAndMapAlias()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $time = time();
@@ -788,8 +788,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
         $hydrator->unserializeAliasWith('current_time', new DateTime(), ['format' => 'U']);
         $iterator = $hydrator->setResult($result)->getIterator();
@@ -801,8 +801,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithObjectDatabaseIsShouldHydrateToCity2()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -850,8 +850,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->objectDatabaseIs('cit', 'bouh_world_2');
         $iterator = $hydrator->setResult($result)->getIterator();
         $data = $iterator->current();
@@ -860,9 +860,9 @@ class HydratorTest extends TestCase
 
     public function testHydrateReturnSameResultWhenChangingPrimaryKeyOrder()
     {
-        $services = new Services();
+        $services = new TingServices();
 
-        $metaDataRepo = $services->get('MetadataRepository');
+        $metaDataRepo = $services->metadataRepository();
 
         $cityMetadata =  new Metadata(
             $this->createStub(SerializerFactoryInterface::class)
@@ -1027,7 +1027,7 @@ class HydratorTest extends TestCase
         $sqlResult2->setDatabase('bouh_world');
 
         /** @var UnitOfWork $uow */
-        $uow = $services->get('UnitOfWork');
+        $uow = $services->unitOfWork();
 
         $hydrator = new Hydrator();
         $hydrator->setMetadataRepository($metadataRepo1);
@@ -1064,8 +1064,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithNullSQLReturnShouldReturnNull()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
                  ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -1114,8 +1114,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->objectDatabaseIs('cit', 'bouh_world_2');
         $data = $hydrator->setResult($result)->getIterator()->current();
         $this->assertNull($data['cit']);
@@ -1123,8 +1123,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithIdentityMapFalseShouldReturnNewEntity()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -1168,8 +1168,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
         $currentObject = $iterator->current()['bouh'];
         $iterator->next();
@@ -1180,8 +1180,8 @@ class HydratorTest extends TestCase
 
     public function testHydrateWithIdentityMapTrueShouldReturnSameEntity()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')
+        $services = new TingServices();
+        $services->metadataRepository()
             ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
 
         $mockMysqliResult = new MysqliResult([
@@ -1234,8 +1234,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->identityMap(true);
         $iterator = $hydrator->setResult($result)->getIterator();
         $currentObject = $iterator->current()['bouh'];

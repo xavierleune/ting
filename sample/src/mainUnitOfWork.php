@@ -30,10 +30,10 @@ require __DIR__ . '/../../vendor/autoload.php';
 // sample autoloader
 require __DIR__ . '/../vendor/autoload.php';
 
-$services = new \CCMBenchmark\Ting\Services();
+$services = new \sample\src\TingServices();
 $repositories =
     $services
-        ->get('MetadataRepository')
+        ->metadataRepository()
         ->batchLoadMetadata('sample\src\model', __DIR__ . '/model/*Repository.php');
 
 echo str_repeat("-", 40) . "\n";
@@ -66,17 +66,17 @@ $connections = [
     ]
 ];
 
-$services = new \CCMBenchmark\Ting\Services();
+$services = new \sample\src\TingServices();
 $repositoriesNumber =
     $services
-        ->get('MetadataRepository')
+        ->metadataRepository()
         ->batchLoadMetadata('sample\src\model', __DIR__ . '/model/*Repository.php');
 
-$services->get('ConnectionPool')->setConfig($connections);
-$unitOfWork = $services->get('UnitOfWork');
+$services->connectionPool()->setConfig($connections);
+$unitOfWork = $services->unitOfWork();
 
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
     $city = $cityRepository->get(3);
     var_dump($city);
 
@@ -109,7 +109,7 @@ try {
 
 try {
     $countryLanguageRepository =
-        $services->get('RepositoryFactory')->get('\sample\src\model\CountryLanguageRepository');
+        $services->repositoryFactory()->get('\sample\src\model\CountryLanguageRepository');
 
     $countryLanguage = $countryLanguageRepository->get(['code' => 'AGO', 'language' => 'Kongo']);
     var_dump($countryLanguage);
