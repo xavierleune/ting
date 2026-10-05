@@ -31,15 +31,19 @@ use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exception;
+use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\QueryFactory;
+use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 use CCMBenchmark\Ting\Repository\Metadata;
+use CCMBenchmark\Ting\Serializer\BackedEnum;
 use CCMBenchmark\Ting\Serializer\Json;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\RequiresPhp;
+use tests\fixtures\ColorsEnum;
 use tests\fixtures\FakeDriver\Driver as FakeDriver;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhCustomGetter;
@@ -1074,6 +1078,366 @@ class MetadataTest extends TestCase
         };
 
         return $spy::class;
+    }
+
+    public function testGetByPrimariesWithPropertyKeysShouldUseTheColumns()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql, &$params): void {
+            [$sql, $params] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByPrimaries(...$services, ...[['id' => 1, 'secondId' => 2]])
+            );
+        });
+
+        $this->assertSame([], $deprecations);
+        $this->assertSame(' WHERE boo_id = :#boo_id AND boo_second_id = :#boo_second_id LIMIT 1', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_id' => 1, '#boo_second_id' => 2], $params);
+    }
+
+    public function testGetByPrimariesWithColumnKeysShouldStillWorkAndTriggerADeprecation()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql, &$params): void {
+            [$sql, $params] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByPrimaries(...$services, ...[['boo_id' => 1, 'boo_second_id' => 2]])
+            );
+        });
+
+        $this->assertSame(
+            [
+                'Using the column name "boo_id" in Repository::get() is deprecated since Ting 3.15, use the property name "id" instead.',
+                'Using the column name "boo_second_id" in Repository::get() is deprecated since Ting 3.15, use the property name "secondId" instead.',
+            ],
+            $deprecations
+        );
+        $this->assertSame(' WHERE boo_id = :#boo_id AND boo_second_id = :#boo_second_id LIMIT 1', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_id' => 1, '#boo_second_id' => 2], $params);
+    }
+
+    public function testGetByPrimariesWithAScalarShouldTriggerNoDeprecation()
+    {
+        $metadata = new Metadata((new Services())->get('SerializerFactory'));
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+
+        $deprecations = $this->collectDeprecations(function () use ($metadata, &$sql, &$params): void {
+            [$sql, $params] = $this->captureReadQuery(
+                $metadata,
+                fn (Metadata $metadata, ...$services) => $metadata->getByPrimaries(...$services, ...[3])
+            );
+        });
+
+        $this->assertSame([], $deprecations);
+        $this->assertSame(' WHERE boo_id = :#boo_id LIMIT 1', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_id' => 3], $params);
+    }
+
+    public function testGetByPrimariesWithAnEmptyArrayShouldThrowAValueException()
+    {
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByPrimaries(...$services, ...[['id' => [], 'secondId' => 2]])
+            ),
+            'Empty array for property "id" in Repository::get(): nothing can match'
+        );
+    }
+
+    public function testGetByCriteriaWithOrderShouldUseTheColumnOfTheProperty()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql): void {
+            [$sql] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteriaWithOrderAndLimit(
+                    ['name' => 'Xavier'],
+                    ['date' => 'DESC', 'id' => 'asc'],
+                    0,
+                    ...$services
+                )
+            );
+        });
+
+        $this->assertSame([], $deprecations);
+        $this->assertSame(' WHERE boo_name = :#boo_name ORDER BY boo_date DESC,boo_id ASC', strstr($sql, ' WHERE '));
+    }
+
+    public function testGetByCriteriaWithColumnsInOrderShouldStillWorkAndTriggerADeprecation()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql): void {
+            [$sql] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteriaWithOrderAndLimit(
+                    ['name' => 'Xavier'],
+                    ['boo_date' => 'DESC'],
+                    0,
+                    ...$services
+                )
+            );
+        });
+
+        $this->assertSame(
+            ['Using the column name "boo_date" in the order of Repository::getBy() is deprecated since Ting 3.15, use the property name "date" instead.'],
+            $deprecations
+        );
+        $this->assertSame(' WHERE boo_name = :#boo_name ORDER BY boo_date DESC', strstr($sql, ' WHERE '));
+    }
+
+    public function testGetByCriteriaWithAnInvalidOrderDirectionShouldIgnoreItAndTriggerADeprecation()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql): void {
+            [$sql] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteriaWithOrderAndLimit(
+                    ['name' => 'Xavier'],
+                    ['date' => 'DESC', 'id' => 'sideways'],
+                    0,
+                    ...$services
+                )
+            );
+        });
+
+        $this->assertSame(
+            ['Using the direction "sideways" for "id" in the order of Repository::getBy() is deprecated since Ting 3.15 and it is ignored: it will throw a ValueException in 4.0, use "ASC" or "DESC".'],
+            $deprecations
+        );
+        $this->assertSame(' WHERE boo_name = :#boo_name ORDER BY boo_date DESC', strstr($sql, ' WHERE '));
+    }
+
+    public function testGetByCriteriaWithColumnKeysShouldStillWorkAndTriggerADeprecation()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql, &$params): void {
+            [$sql, $params] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getOneByCriteria(...$services, ...[['boo_name' => 'Xavier']])
+            );
+        });
+
+        $this->assertSame(
+            ['Using the column name "boo_name" in the criteria of Repository::getOneBy() is deprecated since Ting 3.15, use the property name "name" instead.'],
+            $deprecations
+        );
+        $this->assertSame(' WHERE boo_name = :#boo_name LIMIT 1', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_name' => 'Xavier'], $params);
+    }
+
+    public function testAKeyBeingAPropertyAndTheColumnOfAnotherFieldShouldBeThePropertyForCriteriaAndOrder()
+    {
+        $metadata = new Metadata((new Services())->get('SerializerFactory'));
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'code', 'type' => 'int']);
+        $metadata->addField(['fieldName' => 'code', 'columnName' => 'boo_code', 'type' => 'string']);
+
+        $deprecations = $this->collectDeprecations(function () use ($metadata, &$sql, &$params): void {
+            [$sql, $params] = $this->captureReadQuery(
+                $metadata,
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteriaWithOrderAndLimit(
+                    ['code' => 'A'],
+                    ['code' => 'ASC'],
+                    0,
+                    ...$services
+                )
+            );
+        });
+
+        $this->assertSame([], $deprecations);
+        $this->assertSame(' WHERE boo_code = :#boo_code ORDER BY boo_code ASC', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_code' => 'A'], $params);
+    }
+
+    public function testGetByCriteriaWithAnUnknownKeyShouldStillThrowAValueException()
+    {
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(['unknown' => 1], ...$services)
+            ),
+            'Undefined property unknown in your criteria'
+        );
+    }
+
+    public function testCriteriaObjectsShouldBeSerializedByTheirField()
+    {
+        $deprecations = $this->collectDeprecations(function () use (&$sql, &$params): void {
+            [$sql, $params] = $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(
+                    ['color' => ColorsEnum::RED, 'date' => new \DateTime('2026-10-05 12:34:56')],
+                    ...$services
+                )
+            );
+        });
+
+        $this->assertSame([], $deprecations);
+        $this->assertSame(' WHERE boo_color = :#boo_color AND boo_date = :#boo_date', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_color' => 'red', '#boo_date' => '2026-10-05 12:34:56'], $params);
+    }
+
+    public function testCriteriaArrayOfObjectsShouldBeAnInListOfSerializedValues()
+    {
+        [$sql, $params] = $this->captureReadQuery(
+            $this->createReadMetadata(),
+            fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(
+                ['color' => [ColorsEnum::RED, ColorsEnum::BLUE]],
+                ...$services
+            )
+        );
+
+        $this->assertSame(' WHERE boo_color IN (:boo_color__1,:boo_color__2)', strstr($sql, ' WHERE '));
+        $this->assertSame(['boo_color__1' => 'red', 'boo_color__2' => 'blue'], $params);
+    }
+
+    public function testCriteriaArrayForASerializerOfArraysShouldBeSerializedAsAWhole()
+    {
+        [$sql, $params] = $this->captureReadQuery(
+            $this->createReadMetadata(),
+            fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(['tags' => ['a', 'b']], ...$services)
+        );
+
+        $this->assertSame(' WHERE boo_tags = :#boo_tags', strstr($sql, ' WHERE '));
+        $this->assertSame(['#boo_tags' => '["a","b"]'], $params);
+    }
+
+    public function testCriteriaSerializerOptionsShouldBeUsed()
+    {
+        $metadata = $this->createReadMetadata();
+        $metadata->addField([
+            'fieldName' => 'url',
+            'columnName' => 'boo_url',
+            'type' => 'json',
+            'serializer_options' => ['serialize' => ['options' => JSON_UNESCAPED_SLASHES]],
+        ]);
+
+        [, $params] = $this->captureReadQuery(
+            $metadata,
+            fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(['url' => ['a/b']], ...$services)
+        );
+
+        $this->assertSame(['#boo_url' => '["a/b"]'], $params);
+    }
+
+    public function testCriteriaWithAnEmptyArrayShouldThrowAValueException()
+    {
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getByCriteriaWithOrderAndLimit(['id' => []], [], 0, ...$services)
+            ),
+            'Empty array for property "id" in the criteria of Repository::getBy(): nothing can match'
+        );
+    }
+
+    public function testCriteriaWithAnObjectWithoutSerializerShouldThrowAValueException()
+    {
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $this->captureReadQuery(
+                $this->createReadMetadata(),
+                fn (Metadata $metadata, ...$services) => $metadata->getOneByCriteria(...$services, ...[['name' => [new \stdClass()]]])
+            ),
+            'Cannot use an object of class "stdClass" for property "name" in the criteria of Repository::getOneBy(): its field has no serializer'
+        );
+    }
+
+    public function testCriteriaWithAStringableObjectWithoutSerializerShouldBeSentAsIs()
+    {
+        $stringable = new class () {
+            public function __toString(): string
+            {
+                return 'Xavier';
+            }
+        };
+
+        [, $params] = $this->captureReadQuery(
+            $this->createReadMetadata(),
+            fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(['name' => $stringable], ...$services)
+        );
+
+        $this->assertSame(['#boo_name' => $stringable], $params);
+    }
+
+    public function testCriteriaScalarsAndNullShouldBeUnchanged()
+    {
+        [$sql, $params] = $this->captureReadQuery(
+            $this->createReadMetadata(),
+            fn (Metadata $metadata, ...$services) => $metadata->getByCriteria(
+                ['id' => [1, 2], 'name' => 'Xavier', 'color' => 'red', 'date' => '2026-10-05', 'tags' => '[]', 'secondId' => null],
+                ...$services
+            )
+        );
+
+        $this->assertSame(
+            ' WHERE boo_id IN (:boo_id__1,:boo_id__2) AND boo_name = :#boo_name AND boo_color = :#boo_color'
+            . ' AND boo_date = :#boo_date AND boo_tags = :#boo_tags AND boo_second_id IS NULL',
+            strstr($sql, ' WHERE ')
+        );
+        $this->assertSame(
+            [
+                'boo_id__1' => 1,
+                'boo_id__2' => 2,
+                '#boo_name' => 'Xavier',
+                '#boo_color' => 'red',
+                '#boo_date' => '2026-10-05',
+                '#boo_tags' => '[]',
+            ],
+            $params
+        );
+    }
+
+    /**
+     * A composite primary key and fields with and without serializers.
+     */
+    private function createReadMetadata(): Metadata
+    {
+        $metadata = new Metadata((new Services())->get('SerializerFactory'));
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+        $metadata->addField(['primary' => true, 'fieldName' => 'secondId', 'columnName' => 'boo_second_id', 'type' => 'int']);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        $metadata->addField([
+            'fieldName' => 'color',
+            'columnName' => 'boo_color',
+            'type' => 'string',
+            'serializer' => BackedEnum::class,
+            'serializer_options' => ['unserialize' => ['enum' => ColorsEnum::class]],
+        ]);
+        $metadata->addField(['fieldName' => 'date', 'columnName' => 'boo_date', 'type' => 'datetime']);
+        $metadata->addField(['fieldName' => 'tags', 'columnName' => 'boo_tags', 'type' => 'json']);
+
+        return $metadata;
+    }
+
+    /**
+     * Calls $read($metadata, $connection, $queryFactory, $collectionFactory) and returns the SQL and the params
+     * of the query it builds. The driver keeps the field names as is.
+     *
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function captureReadQuery(Metadata $metadata, callable $read): array
+    {
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn(new FakeDriver());
+        $connection = new Connection($connectionPool, 'main', 'db');
+
+        $queryFactory = new class () extends QueryFactory {
+            public ?string $sql = null;
+
+            public function get($sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null)
+            {
+                $this->sql = $sql;
+                return parent::get($sql, $connection, $collectionFactory);
+            }
+        };
+
+        $query = $read($metadata, $connection, $queryFactory, (new Services())->get('CollectionFactory'));
+        $params = (fn () => $this->params)->call($query);
+
+        return [$queryFactory->sql, $params];
     }
 
     /**

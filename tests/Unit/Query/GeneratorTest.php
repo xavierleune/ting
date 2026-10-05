@@ -272,4 +272,25 @@ class GeneratorTest extends TestCase
         );
         $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
+
+    public function testGetByCriteriaWithOnlyInvalidOrderDirectionsShouldHaveNoOrderClause()
+    {
+        $services = new Services();
+
+        $generator = new Generator(
+            $this->mockConnection,
+            $this->mockQueryFactory,
+            '',
+            'table',
+            ['id', 'population']
+        );
+        $generator->getByCriteriaWithOrderAndLimit(
+            ['id' => 1],
+            $services->get('CollectionFactory'),
+            false,
+            ['population' => 'sideways']
+        );
+
+        $this->assertSame('SELECT `id`, `population` FROM `table` WHERE id = :#id', $this->mockQueryFactory->getCalls[0][0]);
+    }
 }

@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -443,7 +444,7 @@ class Metadata
      * @param Connection $connection
      * @param QueryFactoryInterface $queryFactory
      * @param CollectionFactoryInterface $collectionFactory
-     * @param $primariesKeyValue
+     * @param $primariesKeyValue array|mixed property => value, or the value when there is only one primary key
      * @param $forceMaster boolean
      * @return \CCMBenchmark\Ting\Query\Query
      *
@@ -465,7 +466,18 @@ class Metadata
             $fields
         );
 
-        $primariesKeyValue = $this->getPrimariesKeyValuesAsArray($primariesKeyValue);
+        if (\is_array($primariesKeyValue) === true) {
+            // A key that is neither a property nor a column is sent as is, as before 3.15
+            $primariesKeyValue = $this->getCriteriaByColumn($primariesKeyValue, 'Repository::get()', false);
+        } else {
+            // Only one primary key, given as a value: the array is built by Ting, keyed by column
+            $primariesKeyValue = $this->getPrimariesKeyValuesAsArray($primariesKeyValue);
+            foreach ($primariesKeyValue as $column => $value) {
+                if (isset($this->fields[$column]) === true) {
+                    $primariesKeyValue[$column] = $this->getCriterionValue($this->fields[$column], $value, 'Repository::get()');
+                }
+            }
+        }
 
         return $queryGenerator->getOneByCriteria($primariesKeyValue, $collectionFactory, $forceMaster);
     }
@@ -500,28 +512,185 @@ class Metadata
             $fields
         );
 
-        $criteriaColumn = $this->getColumnsFromCriteria($criteria);
+        $criteriaColumn = $this->getCriteriaByColumn($criteria, 'the criteria of Repository::getOneBy()');
 
         return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forceMaster);
     }
 
     /**
-     * @param array $criteria
-     * @return array
+     * No longer used by Ting, kept for the classes extending Metadata.
+     *
+     * @param array $criteria property => value
+     * @return array column => database value
      * @throws ValueException
      */
     protected function getColumnsFromCriteria(array $criteria)
     {
+        return $this->getCriteriaByColumn($criteria, 'the criteria of Repository::getBy()');
+    }
+
+    /**
+     * Converts criteria keyed by property into criteria keyed by column, with database values (see getCriterionValue()).
+     *
+     * @param array  $criteria          property => value
+     * @param string $context           where the criteria come from, for the messages
+     * @param bool   $unknownKeyIsError false to send as is a key that is neither a property nor a column
+     * @return array column => database value
+     * @throws ValueException
+     */
+    private function getCriteriaByColumn(array $criteria, string $context, bool $unknownKeyIsError = true): array
+    {
         $criteriaColumn = [];
-        foreach ($criteria as $property => $value) {
-            if (isset($this->fieldsByProperty[$property]) === false) {
-                throw new ValueException(sprintf('Undefined property %s in your criteria', $property));
+        foreach ($criteria as $key => $value) {
+            $field = $this->getFieldByKey($key, $context);
+            if ($field === null) {
+                if ($unknownKeyIsError === true) {
+                    throw new ValueException(sprintf('Undefined property %s in your criteria', $key));
+                }
+                $criteriaColumn[$key] = $value;
+                continue;
             }
-            $column = $this->fieldsByProperty[$property]['columnName'];
-            $criteriaColumn[$column] = $value;
+            $criteriaColumn[$field['columnName']] = $this->getCriterionValue($field, $value, $context);
         }
 
         return $criteriaColumn;
+    }
+
+    /**
+     * Converts an order keyed by property into an order keyed by column.
+     * A key that is neither a property nor a column is sent as is, as before 3.15.
+     *
+     * @param array<string, string> $orderBy property => ASC|DESC
+     * @return array<string, string> column => ASC|DESC
+     */
+    private function getOrderByColumn(array $orderBy): array
+    {
+        $context = 'the order of Repository::getBy()';
+        $orderColumn = [];
+        foreach ($orderBy as $key => $direction) {
+            $field = $this->getFieldByKey($key, $context);
+            if (\is_string($direction) === false || \in_array(strtoupper($direction), ['ASC', 'DESC'], true) === false) {
+                // The query generator ignores this direction
+                @trigger_error(sprintf(
+                    'Using the direction "%s" for "%s" in %s is deprecated since Ting 3.15 and it is ignored: '
+                    . 'it will throw a ValueException in 4.0, use "ASC" or "DESC".',
+                    \is_scalar($direction) === true ? $direction : get_debug_type($direction),
+                    $key,
+                    $context
+                ), E_USER_DEPRECATED);
+            }
+            $orderColumn[$field['columnName'] ?? $key] = $direction;
+        }
+
+        return $orderColumn;
+    }
+
+    /**
+     * Returns the field of a key of criteria, order or primary key: its property name,
+     * or its column name (deprecated). A key being both a property and the column of another field is the property.
+     *
+     * @param string|int $key
+     * @param string     $context where the key comes from, for the deprecation message
+     * @phpstan-return Field|null
+     */
+    private function getFieldByKey($key, string $context): ?array
+    {
+        if (isset($this->fieldsByProperty[$key]) === true) {
+            return $this->fieldsByProperty[$key];
+        }
+
+        if (isset($this->fields[$key]) === true) {
+            @trigger_error(sprintf(
+                'Using the column name "%s" in %s is deprecated since Ting 3.15, use the property name "%s" instead.',
+                $key,
+                $context,
+                $this->fields[$key]['fieldName']
+            ), E_USER_DEPRECATED);
+
+            return $this->fields[$key];
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the database value of a criterion:
+     *  - null: unchanged (IS NULL)
+     *  - array, for a field whose serializer implements Serializer\ArrayValueInterface: serialized as a whole (=)
+     *  - empty array, for other fields: ValueException, nothing can match
+     *  - array, for other fields: each element is converted as below (IN)
+     *  - object: serialized by the serializer of the field, ValueException when it has none
+     *    (unless the object is Stringable, it is then sent as is like before 3.15)
+     *  - scalar: unchanged
+     *
+     * @phpstan-param Field $field
+     * @param mixed  $value
+     * @param string $context where the criterion comes from, for the messages
+     * @return mixed
+     * @throws ValueException
+     */
+    private function getCriterionValue(array $field, $value, string $context)
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $serializer = null;
+        if (isset($field['serializer']) === true) {
+            $serializer = $this->serializerFactory->get($field['serializer']);
+        }
+
+        if (\is_array($value) === false) {
+            return $this->getCriterionElementValue($field, $serializer, $value, $context);
+        }
+
+        if ($serializer instanceof Serializer\ArrayValueInterface) {
+            return $serializer->serialize($value, $field['serializer_options']['serialize'] ?? []);
+        }
+
+        if ($value === []) {
+            throw new ValueException(
+                sprintf('Empty array for property "%s" in %s: nothing can match', $field['fieldName'], $context)
+            );
+        }
+
+        return array_map(
+            fn ($element) => $this->getCriterionElementValue($field, $serializer, $element, $context),
+            $value
+        );
+    }
+
+    /**
+     * @phpstan-param Field $field
+     * @param mixed $value
+     * @return mixed
+     * @throws ValueException
+     */
+    private function getCriterionElementValue(
+        array $field,
+        ?Serializer\SerializeInterface $serializer,
+        $value,
+        string $context
+    ) {
+        if (\is_object($value) === false) {
+            return $value;
+        }
+
+        if ($serializer !== null) {
+            return $serializer->serialize($value, $field['serializer_options']['serialize'] ?? []);
+        }
+
+        if ($value instanceof \Stringable) {
+            // The drivers cast it to a string
+            return $value;
+        }
+
+        throw new ValueException(sprintf(
+            'Cannot use an object of class "%s" for property "%s" in %s: its field has no serializer',
+            $value::class,
+            $field['fieldName'],
+            $context
+        ));
     }
 
     /**
@@ -581,7 +750,7 @@ class Metadata
             $fields
         );
 
-        $criteriaColumn = $this->getColumnsFromCriteria($criteria);
+        $criteriaColumn = $this->getCriteriaByColumn($criteria, 'the criteria of Repository::getBy()');
 
         return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forceMaster);
     }
@@ -603,9 +772,10 @@ class Metadata
             $this->table,
             $fields
         );
-        $criteriaColumn = $this->getColumnsFromCriteria($criteria);
+        $criteriaColumn = $this->getCriteriaByColumn($criteria, 'the criteria of Repository::getBy()');
+        $orderColumn = $this->getOrderByColumn($orderBy);
 
-        return $queryGenerator->getByCriteriaWithOrderAndLimit($criteriaColumn, $collectionFactory, $forceMaster, $orderBy, $limit);
+        return $queryGenerator->getByCriteriaWithOrderAndLimit($criteriaColumn, $collectionFactory, $forceMaster, $orderColumn, $limit);
     }
 
     /**

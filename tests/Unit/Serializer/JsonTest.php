@@ -26,6 +26,7 @@
 
 namespace CCMBenchmark\Ting\Tests\Unit\Serializer;
 
+use CCMBenchmark\Ting\Serializer\ArrayValueInterface;
 use CCMBenchmark\Ting\Serializer\Json;
 use CCMBenchmark\Ting\Serializer\RuntimeException;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
@@ -111,5 +112,10 @@ class JsonTest extends TestCase
 
         $this->assertSame('""', $serializer->serialize(''));
         $this->assertNull($serializer->unserialize(''));
+    }
+
+    public function testItsPhpValueIsAnArray()
+    {
+        $this->assertInstanceOf(ArrayValueInterface::class, new Json());
     }
 }

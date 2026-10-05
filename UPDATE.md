@@ -1,6 +1,11 @@
 # Update file
 This file will track changes to public interfaces between 2 major versions.
 
+## 4.0 (prepared in 3.15):
+* Repository::get() (composite primary key), getBy() / getOneBy() criteria and the getBy() order only take property
+    names: column names, deprecated since 3.15, will no longer be accepted.
+* An order direction other than ```ASC``` / ```DESC``` will throw a ```ValueException``` instead of being ignored.
+
 ## 4.0 (prepared in 3.14):
 * ConnectionPoolInterface: ```master()``` and ```slave()``` will be replaced by ```primary()``` and ```replica()```.
     Custom pools should implement ```primary()``` and ```replica()``` now: ```Connection``` uses them when available.

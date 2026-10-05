@@ -421,7 +421,8 @@ class Generator
             $i++;
         }
 
-        if (count($orderList) > 0) {
+        // Every direction may have been ignored
+        if (count($orderCriteria) > 0) {
             $orderClause = ' ORDER BY ' . implode(',', $orderCriteria);
         }
 
