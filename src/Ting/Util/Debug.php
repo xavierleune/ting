@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -26,7 +27,6 @@
 namespace CCMBenchmark\Ting\Util;
 
 use ReflectionObject;
-use ReflectionProperty;
 
 class Debug
 {
@@ -73,25 +73,35 @@ class Debug
         return $return;
     }
 
-    private function clean(object $object, int $maxDepth): mixed
+    /**
+     * Describe an object as an array, without its property listeners
+     *
+     * The object itself is left untouched: typed properties can't hold the exported values.
+     *
+     * @return array<string, mixed>|class-string
+     */
+    private function clean(object $object, int $maxDepth): array|string
     {
         if ($maxDepth === 0) {
             return $object::class;
         }
 
-        $objectToBeCleaned = clone $object;
-        $reflectionObject = new ReflectionObject($objectToBeCleaned);
+        $export = ['__CLASS__' => $object::class];
+        foreach ((new ReflectionObject($object))->getProperties() as $reflectionProperty) {
+            if (
+                $reflectionProperty->isStatic()
+                || $reflectionProperty->getName() === 'listeners'
+                || $reflectionProperty->isInitialized($object) === false
+            ) {
+                continue;
+            }
 
-        if ($reflectionObject->hasProperty('listeners')) {
-            $reflectionProperty = new ReflectionProperty($objectToBeCleaned::class, 'listeners');
-            $reflectionProperty->setValue($objectToBeCleaned, null);
+            $export[$reflectionProperty->getName()] = $this->export(
+                $reflectionProperty->getValue($object),
+                $maxDepth - 1
+            );
         }
 
-        foreach ($reflectionObject->getProperties() as $reflectionProperty) {
-            $propertyValue = $reflectionProperty->getValue($objectToBeCleaned);
-            $reflectionProperty->setValue($objectToBeCleaned, $this->export($propertyValue, $maxDepth - 1));
-        }
-
-        return $objectToBeCleaned;
+        return $export;
     }
 }
