@@ -51,6 +51,7 @@
     * Fix HydratorRelational depending on the order of the relations (since 3.x): added in another order than parent to child, it duplicated or lost the roots, left relations unset and leaked joined aliases into the rows; the relations are now sorted topologically (a setter receives entities whose relations are already set), the rows grouped by the root alias, and every source alias removed from the rows, even when its join is empty
     * Fix HydratorRelational silently dropping a relation when two relations share the same source alias (since 3.x)
     * BC HydratorRelational throws a HydratorException when the relations form a cycle (bidirectional relation, alias related to itself); they were partially ignored
+    * Fix a cached collection without result (e.g. a cached prepared query whose statement has no result set) throwing a TypeError on a cache hit since 4.0.0-rc.1: it comes back as an empty collection
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
