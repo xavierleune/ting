@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
+use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Exceptions\ValueException;
@@ -641,8 +642,8 @@ class MetadataTest extends TestCase
 
         $this->assertSame(
             [
-                'SELECT boo_id, boo_second_id, boo_name, boo_color, boo_priority, boo_created_at, boo_roles, boo_raw'
-                . ' FROM bouh WHERE boo_id = :#boo_id AND boo_second_id = :#boo_second_id LIMIT 1',
+                'SELECT boo_id, boo_second_id, boo_name, boo_color, boo_priority, boo_created_at, boo_roles, boo_raw,'
+                . ' boo_ip, boo_active FROM bouh WHERE boo_id = :#boo_id AND boo_second_id = :#boo_second_id LIMIT 1',
                 ['#boo_id' => 3, '#boo_second_id' => 4]
             ],
             $this->readQuery($query)
@@ -983,6 +984,99 @@ class MetadataTest extends TestCase
         );
     }
 
+    public function testGetByCriteriaShouldSerializeScalarsForAScalarValueSerializer()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByCriteria(
+            ['ip' => '10.0.0.1', 'active' => false],
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory()
+        );
+
+        [$sql, $params] = $this->readQuery($query);
+        $this->assertStringEndsWith(' WHERE boo_ip = :#boo_ip AND boo_active = :#boo_active', $sql);
+        $this->assertSame(['#boo_ip' => 167772161, '#boo_active' => 'f'], $params);
+    }
+
+    public function testGetByCriteriaShouldSerializeEachScalarOfAnInListForAScalarValueSerializer()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByCriteriaWithOrderAndLimit(
+            ['ip' => ['10.0.0.1', '10.0.0.2'], 'active' => null],
+            ['ip' => 'ASC'],
+            10,
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory()
+        );
+
+        [$sql, $params] = $this->readQuery($query);
+        $this->assertStringContainsString(
+            ' WHERE boo_ip IN (:boo_ip__1,:boo_ip__2) AND boo_active IS NULL',
+            $sql
+        );
+        $this->assertSame(['boo_ip__1' => 167772161, 'boo_ip__2' => 167772162], $params);
+    }
+
+    public function testGetByCriteriaShouldRejectAScalarThatAScalarValueSerializerConvertsToNull()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getOneByCriteria(
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                ['active' => 't']
+            ),
+            'Invalid value \'t\' for property "active" in the criteria of Repository::getOneBy():'
+            . ' the serializer of the field converts it to NULL'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                ['active' => [true, 1]],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Invalid value 1 for property "active" in the criteria of Repository::getBy():'
+            . ' the serializer of the field converts it to NULL'
+        );
+    }
+
+    public function testGetByPrimariesShouldSerializeAScalarForAScalarValueSerializer()
+    {
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn(new FakeDriver());
+        $connection = new Connection($connectionPool, 'main', 'db');
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField(['primary' => true, 'fieldName' => 'ip', 'columnName' => 'boo_ip', 'type' => 'ip']);
+
+        $scalarQuery = $metadata->getByPrimaries(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            '10.0.0.1'
+        );
+        $arrayQuery = $metadata->getByPrimaries(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            ['ip' => '10.0.0.1']
+        );
+
+        $this->assertSame(['#boo_ip' => 167772161], $this->readQuery($scalarQuery)[1]);
+        $this->assertSame(['#boo_ip' => 167772161], $this->readQuery($arrayQuery)[1]);
+    }
+
     /**
      * Metadata with a field for each kind of criterion value, read through a FakeDriver replica
      *
@@ -1028,6 +1122,13 @@ class MetadataTest extends TestCase
             'serializer_options' => ['serialize' => ['options' => JSON_UNESCAPED_SLASHES]]
         ]);
         $metadata->addField(['fieldName' => 'raw', 'columnName' => 'boo_raw', 'type' => 'string']);
+        $metadata->addField(['fieldName' => 'ip', 'columnName' => 'boo_ip', 'type' => 'ip']);
+        $metadata->addField([
+            'fieldName'  => 'active',
+            'columnName' => 'boo_active',
+            'type'       => 'bool',
+            'serializer' => PgsqlBoolean::class
+        ]);
 
         return [$metadata, $connection, $services];
     }

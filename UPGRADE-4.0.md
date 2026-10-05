@@ -106,7 +106,8 @@ Each value of the criteria (and of a composite key given to `get()`) is converte
 | object                            | with a serializer                                                   | serialized, `=` (or element of the `IN` list) |
 | `Stringable` object               | without serializer                                                  | as is (the driver casts it to string)         |
 | other object                      | without serializer                                                  | `ValueException`                              |
-| scalar (string, int, float, bool) | any                                                                 | as is                                         |
+| scalar (string, int, float, bool) | serializer implementing `Serializer\ScalarValueInterface` (`Ip`, `Boolean`) | serialized, `=` (or element of the `IN` list) |
+| scalar (string, int, float, bool) | other fields                                                        | as is                                         |
 
 * An unknown key throws a `CCMBenchmark\Ting\Exceptions\ValueException`. When the key is a column name, the message
   names the property to use, e.g.
@@ -119,6 +120,15 @@ Each value of the criteria (and of a composite key given to `get()`) is converte
 * `null` or a nested array inside an `IN` list throws a `ValueException`: an `IN` list never matches `NULL`.
 * Scalars are still sent as is: database values (`CityStatus::Active->value`, a formatted date) keep working, only
   column-name keys must be renamed. Passing the PHP value (enum, `DateTime`...) is now possible.
+* Except for a field whose serializer's PHP value is a scalar, i.e. implements the new marker interface
+  `CCMBenchmark\Ting\Serializer\ScalarValueInterface` (`Serializer\Ip`, `Driver\Mysqli\Serializer\Boolean`,
+  `Driver\Pgsql\Serializer\Boolean`): its scalars (and each scalar of an `IN` list) are serialized, like `save()`
+  does. Pass the PHP value: `['ip' => '10.0.0.1']` instead of `['ip' => 167772161]` (which `Ip` now rejects with a
+  `Serializer\RuntimeException`; in 3.x, `'10.0.0.1'` was compared with the integer column and MySQL cast it to `10`),
+  `['active' => false]` instead of `['active' => 'f']` or `0`. A value the serializer converts to `NULL` throws a
+  `ValueException`, e.g. `Invalid value 'f' for property "active" in the criteria of Repository::getBy(): the
+  serializer of the field converts it to NULL`. A custom serializer whose PHP value is a scalar can implement the
+  interface too.
 * With a `Json` field, an array is now compared as a whole with the JSON encoding of the value, instead of becoming an
   `IN` list. See [the caveats on JSON equality](docs/repositories.md#criteria-keys-and-values).
 * A custom serializer whose PHP value is an array can implement the marker interface

@@ -25,7 +25,7 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
-class Ip implements SerializerInterface
+class Ip implements SerializerInterface, ScalarValueInterface
 {
     /**
      * @param mixed $toSerialize

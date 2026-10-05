@@ -221,7 +221,8 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * @param array<string, mixed> $criteria property name => value: null (IS NULL), a scalar, an object converted by
+     * @param array<string, mixed> $criteria property name => value: null (IS NULL), a scalar (serialized when the
+     *                                       serializer implements ScalarValueInterface), an object converted by
      *                                       the serializer of the field, or an array (IN list, or a single value
      *                                       serialized as a whole when the serializer implements ArrayValueInterface)
      * @param array<string, string> $order property name => "ASC" or "DESC"
