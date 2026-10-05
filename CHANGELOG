@@ -29,7 +29,7 @@
     * Fix MetadataRepository registering an empty entity for a metadata without entity (PHP 8.5 deprecation "Using null as an array offset", '' listed by getAllEntities())
     * Fix Pgsql Statement destructor: no DEALLOCATE without connection, and no Error thrown from the destructor when the connection was closed (close(), reconnect())
     * Fix HydratorAggregator dropping the last group when the last row belonged to a group already yielded; the last group is keyed and built from its first row, like the others
-    * Fix UnitOfWork updates and deletes sending the primary key of the WHERE clause without its serializer: an enum or DateTime key reached the driver as an object (error), a serializer whose output differs from __toString() matched no row
+    * Fix UnitOfWork updates and deletes sending the primary key of the WHERE clause without its serializer: an enum or DateTime key reached the driver as an object (error), a serializer whose output differs from __toString() matched no row; this includes primary keys whose serializer comes from their type (datetime, uuid, json...), which never got it
     * Fix the columns of the WHERE clause of get(), getBy() and getOneBy() not being escaped (reserved words such as "order" made invalid SQL; PostgreSQL lowercased mixed-case columns), unlike the SELECT and the UPDATE / DELETE clauses
     * Fix iterating or JSON-encoding a Collection without result (e.g. new Collection() returned as an empty collection): every hydrator raised a "foreach() argument must be of type array|object" warning
     * Docs: UPGRADE-4.0.md lists the typed extension points (loggers, entity listeners, Repository::getCollection()); the 4.0.0-rc.1 entry on serialization interfaces is corrected

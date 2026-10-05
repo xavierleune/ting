@@ -255,16 +255,17 @@ class Metadata
             throw new ConfigException('Field configuration must have "type" property');
         }
 
+        // Before the field is stored anywhere: primaries and autoincrement need the serializer too
+        if (isset($params['serializer']) === false && isset($this->defaultSerializers[$params['type']])) {
+            $params['serializer'] = $this->defaultSerializers[$params['type']];
+        }
+
         if (isset($params['primary']) && $params['primary'] === true) {
             $this->primaries[$params['columnName']] = $params;
 
             if (isset($params['autoincrement']) && $params['autoincrement'] === true) {
                 $this->autoincrement = $params;
             }
-        }
-
-        if (isset($params['serializer']) === false && isset($this->defaultSerializers[$params['type']])) {
-            $params['serializer'] = $this->defaultSerializers[$params['type']];
         }
 
         $this->fieldsByProperty[$params['fieldName']] = $params;

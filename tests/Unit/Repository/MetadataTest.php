@@ -1374,6 +1374,34 @@ class MetadataTest extends TestCase
         $this->assertSame(['#color' => 'blue'], $this->readQuery($query)[1]);
     }
 
+    public function testAPrimaryKeyShouldUseTheDefaultSerializerOfItsType()
+    {
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('primary')->willReturn(new FakeDriver());
+        $connectionPool->method('replica')->willReturn(new FakeDriver());
+        $connection = new Connection($connectionPool, 'main', 'db');
+        $services = new TingServices();
+        $entity = new class () {
+            public \DateTime $day;
+            public string $label = 'a';
+        };
+        $entity->day = new \DateTime('2026-01-02 03:04:05');
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity($entity::class);
+        $metadata->setTable('event');
+        // No explicit serializer: "datetime" brings Serializer\DateTime by default
+        $metadata->addField(['primary' => true, 'fieldName' => 'day', 'columnName' => 'ev_day', 'type' => 'datetime']);
+        $metadata->addField(['fieldName' => 'label', 'columnName' => 'ev_label', 'type' => 'string']);
+
+        $get = $metadata->getByPrimaries($connection, $services->queryFactory(), $services->collectionFactory(), $entity->day);
+        $update = $metadata->generateQueryForUpdate($connection, $services->queryFactory(), $entity, ['label' => ['b', 'a']]);
+        $delete = $metadata->generateQueryForDelete($connection, $services->queryFactory(), [], $entity);
+
+        $this->assertSame(['#ev_day' => '2026-01-02 03:04:05'], $this->readQuery($get)[1]);
+        $this->assertSame(['ev_label' => 'a', '#ev_day' => '2026-01-02 03:04:05'], $this->readQuery($update)[1]);
+        $this->assertSame(['#ev_day' => '2026-01-02 03:04:05'], $this->readQuery($delete)[1]);
+    }
+
     /**
      * A metadata whose primary key is an enum, and an entity whose key is ColorsEnum::BLUE.
      *
