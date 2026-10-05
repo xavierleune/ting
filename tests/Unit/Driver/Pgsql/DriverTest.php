@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
+use CCMBenchmark\Ting\Driver\Pgsql\Statement;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\Fake\Pgsql;
@@ -549,6 +550,29 @@ class DriverTest extends TestCase
         $driver->setName('foo');
         $driver->setDatabase('myDatabase');
         $driver->execute('SELECT 1 FROM myTable WHERE id = :id', ['id' => 12], $mockCollection);
+    }
+
+    public function testDriverWithoutNameShouldExecuteAndPrepare()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_prepare', true);
+        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_fetch_array', 'data');
+        NativeFunctionMock::override('pg_result_seek', true);
+        NativeFunctionMock::override('pg_num_fields', 1);
+        NativeFunctionMock::override('pg_field_table', 'myTable');
+        NativeFunctionMock::override('pg_field_name', '1');
+
+        // Used directly, without ConnectionPool (which always sets the name)
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        $this->assertInstanceOf(
+            Collection::class,
+            $driver->execute('SELECT 1 FROM myTable WHERE id = :id', ['id' => 12], new Collection())
+        );
+        $this->assertInstanceOf(Statement::class, $driver->prepare('SELECT 1'));
     }
 
     public function testExecuteShouldReturnArray()

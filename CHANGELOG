@@ -18,6 +18,7 @@
     * Fix the escaped colon (\:) kept in non-prepared Mysqli queries
     * BC Remove Query\Cached\Query::setVersion(): it had no effect, the version is not part of the cache key since cache keys are manual
     * Ting\Cache\Cache used before setCache() now throws a ConfigException instead of an Error on an uninitialized property
+    * Fix drivers used without ConnectionPool: a TypeError when no name (Mysqli, Pgsql) or no database (Mysqli) had been set; both default to an empty string
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit
