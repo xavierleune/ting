@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -61,52 +62,88 @@ class Connection
     }
 
     /**
-     * Return the master connection
+     * Return the primary connection
+     * @throws Exception
+     * @return Driver\DriverInterface
+     */
+    public function primary()
+    {
+        // A custom ConnectionPoolInterface implementation may not provide primary() before Ting 4.0
+        if (method_exists($this->connectionPool, 'primary') === true) {
+            return $this->connectionPool->primary($this->name, $this->database);
+        }
+
+        return $this->connectionPool->master($this->name, $this->database);
+    }
+
+    /**
+     * Return a replica connection (the primary connection when no replica is configured)
+     * @return Driver\DriverInterface
+     * @throws Exception
+     */
+    public function replica()
+    {
+        // A custom ConnectionPoolInterface implementation may not provide replica() before Ting 4.0
+        if (method_exists($this->connectionPool, 'replica') === true) {
+            return $this->connectionPool->replica($this->name, $this->database);
+        }
+
+        return $this->connectionPool->slave($this->name, $this->database);
+    }
+
+    /**
+     * Return the primary connection
+     * @deprecated since Ting 3.14, use primary() instead
      * @throws Exception
      * @return Driver\DriverInterface
      */
     public function master()
     {
-        return $this->connectionPool->master($this->name, $this->database);
+        @trigger_error(sprintf('Method "%s()" is deprecated since Ting 3.14, use "%s()" instead.', __METHOD__, 'primary'), E_USER_DEPRECATED);
+
+        return $this->primary();
     }
 
     /**
-     * Return a slave connection
+     * Return a replica connection
+     * @deprecated since Ting 3.14, use replica() instead
      * @return Driver\DriverInterface
      * @throws Exception
      */
     public function slave()
     {
-        return $this->connectionPool->slave($this->name, $this->database);
+        @trigger_error(sprintf('Method "%s()" is deprecated since Ting 3.14, use "%s()" instead.', __METHOD__, 'replica'), E_USER_DEPRECATED);
+
+        return $this->replica();
     }
 
     /**
-     * Start a transaction against the master connection
+     * Start a transaction against the primary connection
      * @return mixed
      * @throws Exception
      */
     public function startTransaction()
     {
-        return $this->master()->startTransaction();
+        return $this->primary()->startTransaction();
     }
 
     /**
-     * Commit the opened transaction on the master connection
+     * Commit the opened transaction on the primary connection
      * @return mixed
      * @throws Exception
      */
     public function commit()
     {
-        return $this->master()->commit();
+        return $this->primary()->commit();
     }
 
     /**
-     * Rollback the opened transaction on the master connection
+     * Rollback the opened transaction on the primary connection
      * @return mixed
      * @throws Exception
      */
     public function rollback()
     {
-        return $this->master()->rollback();
+        return $this->primary()->rollback();
     }
 }

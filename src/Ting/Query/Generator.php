@@ -96,9 +96,9 @@ class Generator
     protected function getDriver($forceMaster)
     {
         if ($forceMaster === true) {
-            $driver = $this->connection->master();
+            $driver = $this->connection->primary();
         } else {
-            $driver = $this->connection->slave();
+            $driver = $this->connection->replica();
         }
 
         return $driver;
@@ -124,7 +124,7 @@ class Generator
         $query = $this->queryFactory->get($sql, $this->connection, $collectionFactory);
 
         if ($forceMaster === true) {
-            $query->selectMaster(true);
+            $query->selectPrimary(true);
         }
 
         return $query;
@@ -155,7 +155,7 @@ class Generator
         $query->setParams($params);
 
         if ($forceMaster === true) {
-            $query->selectMaster(true);
+            $query->selectPrimary(true);
         }
 
         return $query;
@@ -203,7 +203,7 @@ class Generator
         $query->setParams($params);
 
         if ($forceMaster === true) {
-            $query->selectMaster(true);
+            $query->selectPrimary(true);
         }
 
         return $query;
@@ -235,7 +235,7 @@ class Generator
         $query->setParams($params);
 
         if ($forceMaster === true) {
-            $query->selectMaster(true);
+            $query->selectPrimary(true);
         }
 
         return $query;

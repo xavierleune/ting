@@ -41,6 +41,11 @@ interface ConnectionPoolInterface
     public function setConfig($config);
 
     /**
+     * Return the primary connection
+     *
+     * @deprecated since Ting 3.14, will be replaced by primary($name, $database) in Ting 4.0.
+     *             Implement primary() alongside master() to be ready: Connection uses it when available.
+     *
      * @param string $name
      * @param string $database
      * @return DriverInterface
@@ -49,6 +54,11 @@ interface ConnectionPoolInterface
     public function master($name, $database);
 
     /**
+     * Return a replica connection (or the primary connection when no replica is configured)
+     *
+     * @deprecated since Ting 3.14, will be replaced by replica($name, $database) in Ting 4.0.
+     *             Implement replica() alongside slave() to be ready: Connection uses it when available.
+     *
      * @param string $name
      * @param string $database
      * @return DriverInterface

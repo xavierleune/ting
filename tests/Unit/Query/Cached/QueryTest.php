@@ -130,7 +130,7 @@ class QueryTest extends TestCase
         $mockMemcached = $this->createMock(MemcachedCache::class);
         $mockMemcached->expects($this->once())->method('fetch')->willReturn(false);
         $mockMemcached->expects($this->once())->method('save')->willReturn(true);
-        $mockConnection->method('slave')->willReturn($mockDriver);
+        $mockConnection->method('replica')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturnCallback(function ($sql, array $params, $collection) {
             $collection->set(new MysqliResult());
             return $collection;
