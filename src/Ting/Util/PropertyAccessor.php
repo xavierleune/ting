@@ -15,7 +15,6 @@ class PropertyAccessor
 {
     private array $reflectionData = [];
     private array $reflectionProperties = [];
-    private array $writePropertyCache = [];
     private const CACHE_PREFIX_WRITE = 'write_property_';
     private readonly PropertyAccessorInterface $propertyAccessor;
     private ?CacheItemPoolInterface $cacheItemPool = null;
@@ -78,7 +77,6 @@ class PropertyAccessor
      * @param string $propertyPath
      * @return array{'public': bool, 'supportsHook': bool, 'hasSetHook': bool}
      * @throws InvalidArgumentException
-     * @throws ReflectionException
      */
     private function getReflectionData(object $object, string $propertyPath): array
     {
@@ -90,16 +88,21 @@ class PropertyAccessor
         if ($this->cacheItemPool instanceof CacheItemPoolInterface) {
             $item = $this->cacheItemPool->getItem(self::CACHE_PREFIX_WRITE.rawurlencode($key));
             if ($item->isHit()) {
-                return $this->writePropertyCache[$key] = $item->get();
+                return $this->reflectionData[$key] = $item->get();
             }
         }
 
-        $reflection = new ReflectionProperty($object, $propertyPath);
-        $data = [
-            'public' => $reflection->isPublic(),
-            'supportsHook' => \PHP_VERSION_ID >= 80400,
-            'hasSetHook' => \PHP_VERSION_ID >= 80400 && $reflection->getHook(PropertyHookType::Set) !== null, // @phpstan-ignore method.notFound, class.notFound
-        ];
+        try {
+            $reflection = new ReflectionProperty($object, $propertyPath);
+            $data = [
+                'public' => $reflection->isPublic(),
+                'supportsHook' => \PHP_VERSION_ID >= 80400,
+                'hasSetHook' => \PHP_VERSION_ID >= 80400 && $reflection->getHook(PropertyHookType::Set) !== null, // @phpstan-ignore method.notFound, class.notFound
+            ];
+        } catch (ReflectionException) {
+            // Private in a parent class, or only reachable through a setter: no hook to bypass, Symfony writes it
+            $data = ['public' => false, 'supportsHook' => \PHP_VERSION_ID >= 80400, 'hasSetHook' => false];
+        }
 
         if (isset($item)) {
             $this->cacheItemPool->save($item->set($data));
