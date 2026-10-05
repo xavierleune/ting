@@ -73,6 +73,42 @@
     * Improvement: Rector configuration added for automated refactoring and code quality improvements (targeting PHP 8.0+)
     * Improvement: PHPStan custom extension for properties (CCMBenchmark\Ting\PHPStan\PropertiesExtension)
 
+3.15.0 (2026-10-05):
+    * Repository::get() (composite primary key), getBy() / getOneBy() criteria and the getBy() order now all take
+      property names, converted to column names by the Metadata
+    * Deprecate column names in these keys: a key that is not a property but is the column of a field still works
+      and triggers a silenced E_USER_DEPRECATED. A key that is both a property and the column of another field is
+      the property
+    * Deprecate order directions other than ASC / DESC (case-insensitive): still ignored, they trigger a silenced
+      E_USER_DEPRECATED and will throw a ValueException in 4.0. An order whose directions are all ignored no longer
+      produces an invalid "ORDER BY" clause
+    * Criteria values (getBy(), getOneBy() and get()) are converted by the serializer of their field:
+        * an object is serialized (enum, DateTime, Uuid...); an object for a field without serializer throws a
+          ValueException, except a Stringable object which is still sent as is
+        * an array becomes an IN list of converted values, an empty array throws a ValueException
+          (it produced an invalid "IN ()" before), check it first: if ($ids === []) { return ...; }
+        * an array for a field whose serializer implements the new Serializer\ArrayValueInterface (Json does) is
+          serialized as a whole and compared with "=". The result depends on the column type: a TEXT column matches
+          when the encoding is the same, a MySQL JSON column compared to a string never matches, PostgreSQL has no
+          "=" operator for json (jsonb has one)
+        * null (IS NULL) and scalars are unchanged
+
+3.14.0 (2026-10-05):
+    * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence() (backport from 4.0.0-rc.1)
+    * Drop Symfony 6 and PHP 8.1 support, PHP >= 8.2 is now required
+    * Add Symfony 8 support
+    * Tests: migrate from atoum to PHPUnit
+    * Add primary/replica names: ConnectionPool::primary() / replica(), Connection::primary() / replica(),
+      Query::selectPrimary() and Repository::pingPrimary()
+    * Connection configuration now uses the "primary" and "replicas" keys
+    * Deprecate ConnectionPool::master() / slave(), Connection::master() / slave(), Query::selectMaster()
+      and Repository::pingMaster(): they trigger a silenced E_USER_DEPRECATED and delegate to the new methods
+    * Deprecate the "master" and "slaves" connection configuration keys: they trigger a silenced E_USER_DEPRECATED
+      and are converted to "primary" / "replicas" (the new key wins when both are given)
+    * ConnectionPoolInterface::master() / slave() are deprecated, they will be replaced by primary() / replica() in 4.0.
+      Connection uses primary() / replica() when the pool provides them, master() / slave() otherwise
+    * Fix Cached\PreparedQuery: selectPrimary() (formerly selectMaster()) is now honoured for reading queries
+
 3.13.0 (2026-09-24):
     * Drop PHP 8.0 support, PHP >= 8.1 is now required
     * Add ResetInterface on ConnectionPool, UnitOfWork and Repository to reset state between requests (worker mode)
