@@ -56,18 +56,26 @@ trait NotifyProperty
         }
     }
 
+    /**
+     * Every property but the listeners. Names are mangled, so that the private properties of the parent classes are
+     * kept, and told apart from a property of the same name in a child class.
+     */
     public function __debugInfo(): ?array
     {
-        $properties = get_object_vars($this);
-        unset($properties['listeners']);
+        $properties = get_mangled_object_vars($this);
+        unset($properties["\0*\0listeners"]);
 
         return $properties;
     }
 
+    /**
+     * Every property but the listeners, with mangled names, as serialize() writes them without __serialize():
+     * unserialize() restores them all, private properties of the parent classes included.
+     */
     public function __serialize(): array
     {
-        $properties = get_object_vars($this);
-        unset($properties['listeners']);
+        $properties = get_mangled_object_vars($this);
+        unset($properties["\0*\0listeners"]);
 
         return $properties;
     }

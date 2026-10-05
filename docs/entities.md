@@ -222,6 +222,7 @@ The `NotifyProperty` trait stores the listeners (the unit of work) in a `$listen
 way:
 
 * `var_dump()` and other debug tools only show the entity's own properties (`__debugInfo()`);
-* `serialize()` leaves the listeners out (`__serialize()`), so an entity can be stored in a session or a cache. An
+* `serialize()` leaves the listeners out (`__serialize()`), so an entity can be stored in a session or a cache. Every
+  other property is kept, including the private properties of a parent class. An
   unserialized entity is a new object, not managed by the unit of work: saving it inserts it, unless you
   [manage it](unit-of-work.md#managing-an-entity-yourself) first.
