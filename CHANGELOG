@@ -16,6 +16,7 @@
     * Fix Mysqli prepared queries binding NULL for every parameter since 4.0.0-rc.1 (regression of ccmbenchmark/ting#108: parameter order lost, a repeated parameter bound once)
     * Fix a missing query parameter: every driver now raises a QueryException, prepared or not (Pgsql and Mysqli prepared queries sent NULL)
     * Fix the escaped colon (\:) kept in non-prepared Mysqli queries
+    * BC Remove Query\Cached\Query::setVersion(): it had no effect, the version is not part of the cache key since cache keys are manual
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit

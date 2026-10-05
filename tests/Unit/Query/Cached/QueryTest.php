@@ -57,14 +57,6 @@ class QueryTest extends TestCase
         $this->assertSame($cachedQuery, $cachedQuery->setCacheKey('myCacheKey'));
     }
 
-    public function testSetVersionShouldReturnThis()
-    {
-        $mockConnection = $this->createStub(Connection::class);
-
-        $cachedQuery = new Query('', $mockConnection);
-        $this->assertSame($cachedQuery, $cachedQuery->setVersion(2));
-    }
-
     public function testSetForceShouldReturnThis()
     {
         $mockConnection = $this->createStub(Connection::class);

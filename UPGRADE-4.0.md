@@ -99,6 +99,9 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
   protected against cache stampede by Symfony.
 * If you extend cached queries: the protected `Query\Cached\Query::checkCache()` has been replaced by
   `queryThroughCache()`.
+* `Query\Cached\Query::setVersion()` has been removed: the version has not been part of the cache key since cache
+  keys became manual (`setCacheKey()`), so it had no effect. Put the version in the key instead:
+  `$query->setCacheKey('user-list-v2')`.
 * Logging (`CacheLoggerInterface`): a read is logged as `OPERATION_GET`, flagged as a miss when the value had to be
   computed, which also stores it. `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
 * Values stored by doctrine/cache cannot be read by the new pools: expect a cold cache after upgrading.
