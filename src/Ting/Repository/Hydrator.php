@@ -216,7 +216,12 @@ class Hydrator implements HydratorInterface
      */
     private function extractSchemaFromColumn(array $column): string
     {
-        return $column['schema'] ?? $this->objectSchema[$column['table']] ?? '';
+        // Pgsql\Result sets the schema to '' when the query doesn't name it
+        if (($column['schema'] ?? '') !== '') {
+            return $column['schema'];
+        }
+
+        return $this->objectSchema[$column['table']] ?? '';
     }
 
     /**
