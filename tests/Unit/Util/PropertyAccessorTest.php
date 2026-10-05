@@ -33,6 +33,7 @@ use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
+use tests\fixtures\model\TrackedChild;
 
 class PropertyAccessorTest extends TestCase
 {
@@ -164,6 +165,57 @@ class PropertyAccessorTest extends TestCase
         $accessorSecond->setValue($entity, 'propertyWithDefaultValue', 'value2', null);
 
         $this->assertSame(2, $cache->getItemCalls);
+    }
+
+    public function testPropertyAccessorCanLeverageExternalCacheOncePerProperty()
+    {
+        $cache = $this->createArrayAdapterSpy();
+        $accessorFirst = new PropertyAccessor();
+        $accessorFirst->setCacheItemPool($cache);
+        $accessorFirst->setValue(new PublicPropertiesEntity(), 'propertyWithDefaultValue', 'value', null);
+
+        // A cache hit is kept in memory, as a miss is
+        $accessorSecond = new PropertyAccessor();
+        $accessorSecond->setCacheItemPool($cache);
+        for ($i = 0; $i < 3; $i++) {
+            $accessorSecond->setValue(new PublicPropertiesEntity(), 'propertyWithDefaultValue', 'value', null);
+        }
+
+        $this->assertSame(2, $cache->getItemCalls);
+    }
+
+    public function testSetPropertyShouldWriteAPrivatePropertyOfTheParentClassThroughItsSetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TrackedChild();
+
+        $accessor->setValue($entity, 'owner', 'owner', null);
+
+        $this->assertSame('owner', $entity->getOwner());
+    }
+
+    public function testSetPropertyShouldWriteAPropertyThatOnlyExistsThroughItsSetter()
+    {
+        $accessor = new PropertyAccessor();
+        $accessor->setCacheItemPool(new ArrayAdapter());
+        $entity = new class () {
+            private array $data = [];
+
+            public function setNickname(string $nickname): void
+            {
+                $this->data['nickname'] = $nickname;
+            }
+
+            public function getNickname(): ?string
+            {
+                return $this->data['nickname'] ?? null;
+            }
+        };
+
+        $accessor->setValue($entity, 'nickname', 'nick', null);
+        $accessor->setValue($entity, 'nickname', 'nick 2', null);
+
+        $this->assertSame('nick 2', $entity->getNickname());
     }
 
     /**
