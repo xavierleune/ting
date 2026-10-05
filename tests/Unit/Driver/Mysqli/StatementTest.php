@@ -98,6 +98,21 @@ class StatementTest extends TestCase
         $statement->execute([], $collection);
     }
 
+    public function testExecuteWithoutParameterShouldNotBindParams()
+    {
+        // mysqli_stmt::bind_param('') throws a ValueError: a statement without placeholder binds nothing
+        $driverStatement = $this->createMock(MysqliStatement::class);
+        $driverStatement->method('close')->willReturn(true);
+        $driverStatement->method('get_result')->willReturn(false);
+        $driverStatement->errno = 0;
+
+        $driverStatement->expects($this->never())->method('bind_param');
+        $driverStatement->expects($this->once())->method('execute');
+
+        $statement = new Statement($driverStatement, [], 'connectionName', 'database');
+        $this->assertTrue($statement->execute([]));
+    }
+
     public function testSetCollectionWithResult()
     {
         $driverStatement = $this->createStub(MysqliStatement::class);
