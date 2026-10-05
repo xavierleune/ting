@@ -118,6 +118,9 @@ Each value of the criteria (and of a composite key given to `get()`) is converte
   (`Empty array for property "id" in the criteria of Repository::getBy(): nothing can match`)
   instead of sending invalid SQL: return early when the list may be empty (`if ($ids === []) { return ...; }`).
 * `null` or a nested array inside an `IN` list throws a `ValueException`: an `IN` list never matches `NULL`.
+* Empty criteria (`getBy([])`, `getOneBy([])`) throw a `ValueException` instead of sending invalid SQL (`WHERE ` with
+  nothing after it), e.g. `No criteria in Repository::getBy(): use Repository::getAll() to read every row`; so does
+  `get([])` (`No primary key value in Repository::get()`). Use `getAll()` to read every row.
 * Scalars are still sent as is: database values (`CityStatus::Active->value`, a formatted date) keep working, only
   column-name keys must be renamed. Passing the PHP value (enum, `DateTime`...) is now possible.
 * Except for a field whose serializer's PHP value is a scalar, i.e. implements the new marker interface

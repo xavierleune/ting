@@ -1077,6 +1077,54 @@ class MetadataTest extends TestCase
         $this->assertSame(['#boo_ip' => 167772161], $this->readQuery($arrayQuery)[1]);
     }
 
+    public function testReadsShouldRejectEmptyCriteria()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteria(
+                [],
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'No criteria in Repository::getBy(): use Repository::getAll() to read every row'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteriaWithOrderAndLimit(
+                [],
+                ['id' => 'ASC'],
+                10,
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'No criteria in Repository::getBy(): use Repository::getAll() to read every row'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getOneByCriteria(
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                []
+            ),
+            'No criteria in Repository::getOneBy(): use Repository::getAll() to read every row'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByPrimaries(
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                []
+            ),
+            'No primary key value in Repository::get()'
+        );
+    }
+
     /**
      * Metadata with a field for each kind of criterion value, read through a FakeDriver replica
      *

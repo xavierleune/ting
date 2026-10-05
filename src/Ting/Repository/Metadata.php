@@ -512,6 +512,7 @@ class Metadata
             $fields
         );
 
+        $this->assertCriteriaNotEmpty($criteria, 'Repository::getOneBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getOneBy()');
 
         return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
@@ -527,6 +528,18 @@ class Metadata
     protected function getColumnsFromCriteria(array $criteria): array
     {
         return $this->convertCriteria($criteria, 'the criteria');
+    }
+
+    /**
+     * Without criteria, the WHERE clause would be empty (invalid SQL)
+     *
+     * @throws ValueException
+     */
+    private function assertCriteriaNotEmpty(array $criteria, string $method): void
+    {
+        if ($criteria === []) {
+            throw new ValueException(sprintf('No criteria in %s: use Repository::getAll() to read every row', $method));
+        }
     }
 
     /**
@@ -749,6 +762,7 @@ class Metadata
             $fields
         );
 
+        $this->assertCriteriaNotEmpty($criteria, 'Repository::getBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
 
         return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
@@ -771,6 +785,7 @@ class Metadata
             $this->table,
             $fields
         );
+        $this->assertCriteriaNotEmpty($criteria, 'Repository::getBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
         $orderColumn = $this->getColumnsFromOrder($orderBy);
 
@@ -793,6 +808,10 @@ class Metadata
                 return [$columnName => $this->getDatabaseValue($this->primaries[$columnName], $originalValue, $context)];
             }
             throw new Exception('Incorrect format for primaries');
+        }
+
+        if ($originalValue === []) {
+            throw new ValueException('No primary key value in ' . $context);
         }
 
         return $this->convertCriteria($originalValue, $context);

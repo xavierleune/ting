@@ -349,6 +349,9 @@ converts to `NULL` (`'t'` or `1` for a `Boolean` field) throws a `ValueException
 
 `null` or a nested array inside an `IN` list throws a `ValueException` as well: an `IN` list never matches `NULL`.
 
+Empty criteria throw a `ValueException` too (`No criteria in Repository::getBy(): use Repository::getAll() to read
+every row`), as does `get([])` (`No primary key value in Repository::get()`): use `getAll()` to read every row.
+
 An empty array throws instead of sending a query that can match nothing. When the list may be empty, return early:
 
 ```php
