@@ -124,6 +124,7 @@ A few rules:
   for a `DateTime` modified in place Ting sees no change; prefer immutable objects (`DateTimeImmutable`, enums...) and
   replace them.
 * A property that never calls `propertyChanged()` is still written on `INSERT`, but its changes are never `UPDATE`d.
+* A property notified by `propertyChanged()` but not mapped in the metadata is ignored by the unit of work.
 * Hydration goes through the same setters (unless the metadata says otherwise). A setter must accept every value the
   column can hold: if the column is nullable, type the parameter as nullable (`?\DateTimeImmutable` above), or
   hydration fails with a `TypeError`.

@@ -271,15 +271,24 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         }
 
         if ($properties === []) {
-            // Nothing to update: the save is done
-            $this->entitiesChanged->offsetUnset($entity);
-            unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+            $this->markSaved($entity);
             return;
         }
 
         $this->metadataRepository->findMetadataForEntity(
             $entity,
             function (Metadata $metadata) use ($entity, $properties): void {
+                // A setter may notify a property that is not mapped: it has no column to update
+                $properties = array_filter(
+                    $properties,
+                    fn (string $property): bool => $metadata->hasProperty($property),
+                    ARRAY_FILTER_USE_KEY
+                );
+                if ($properties === []) {
+                    $this->markSaved($entity);
+                    return;
+                }
+
                 $connection = $metadata->getConnection($this->connectionPool);
                 $query = $metadata->generateQueryForUpdate(
                     $connection,
@@ -293,13 +302,21 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
 
-                $this->entitiesChanged->offsetUnset($entity);
-                unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+                $this->markSaved($entity);
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
             }
         );
+    }
+
+    /**
+     * The save of a managed entity is done: forget its changes and unqueue it
+     */
+    private function markSaved(NotifyPropertyInterface $entity): void
+    {
+        $this->entitiesChanged->offsetUnset($entity);
+        unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
     }
 
     /**

@@ -322,6 +322,16 @@ class Metadata
     }
 
     /**
+     * Returns true if the property is mapped to a column in this metadata
+     *
+     * @internal
+     */
+    public function hasProperty(string $propertyName): bool
+    {
+        return isset($this->fieldsByProperty[$propertyName]);
+    }
+
+    /**
      * Create a new entity
      * @return T
      *
