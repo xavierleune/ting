@@ -44,19 +44,19 @@ class QueryTest extends TestCase
         $this->assertSame($query, $query->setParams([]));
     }
 
-    public function testExecuteShouldCallExecuteOnMasterDriver()
+    public function testExecuteShouldCallExecuteOnPrimaryDriver()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
 
-        $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('execute')->willReturn(true);
 
         $query = new Query('INSERT', $mockConnection);
         $query->execute();
     }
 
-    public function testQueryShouldCallExecuteOnSlaveDriver()
+    public function testQueryShouldCallExecuteOnReplicaDriver()
     {
         $services              = new TingServices();
         $mockDriver            = $this->createMock(Driver::class);
@@ -65,7 +65,7 @@ class QueryTest extends TestCase
 
         $collection = new Collection($services->hydrator());
 
-        $mockConnection->expects($this->once())->method('slave')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('replica')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('execute')->willReturn($collection);
         $mockCollectionFactory
             ->expects($this->once())
@@ -76,39 +76,39 @@ class QueryTest extends TestCase
         $query->query();
     }
 
-    public function testQueryShouldCallExecuteOnMasterDriver()
+    public function testQueryShouldCallExecuteOnPrimaryDriver()
     {
         $mockDriver            = $this->createMock(Driver::class);
         $mockConnection        = $this->createMock(Connection::class);
         $mockCollectionFactory = $this->createMock(CollectionFactory::class);
 
-        $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('execute')->willReturn(new Collection());
         $mockCollectionFactory->expects($this->once())->method('get')->willReturn(new Collection());
 
         $query = new Query('SELECT', $mockConnection, $mockCollectionFactory);
-        $query->selectMaster(true);
+        $query->selectPrimary(true);
         $query->query();
     }
 
-    public function testGetInsertIdShouldCallMasterDriver()
+    public function testGetInsertIdShouldCallPrimaryDriver()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
 
-        $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('getInsertedId')->willReturn(1);
 
         $query = new Query('INSERT', $mockConnection);
         $this->assertSame(1, $query->getInsertedId());
     }
 
-    public function testGetAffectedRowsShouldCallMasterDriver()
+    public function testGetAffectedRowsShouldCallPrimaryDriver()
     {
         $mockDriver = $this->createMock(Driver::class);
         $mockConnection = $this->createMock(Connection::class);
 
-        $mockConnection->expects($this->once())->method('master')->willReturn($mockDriver);
+        $mockConnection->expects($this->once())->method('primary')->willReturn($mockDriver);
         $mockDriver->expects($this->once())->method('getAffectedRows')->willReturn(4);
 
         $query = new Query('INSERT', $mockConnection);

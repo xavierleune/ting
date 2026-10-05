@@ -2,7 +2,7 @@
     * BC PHP 8.1 dropped, minimum version is now PHP 8.2
     * BC Symfony 6 dropped, add Symfony 8 support
     * BC Remove constructors from Interfaces (Liskov Substitution Principle violation)
-    * BC Added QueryInterface::selectMaster()
+    * BC Added QueryInterface::selectPrimary()
     * Fix collections and hydrators no longer Countable since 4.0.0-rc.1: count($collection) threw a TypeError
     * BC Remove the Services container, ContainerInterface and the pimple/pimple suggestion: wiring belongs to the integration (ting_bundle)
     * BC Replace the abandoned doctrine/cache with Symfony Cache Contracts: caches are Symfony\Contracts\Cache\CacheInterface pools, Ting\Cache\Cache only exposes get() and delete()
@@ -10,7 +10,7 @@
     * Fix changing a primary key: the UPDATE / DELETE targeted `WHERE key IN (old, new)` instead of the old value, and ignored a custom getter on primary keys
     * BC Fix Util\Debug, broken by typed properties since 4.0.0-rc.1: objects are now exported as arrays with a __CLASS__ key
     * Fix HydratorValueObject on cached queries (a cache hit returned raw rows): the hydrator now builds the objects itself, from the rows, with or without cache; ResultInterface::setObjectToFetch(), added in 4.0.0-rc.1, is removed
-    * Fix cached prepared queries ignoring selectMaster(true): they were always prepared on a slave
+    * Fix cached prepared queries ignoring selectPrimary(true): they were always prepared on a replica
     * Fix UnitOfWork keeping a saved entity queued when it had no change: shouldBePersisted() stayed true and the entity was retained until detach/reset (leak in worker mode)
     * Fix Hydrator::objectSchemaIs() ignored with PostgreSQL since 4.0.0-rc.1: the schema read from the query, even empty, took precedence; objectSchemaIs() overrides it again, as in 3.x
     * Fix Mysqli prepared queries binding NULL for every parameter since 4.0.0-rc.1 (regression of ccmbenchmark/ting#108: parameter order lost, a repeated parameter bound once)
@@ -33,6 +33,7 @@
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit
+    * BC Rename master/slave to primary/replica: ConnectionPool(Interface)::primary()/replica(), Connection::primary()/replica(), QueryInterface::selectPrimary(), Repository::pingPrimary(), $forceMaster parameters renamed $forcePrimary, configuration keys "primary" and "replicas"; the old methods are removed and ConnectionPool::setConfig() throws a ConfigException on the old "master" / "slaves" keys (see UPGRADE-4.0.md)
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

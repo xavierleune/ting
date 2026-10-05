@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -70,12 +71,12 @@ class Generator
 
 
     /**
-     * @param bool $forceMaster
+     * @param bool $forcePrimary
      * @return DriverInterface
      */
-    protected function getDriver($forceMaster): DriverInterface
+    protected function getDriver($forcePrimary): DriverInterface
     {
-        $driver = $forceMaster === true ? $this->connection->master() : $this->connection->slave();
+        $driver = $forcePrimary === true ? $this->connection->primary() : $this->connection->replica();
 
         return $driver;
     }
@@ -85,9 +86,9 @@ class Generator
      */
     public function getAll(
         CollectionFactoryInterface $collectionFactory,
-        bool $forceMaster = false
+        bool $forcePrimary = false
     ): QueryInterface {
-        $driver = $this->getDriver($forceMaster);
+        $driver = $this->getDriver($forcePrimary);
 
         $fields = $this->escapeFields($this->fields, $driver);
 
@@ -95,8 +96,8 @@ class Generator
 
         $query = $this->queryFactory->get($sql, $this->connection, $collectionFactory);
 
-        if ($forceMaster === true) {
-            $query->selectMaster(true);
+        if ($forcePrimary === true) {
+            $query->selectPrimary(true);
         }
 
         return $query;
@@ -110,9 +111,9 @@ class Generator
     public function getOneByCriteria(
         array $primariesValue,
         CollectionFactoryInterface $collectionFactory,
-        bool $forceMaster = false
+        bool $forcePrimary = false
     ): QueryInterface {
-        $driver = $this->getDriver($forceMaster);
+        $driver = $this->getDriver($forcePrimary);
 
         [$sql, $params] = $this->getSqlAndParamsByCriteria($primariesValue, $driver);
         $sql .=  ' LIMIT 1';
@@ -120,8 +121,8 @@ class Generator
         $query = $this->queryFactory->get($sql, $this->connection, $collectionFactory);
         $query->setParams($params);
 
-        if ($forceMaster === true) {
-            $query->selectMaster(true);
+        if ($forcePrimary === true) {
+            $query->selectPrimary(true);
         }
 
         return $query;
@@ -151,11 +152,11 @@ class Generator
     public function getByCriteria(
         array $criteria,
         CollectionFactoryInterface $collectionFactory,
-        bool $forceMaster = false,
+        bool $forcePrimary = false,
         array $order = [],
         int $limit = 0
     ): QueryInterface {
-        $driver = $this->getDriver($forceMaster);
+        $driver = $this->getDriver($forcePrimary);
 
         [$sql, $params] = $this->getSqlAndParamsByCriteria($criteria, $driver);
         $this->updateSQLWithOrderAndLimit($sql, $driver, $order, $limit);
@@ -163,8 +164,8 @@ class Generator
         $query = $this->queryFactory->get($sql, $this->connection, $collectionFactory);
         $query->setParams($params);
 
-        if ($forceMaster === true) {
-            $query->selectMaster(true);
+        if ($forcePrimary === true) {
+            $query->selectPrimary(true);
         }
 
         return $query;

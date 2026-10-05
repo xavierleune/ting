@@ -126,28 +126,28 @@ public function findEntitiesByName(string $name): CollectionInterface
 }
 ```
 
-### Master and slaves
+### Primary and replicas
 
-When slaves are configured for a connection (see [Getting started](getting-started.md)), reading queries run on a
-slave. To read on the master, for instance just after a write, call `selectMaster(true)` before `query()`:
+When replicas are configured for a connection (see [Getting started](getting-started.md)), reading queries run on a
+replica. To read on the primary, for instance just after a write, call `selectPrimary(true)` before `query()`:
 
 ```php
-public function findByNameOnMaster(string $name): CollectionInterface
+public function findByNameOnPrimary(string $name): CollectionInterface
 {
     $query = $this->getQuery('SELECT id, name FROM user WHERE name = :name');
     $query->setParams(['name' => $name]);
-    $query->selectMaster(true);
+    $query->selectPrimary(true);
 
     return $query->query();
 }
 ```
 
-Writing queries (`execute()`) always run on the master.
+Writing queries (`execute()`) always run on the primary.
 
 ## Writing
 
 Writing queries (`INSERT`, `UPDATE`, `DELETE`...) are run with `execute()` instead of `query()`. They always run on
-the master connection.
+the primary connection.
 
 ```php
 public function insertUser(string $name): int
@@ -169,7 +169,7 @@ public function disableInactiveUsers(): int|string
 }
 ```
 
-* `getInsertedId(): int` returns the last auto-generated id of the master connection (`mysqli::$insert_id` on MySQL,
+* `getInsertedId(): int` returns the last auto-generated id of the primary connection (`mysqli::$insert_id` on MySQL,
   `lastval()` on PostgreSQL). For a specific PostgreSQL sequence, the driver offers
   `CCMBenchmark\Ting\Driver\Pgsql\Driver::getInsertedIdForSequence(string $sequenceName)`.
 * `getAffectedRows(): int|string` returns the number of rows changed by the last writing query.
@@ -193,8 +193,8 @@ public function renameAll(array $renames): void
 }
 ```
 
-`query()`, `execute()`, `setParams()` and `selectMaster()` behave as for `Query`. A reading prepared query is prepared
-on a slave, unless `selectMaster(true)` was called before its first execution. Once prepared, a `PreparedQuery` must
+`query()`, `execute()`, `setParams()` and `selectPrimary()` behave as for `Query`. A reading prepared query is prepared
+on a replica, unless `selectPrimary(true)` was called before its first execution. Once prepared, a `PreparedQuery` must
 be used either for reading or for writing, not both.
 
 ## Query builder

@@ -49,11 +49,11 @@ class GeneratorTest extends TestCase
         // The driver is never configured: its real code (escapeField) builds the SQL
         $mockDriver = new Driver();
 
-        // Counts calls to master() and slave(), which both return the driver
+        // Counts calls to primary() and replica(), which both return the driver
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
         $this->mockConnection = new class ($mockConnectionPool, 'main', 'db', $mockDriver) extends Connection {
             /** @var array<string, int> */
-            public array $calls = ['master' => 0, 'slave' => 0];
+            public array $calls = ['primary' => 0, 'replica' => 0];
 
             public function __construct(
                 ConnectionPoolInterface $connectionPool,
@@ -64,15 +64,15 @@ class GeneratorTest extends TestCase
                 parent::__construct($connectionPool, $name, $database);
             }
 
-            public function master(): DriverInterface
+            public function primary(): DriverInterface
             {
-                $this->calls['master']++;
+                $this->calls['primary']++;
                 return $this->driver;
             }
 
-            public function slave(): DriverInterface
+            public function replica(): DriverInterface
             {
-                $this->calls['slave']++;
+                $this->calls['replica']++;
                 return $this->driver;
             }
         };
@@ -105,12 +105,12 @@ class GeneratorTest extends TestCase
             Query::class,
             $generator->getOneByCriteria(['id' => 1], $services->collectionFactory())
         );
-        $this->assertSame(1, $this->mockConnection->calls['slave']);
+        $this->assertSame(1, $this->mockConnection->calls['replica']);
         $this->assertInstanceOf(
             Query::class,
             $generator->getOneByCriteria(['id' => 1], $services->collectionFactory(), true)
         );
-        $this->assertSame(1, $this->mockConnection->calls['master']);
+        $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 
     public function testGetAllShouldReturnAQuery()
@@ -125,7 +125,7 @@ class GeneratorTest extends TestCase
             ['id', 'population']
         );
         $this->assertInstanceOf(Query::class, $generator->getAll($services->collectionFactory(), true));
-        $this->assertSame(1, $this->mockConnection->calls['master']);
+        $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 
     public function testGetByCriteriaWithArrayValueShouldReturnAQuery()
@@ -143,7 +143,7 @@ class GeneratorTest extends TestCase
             Query::class,
             $generator->getByCriteria(['name' => ['Xavier', 'Olivier']], $services->collectionFactory(), true)
         );
-        $this->assertSame(1, $this->mockConnection->calls['master']);
+        $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 
     public function testGetByCriteriaWithNullValueShouldReturnAQuery()
@@ -184,7 +184,7 @@ class GeneratorTest extends TestCase
             Query::class,
             $generator->getByCriteria(['name' => 'Xavier'], $services->collectionFactory(), true)
         );
-        $this->assertSame(1, $this->mockConnection->calls['master']);
+        $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 
     public function testInsertShouldReturnAPreparedQuery()
@@ -246,7 +246,7 @@ class GeneratorTest extends TestCase
                 ['name' => 'ASC']
             )
         );
-        $this->assertSame(1, $this->mockConnection->calls['master']);
+        $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 
     public function testGetByCriteriaWithArrayValueAndOrderLimitShouldReturnAQuery()
@@ -270,6 +270,6 @@ class GeneratorTest extends TestCase
                 1
             )
         );
-        $this->assertSame(1, $this->mockConnection->calls['master']);
+        $this->assertSame(1, $this->mockConnection->calls['primary']);
     }
 }

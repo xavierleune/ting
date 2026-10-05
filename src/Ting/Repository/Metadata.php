@@ -419,7 +419,7 @@ class Metadata
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
         mixed $primariesKeyValue,
-        bool $forceMaster = false
+        bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = new Generator(
@@ -432,7 +432,7 @@ class Metadata
 
         $primariesKeyValue = $this->getPrimariesKeyValuesAsArray($primariesKeyValue);
 
-        return $queryGenerator->getOneByCriteria($primariesKeyValue, $collectionFactory, $forceMaster);
+        return $queryGenerator->getOneByCriteria($primariesKeyValue, $collectionFactory, $forcePrimary);
     }
 
 
@@ -448,7 +448,7 @@ class Metadata
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
         array $criteria,
-        bool $forceMaster = false
+        bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = new Generator(
@@ -461,7 +461,7 @@ class Metadata
 
         $criteriaColumn = $this->getColumnsFromCriteria($criteria);
 
-        return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forceMaster);
+        return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
     }
 
     /**
@@ -489,7 +489,7 @@ class Metadata
      * @param Connection                 $connection
      * @param QueryFactoryInterface      $queryFactory
      * @param CollectionFactoryInterface $collectionFactory
-     * @param bool                       $forceMaster
+     * @param bool                       $forcePrimary
      * @return QueryInterface
      *
      * @internal
@@ -498,7 +498,7 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
-        $forceMaster = false
+        $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = new Generator(
@@ -509,7 +509,7 @@ class Metadata
             $fields
         );
 
-        return $queryGenerator->getAll($collectionFactory, $forceMaster);
+        return $queryGenerator->getAll($collectionFactory, $forcePrimary);
     }
 
     /**
@@ -522,7 +522,7 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
-        bool $forceMaster = false
+        bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = new Generator(
@@ -535,7 +535,7 @@ class Metadata
 
         $criteriaColumn = $this->getColumnsFromCriteria($criteria);
 
-        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forceMaster);
+        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
     }
 
     public function getByCriteriaWithOrderAndLimit(
@@ -545,7 +545,7 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
-        bool $forceMaster = false
+        bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = new Generator(
@@ -557,7 +557,7 @@ class Metadata
         );
         $criteriaColumn = $this->getColumnsFromCriteria($criteria);
 
-        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forceMaster, $orderBy, $limit);
+        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary, $orderBy, $limit);
     }
 
     /**

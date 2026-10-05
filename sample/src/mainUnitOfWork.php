@@ -46,13 +46,13 @@ echo str_repeat("-", 40) . "\n";
 $connections = [
     'main' => [
         'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
-        'master' => [
+        'primary' => [
             'host'      => 'localhost',
             'user'      => 'world_sample',
             'password'  => 'world_sample',
             'port'      => 3306,
         ],
-        'slaves' => [
+        'replicas' => [
             [
                 'host'      => '127.0.0.1',
                 'user'      => 'world_sample',

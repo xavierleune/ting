@@ -13,6 +13,58 @@ Symfony
 * Symfony 6 support has been dropped: `symfony/property-access` (and the optional `symfony/uid` / `symfony/cache`)
   now require `^7.0 || ^8.0`.
 
+Primary / Replica (formerly Master / Slave)
+-------------------------------------------
+
+The master / slave terminology has been replaced by primary / replica. The old names have been removed, without
+aliases:
+
+| Before (3.x)                                                      | After (4.0)                                                         |
+|-------------------------------------------------------------------|---------------------------------------------------------------------|
+| `ConnectionPool(Interface)::master(string $name, string $database)` | `ConnectionPool(Interface)::primary(string $name, string $database)` |
+| `ConnectionPool(Interface)::slave(string $name, string $database)`  | `ConnectionPool(Interface)::replica(string $name, string $database)` |
+| `Connection::master()`                                            | `Connection::primary()`                                             |
+| `Connection::slave()`                                             | `Connection::replica()`                                             |
+| `Query(Interface)::selectMaster(bool $useMaster)`                 | `Query(Interface)::selectPrimary(bool $usePrimary)`                 |
+| `Repository::pingMaster()`                                        | `Repository::pingPrimary()`                                         |
+| `$forceMaster` parameter of `Repository::get()`, `getAll()`, `getBy()`, `getOneBy()`, `Metadata` and `Generator` methods | `$forcePrimary` |
+| `master` configuration key                                        | `primary`                                                           |
+| `slaves` configuration key                                        | `replicas`                                                          |
+
+```php
+// Before (3.x):
+$connectionPool->setConfig([
+    'main' => [
+        'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
+        'master'    => ['host' => 'db-primary', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
+        'slaves'    => [
+            ['host' => 'db-replica-1', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
+        ],
+    ],
+]);
+$city = $cityRepository->get(3, forceMaster: true);
+
+// After (4.0):
+$connectionPool->setConfig([
+    'main' => [
+        'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
+        'primary'   => ['host' => 'db-primary', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
+        'replicas'  => [
+            ['host' => 'db-replica-1', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
+        ],
+    ],
+]);
+$city = $cityRepository->get(3, forcePrimary: true);
+```
+
+* Ting 3.14 already offers the new names and deprecates the old ones: you can migrate on 3.x first, fix the
+  deprecations, then upgrade to 4.0.
+* `ConnectionPool::setConfig()` throws a `CCMBenchmark\Ting\Exceptions\ConfigException` when a connection still uses
+  the `master` or `slaves` key (e.g. `Connection "main": the "master" key was renamed "primary" in Ting 4.0`).
+* Named arguments must be renamed as well: `forceMaster:` becomes `forcePrimary:` (and `useMaster:` becomes
+  `usePrimary:`), otherwise PHP throws an `Error` (unknown named parameter).
+* As before, a replica falls back to the primary when no replica is configured.
+
 Services Container Removed
 --------------------------
 
@@ -127,8 +179,8 @@ $generator->getByCriteriaWithOrderAndLimit(['status' => 'active'], $collectionFa
 $generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
 ```
 
-* `Generator` is mostly used internally: from a repository, `getBy($criteria, $forceMaster, $order, $limit)` is
-  unchanged.
+* `Generator` is mostly used internally: from a repository, `getBy($criteria, $forcePrimary, $order, $limit)` is
+  unchanged (apart from `$forceMaster` renamed `$forcePrimary`, see "Primary / Replica").
 
 Repository and RepositoryFactory Constructors
 ---------------------------------------------
@@ -254,8 +306,8 @@ If you have implemented custom queries, you must implement:
 ```php
 interface QueryInterface
 {
-    // New method in 4.0 (already available on Query in 3.x):
-    public function selectMaster(bool $useMaster): static;
+    // New method in 4.0 (already available on Query in 3.x, as selectMaster() and, since 3.14, selectPrimary()):
+    public function selectPrimary(bool $usePrimary): static;
 }
 ```
 

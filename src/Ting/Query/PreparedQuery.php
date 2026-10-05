@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -47,10 +48,10 @@ class PreparedQuery extends Query
             return $this;
         }
 
-        if ($this->selectMaster === true) {
-            $this->statement = $this->connection->master()->prepare($this->sql);
+        if ($this->selectPrimary === true) {
+            $this->statement = $this->connection->primary()->prepare($this->sql);
         } else {
-            $this->statement = $this->connection->slave()->prepare($this->sql);
+            $this->statement = $this->connection->replica()->prepare($this->sql);
         }
         $this->prepared  = true;
 
@@ -69,7 +70,7 @@ class PreparedQuery extends Query
             return $this;
         }
 
-        $this->statement = $this->connection->master()->prepare($this->sql);
+        $this->statement = $this->connection->primary()->prepare($this->sql);
         $this->prepared  = true;
 
         return $this;
