@@ -36,8 +36,8 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\HydratorInterface;
 use CCMBenchmark\Ting\Services;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
-use Doctrine\Common\Cache\MemcachedCache;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use tests\fixtures\Fake\MysqliStatement;
 use tests\fixtures\FakeDriver\MysqliResult;
 
@@ -46,7 +46,8 @@ class PreparedQueryTest extends TestCase
     public function testQueryShouldCallOnlyCacheGetIfDataInCache()
     {
         $services       = new Services();
-        $mockConnection = $this->createStub(Connection::class);
+        $mockConnection = $this->createMock(Connection::class);
+        $mockConnection->expects($this->never())->method('slave');
         // Spy: counts calls to get() while keeping the real implementation (a real Collection is expected)
         $mockCollectionFactory = new class (
             $services->get('MetadataRepository'),
@@ -62,8 +63,8 @@ class PreparedQueryTest extends TestCase
             }
         };
 
-        $mockMemcached = $this->createMock(MemcachedCache::class);
-        $mockMemcached->expects($this->exactly(2))->method('fetch')->willReturnCallback(fn () => [
+        $cache = new ArrayAdapter();
+        $cache->get('myCacheKey', fn () => [
             'connection' => 'connectionName',
             'database'   => 'database',
             'data' =>
@@ -80,14 +81,14 @@ class PreparedQueryTest extends TestCase
                     ]
                 ]
         ]);
-        $mockMemcached->expects($this->never())->method('save');
 
         $collection = new Collection();
 
         $query = new PreparedQuery('', $mockConnection, $mockCollectionFactory);
-        $query->setCache($mockMemcached);
+        $query->setCache($cache);
         $query->setTtl(10)->setCacheKey('myCacheKey');
         $this->assertSame($collection, $query->query($collection));
+        $this->assertTrue($collection->isFromCache());
         $this->assertSame(0, $mockCollectionFactory->getCalls);
         $this->assertInstanceOf(Collection::class, $query->query());
         $this->assertSame(1, $mockCollectionFactory->getCalls);
@@ -106,10 +107,8 @@ class PreparedQueryTest extends TestCase
         $mockMysqliResult    = $this->getMockBuilder(MysqliResult::class)
             ->onlyMethods(['getConnectionName', 'getDatabase'])
             ->getMock();
-        $mockMemcached = $this->createMock(MemcachedCache::class);
+        $cache = new ArrayAdapter();
 
-        $mockMemcached->expects($this->once())->method('fetch')->willReturn(false);
-        $mockMemcached->expects($this->once())->method('save')->willReturn(true);
         $mockConnection->method('slave')->willReturn($mockDriver);
         $mockDriver->method('execute')->willReturn(true);
         $mockDriver->method('prepare')->willReturn($mockStatement);
@@ -125,10 +124,12 @@ class PreparedQueryTest extends TestCase
         $collection = new Collection();
 
         $query = new PreparedQuery('', $mockConnection);
-        $query->setCache($mockMemcached);
+        $query->setCache($cache);
         $query->setTtl(10)->setCacheKey('myCacheKey');
         $query->prepareQuery();
         $this->assertSame($collection, $query->query($collection));
+        $this->assertFalse($collection->isFromCache());
+        $this->assertSame($collection->toCache(), $cache->getItem('myCacheKey')->get());
     }
 
     public function testPrepareExecuteShouldCallConnectionPrepare()

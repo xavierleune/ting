@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -88,18 +89,10 @@ class PreparedQuery extends Query
             $collection = $this->collectionFactory->get();
         }
 
-        $isCached = $this->checkCache($this->cacheKey, $collection);
-
-        if ($isCached === true) {
-            return $collection;
-        }
-
-        $this->prepareQuery();
-
-        $this->statement->execute($this->params, $collection);
-        $this->cache->save($this->cacheKey, $collection->toCache(), $this->ttl);
-
-        return $collection;
+        return $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
+            $this->prepareQuery();
+            $this->statement->execute($this->params, $collection);
+        });
     }
 
     /**

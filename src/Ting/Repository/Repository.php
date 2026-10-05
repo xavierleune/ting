@@ -44,7 +44,7 @@ use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\ResetInterface;
 use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
 use CCMBenchmark\Ting\UnitOfWork;
-use Doctrine\Common\Cache\Cache;
+use Symfony\Contracts\Cache\CacheInterface;
 
 /**
  * @template T on \CCMBenchmark\Ting\Entity\NotifyPropertyInterface
@@ -75,7 +75,7 @@ abstract class Repository implements ResetInterface
      * @param MetadataRepository $metadataRepository
      * @param QueryFactory $queryFactory
      * @param CollectionFactory $collectionFactory
-     * @param Cache $cache
+     * @param CacheInterface $cache
      * @param UnitOfWork $unitOfWork
      *
      * @internal
@@ -85,7 +85,7 @@ abstract class Repository implements ResetInterface
         protected MetadataRepository $metadataRepository,
         protected \CCMBenchmark\Ting\Query\QueryFactory $queryFactory,
         protected CollectionFactory $collectionFactory,
-        protected Cache $cache,
+        protected CacheInterface $cache,
         protected UnitOfWork $unitOfWork
     ) {
         $class = static::class;

@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -25,19 +26,20 @@
 
 namespace CCMBenchmark\Ting\Cache;
 
-use Doctrine\Common\Cache\Cache as DoctrineCache;
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
+use Symfony\Contracts\Cache\CacheInterface as SymfonyCacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
+/**
+ * Decorates a Symfony cache pool to log its operations
+ */
 class Cache implements CacheInterface
 {
     private ?CacheLoggerInterface $logger = null;
 
-    private DoctrineCache $cache;
+    private SymfonyCacheInterface $cache;
 
-    /**
-     * @param DoctrineCache $cache
-     */
-    public function setCache(DoctrineCache $cache): void
+    public function setCache(SymfonyCacheInterface $cache): void
     {
         $this->cache = $cache;
     }
@@ -76,57 +78,38 @@ class Cache implements CacheInterface
 
     /**
      * {@inheritdoc}
+     *
+     * Logged as a read, flagged as a miss when $callback has to compute (and store) the value
      */
-    public function delete($id): bool
+    public function get(string $key, callable $callback, ?float $beta = null, ?array &$metadata = null): mixed
     {
-        $this->log(CacheLoggerInterface::OPERATION_DELETE, $id);
-        $result = $this->cache->delete($id);
+        $this->log(CacheLoggerInterface::OPERATION_GET, $key);
+        $miss = false;
+        try {
+            return $this->cache->get(
+                $key,
+                function (ItemInterface $item, bool &$save) use ($callback, &$miss): mixed {
+                    $miss = true;
+
+                    return $callback($item, $save);
+                },
+                $beta,
+                $metadata
+            );
+        } finally {
+            $this->stopLog($miss);
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function delete(string $key): bool
+    {
+        $this->log(CacheLoggerInterface::OPERATION_DELETE, $key);
+        $result = $this->cache->delete($key);
         $this->stopLog();
 
         return $result;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function fetch($id): mixed
-    {
-        $this->log(CacheLoggerInterface::OPERATION_GET, $id);
-        $value = $this->cache->fetch($id);
-        $this->stopLog(($value === false));
-
-        return $value;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function contains($id): bool
-    {
-        $this->log(CacheLoggerInterface::OPERATION_EXIST, $id);
-        $value = $this->cache->contains($id);
-        $this->stopLog(($value === false));
-
-        return $value;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function save($id, $data, $lifeTime = 0): bool
-    {
-        $this->log(CacheLoggerInterface::OPERATION_STORE, $id);
-        $result = $this->cache->save($id, $data, $lifeTime);
-        $this->stopLog();
-
-        return $result;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getStats(): ?array
-    {
-        return $this->cache->getStats();
     }
 }
