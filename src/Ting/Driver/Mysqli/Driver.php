@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -277,6 +278,9 @@ class Driver implements DriverInterface
 
     /**
      * Quote value according to the type of variable
+     *
+     * Strings are quoted with single quotes: real_escape_string() only doubles single quotes under the sql_mode
+     * NO_BACKSLASH_ESCAPES, and a double-quoted string is an identifier under ANSI_QUOTES.
      */
     protected function quoteValue(mixed $value): string | int | float
     {
@@ -284,7 +288,7 @@ class Driver implements DriverInterface
             "boolean" => (int) $value,
             "integer", "double" => $value,
             "NULL" => 'null',
-            default => '"' . $this->connection->real_escape_string($value) . '"',
+            default => "'" . $this->connection->real_escape_string($value) . "'",
         };
     }
 

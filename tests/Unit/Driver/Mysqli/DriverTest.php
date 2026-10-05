@@ -355,7 +355,7 @@ class DriverTest extends TestCase
         $driverFake->expects($this->once())
             ->method('query')
             ->with($this->identicalTo("SELECT 'Bouh:Ting', ' ::Ting', ADDTIME('23:59:59', '1:1:1') '
-                . ' FROM Bouh WHERE id = 3 AND login = \"Sylvain\" AND is_banned = 0"))
+                . ' FROM Bouh WHERE id = 3 AND login = 'Sylvain' AND is_banned = 0"))
             ->willReturn(false);
         $driverFake->method('real_escape_string')->willReturnCallback(fn ($value) => $value);
 
@@ -389,7 +389,7 @@ class DriverTest extends TestCase
             if ($value instanceof \DateTime) {
                 $value = $value->format('Y-m-d H:i:s');
             }
-            return addcslashes($value, '"');
+            return addcslashes($value, "'");
         });
         $driverFake->method('query')->willReturnCallback(function ($sql) use (&$outerSql, $mockMysqliResult) {
             $outerSql = $sql;
@@ -442,7 +442,7 @@ class DriverTest extends TestCase
             if ($value instanceof \DateTime) {
                 $value = $value->format('Y-m-d H:i:s');
             }
-            return addcslashes($value, '"');
+            return addcslashes($value, "'");
         });
         $driverFake->method('query')->willReturn(false);
         $driverFake->error = 'Undefined Error';
@@ -462,7 +462,7 @@ class DriverTest extends TestCase
                     $collection
                 );
             },
-            'Undefined Error (Query: SELECT population FROM T_CITY_CIT WHERE id = 12 AND name = "L\'étang du lac" AND age = 12.6 AND last_modified = "2014-03-01 14:02:05")'
+            'Undefined Error (Query: SELECT population FROM T_CITY_CIT WHERE id = 12 AND name = \'L\\\'étang du lac\' AND age = 12.6 AND last_modified = \'2014-03-01 14:02:05\')'
         );
     }
 
@@ -478,7 +478,7 @@ class DriverTest extends TestCase
                 $value = $value->format('Y-m-d H:i:s');
             }
 
-            return addcslashes($value, '"');
+            return addcslashes($value, "'");
         });
         $driverFake->expects($this->once())
             ->method('query')
@@ -502,11 +502,29 @@ class DriverTest extends TestCase
         );
         $this->assertEquals(
             'SELECT population FROM T_CITY_CIT WHERE id = 12
-                    AND name = "L\'étang du lac" AND age = 12.6 AND last_modified = "2014-03-01 14:02:05"',
+                    AND name = \'L\\\'étang du lac\' AND age = 12.6 AND last_modified = \'2014-03-01 14:02:05\'',
             $outerSql
         );
     }
 
+
+    public function testStringValuesShouldBeQuotedWithSingleQuotes()
+    {
+        $driverFake = $this->createStub(Mysqli::class);
+        // real_escape_string under sql_mode NO_BACKSLASH_ESCAPES: only single quotes are doubled
+        $driverFake->method('real_escape_string')->willReturnCallback(fn ($value) => str_replace("'", "''", $value));
+        $driverFake->method('query')->willReturnCallback(function ($sql) use (&$outerSql) {
+            $outerSql = $sql;
+
+            return true;
+        });
+
+        $driver = new Driver($driverFake);
+        $driver->execute('SELECT * FROM T_USER_USE WHERE login = :login', ['login' => 'zzz" OR "1"="1']);
+
+        // Double quotes stay inside the literal; a double-quoted value would also be an identifier under ANSI_QUOTES
+        $this->assertSame('SELECT * FROM T_USER_USE WHERE login = \'zzz" OR "1"="1\'', $outerSql);
+    }
 
     public function testNullValueShouldNotBeQuoted()
     {
@@ -515,7 +533,7 @@ class DriverTest extends TestCase
         $mockMysqliResult = new MysqliResult(['hop' => 'la']);
 
         $driver = new Driver($driverFake);
-        $driverFake->method('real_escape_string')->willReturnCallback(fn ($value) => addcslashes($value, '"'));
+        $driverFake->method('real_escape_string')->willReturnCallback(fn ($value) => addcslashes($value, "'"));
         $driverFake->expects($this->once())
             ->method('query')
             ->willReturnCallback(function ($sql) use (&$outerSql, $mockMysqliResult) {
@@ -613,7 +631,7 @@ class DriverTest extends TestCase
         $driver->execute('SELECT * FROM T_BOUH_BOO WHERE name = "\:bim" AND login = :login', ['login' => 'a\:b']);
 
         // The escape is removed from the query, not from the values
-        $this->assertSame('SELECT * FROM T_BOUH_BOO WHERE name = ":bim" AND login = "a\:b"', $outerSql);
+        $this->assertSame('SELECT * FROM T_BOUH_BOO WHERE name = ":bim" AND login = \'a\:b\'', $outerSql);
     }
 
     public function testPrepareCalledTwiceShouldReturnTheSameObject()
