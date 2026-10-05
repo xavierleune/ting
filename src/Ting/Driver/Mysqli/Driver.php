@@ -75,12 +75,15 @@ class Driver implements DriverInterface
     protected string $objectHash = '';
 
     /**
-     * @var array<string,StatementInterface> List of already prepared queries
+     * Already prepared queries, by statement name then by database: one driver serves every database of a server
+     * (see getConnectionKey()) and a statement reads and writes the database selected when it was prepared.
+     *
+     * @var array<string,array<string,StatementInterface>>
      */
     protected array $preparedQueries = [];
 
     /**
-     * @var array<string,StatementInterface> Old list of prepared queries, filled after a reconnect
+     * @var array<string,array<string,StatementInterface>> Old list of prepared queries, filled after a reconnect
      */
     protected array $oldPreparedQueries = [];
 
@@ -316,8 +319,9 @@ class Driver implements DriverInterface
     public function prepare(string $sql): StatementInterface
     {
         $statementName = sha1($sql);
-        if (isset($this->preparedQueries[$statementName])) {
-            return $this->preparedQueries[$statementName];
+        $database = $this->currentDatabase;
+        if (isset($this->preparedQueries[$statementName][$database])) {
+            return $this->preparedQueries[$statementName][$database];
         }
         $paramsOrder = [];
         $sql = preg_replace_callback(
@@ -344,10 +348,10 @@ class Driver implements DriverInterface
             $this->logger->stopPrepare(spl_object_hash($driverStatement));
         }
 
-        $statement = new Statement($driverStatement, $paramsOrder, $this->name, $this->currentDatabase);
+        $statement = new Statement($driverStatement, $paramsOrder, $this->name, $database);
         $statement->setLogger($this->logger);
 
-        $this->preparedQueries[$statementName] = $statement;
+        $this->preparedQueries[$statementName][$database] = $statement;
 
         return $statement;
     }
@@ -421,7 +425,9 @@ class Driver implements DriverInterface
     }
 
     /**
-     * @param $statement
+     * Closes the statement prepared for the given name on every database
+     *
+     * @param string $statement name of the statement (sha1 of its SQL, see PreparedQuery::getStatementName())
      * @throws StatementException
      */
     public function closeStatement(string $statement): void
@@ -497,7 +503,7 @@ class Driver implements DriverInterface
             if ($this->currentTimezone !== null) {
                 $this->connection->query(sprintf('SET time_zone = "%s";', $this->currentTimezone));
             }
-            $this->oldPreparedQueries = array_merge($this->preparedQueries, $this->oldPreparedQueries);
+            $this->oldPreparedQueries = array_replace_recursive($this->oldPreparedQueries, $this->preparedQueries);
             $this->preparedQueries = [];
             return true;
         } catch (\Exception $e) {
