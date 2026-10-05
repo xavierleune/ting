@@ -622,7 +622,7 @@ class Metadata
     /**
      * Return a query to update a row in database
      *
-     * @param $array<string, mixed> $properties
+     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [old value, new value]
      *
      * @internal
      */
@@ -662,8 +662,8 @@ class Metadata
      *
      * @param Connection            $connection
      * @param QueryFactoryInterface $queryFactory
-     * @param                       $properties
-     * @param                       $entity
+     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [old value, new value]
+     * @param object                $entity
      * @return PreparedQuery
      *
      * @internal
@@ -688,20 +688,23 @@ class Metadata
     }
 
     /**
-     * @param array<string, mixed> $properties
-     * @return array
+     * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [old value, new value]
+     * @return array<string, mixed> primary key values by column name, as currently stored in the database
      */
     protected function getPrimariesKeyValuesByProperties(array $properties, object $entity): array
     {
         $primariesKeyValue = [];
         foreach ($this->primaries as $key => $primary) {
-            $fieldName = $this->fields[$key]['fieldName'];
-            // Key value has been updated : we need the old one
+            $fieldName = $primary['fieldName'];
             if (isset($properties[$fieldName])) {
-                $primariesKeyValue[$key] = $properties[$fieldName];
+                // Key value has been updated: the row is still stored with the old one
+                $primariesKeyValue[$key] = $properties[$fieldName][0];
             } else {
-                // No update, get the actual
-                $primariesKeyValue[$key] = $this->propertyAccessor->getValue($entity, $primary['fieldName']);
+                $primariesKeyValue[$key] = $this->propertyAccessor->getValue(
+                    $entity,
+                    $fieldName,
+                    $primary['getter'] ?? null
+                );
             }
         }
         return $primariesKeyValue;

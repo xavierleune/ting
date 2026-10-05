@@ -6,6 +6,8 @@
     * Fix collections and hydrators no longer Countable since 4.0.0-rc.1: count($collection) threw a TypeError
     * BC Remove the Services container, ContainerInterface and the pimple/pimple suggestion: wiring belongs to the integration (ting_bundle)
     * BC Replace the abandoned doctrine/cache with Symfony Cache Contracts: caches are Symfony\Contracts\Cache\CacheInterface pools, Ting\Cache\Cache only exposes get() and delete()
+    * Fix UnitOfWork::detach() raising an "Undefined array key" warning when the entity was not queued
+    * Fix changing a primary key: the UPDATE / DELETE targeted `WHERE key IN (old, new)` instead of the old value, and ignored a custom getter on primary keys
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit

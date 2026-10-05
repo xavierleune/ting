@@ -834,7 +834,8 @@ class MetadataTest extends TestCase
             $mockConnection,
             $services->queryFactory(),
             $entity,
-            ['name' => 'Sylvain']
+            // As UnitOfWork passes them: property => [old value, new value]
+            ['name' => ['Sylvain', 'Xavier']]
         );
         $this->assertInstanceOf(PreparedQuery::class, $query);
         $query->execute();
@@ -874,11 +875,54 @@ class MetadataTest extends TestCase
         $query = $metadata->generateQueryForDelete(
             $mockConnection,
             $services->queryFactory(),
-            ['id' => 1],
+            // The primary key was changed from 1 to 2 before the delete: the row still has the old one
+            ['id' => [1, 2]],
             $entity
         );
         $this->assertInstanceOf(PreparedQuery::class, $query);
         $query->execute();
+    }
+
+    public function testGenerateQueryForUpdateShouldReadAnUnchangedPrimaryKeyThroughItsGetter()
+    {
+        $mockConnectionPool = $this->createStub(ConnectionPool::class);
+        $mockDriver = $this->createStub(FakeDriver::class);
+        $mockStatement = $this->createMock(StatementInterface::class);
+        $mockDriver->method('prepare')->willReturn($mockStatement);
+        $mockConnectionPool->method('master')->willReturn($mockDriver);
+        $mockStatement
+            ->expects($this->once())
+            ->method('execute')
+            ->with(['#boo_id' => 'id-20', 'firstname' => 'Xavier']);
+
+        $entity = new class () extends Bouh {
+            public function idForStorage(): string
+            {
+                return 'id-' . $this->getId();
+            }
+        };
+        $entity->setId(20);
+        $entity->setName('Xavier');
+
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity($entity::class);
+        $metadata->setTable('bouh');
+        $metadata->addField([
+            'primary'    => true,
+            'fieldName'  => 'id',
+            'columnName' => 'boo_id',
+            'type'       => 'string',
+            'getter'     => 'idForStorage',
+        ]);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'firstname', 'type' => 'string']);
+
+        $metadata->generateQueryForUpdate(
+            new Connection($mockConnectionPool, 'main', 'db'),
+            $services->queryFactory(),
+            $entity,
+            ['name' => ['Sylvain', 'Xavier']]
+        )->execute();
     }
 
     public function testSetEntityPropertyWithDefinedSetter()
