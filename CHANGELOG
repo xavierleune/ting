@@ -1,4 +1,4 @@
-Unreleased:
+3.15.0 (2026-10-05):
     * Repository::get() (composite primary key), getBy() / getOneBy() criteria and the getBy() order now all take
       property names, converted to column names by the Metadata
     * Deprecate column names in these keys: a key that is not a property but is the column of a field still works
