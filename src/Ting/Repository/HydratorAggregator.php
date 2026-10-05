@@ -93,8 +93,6 @@ class HydratorAggregator extends Hydrator
         $previousKey = null;
         $currentId = null;
         $aggregate = [];
-        $key = null;
-        $result = null;
 
         foreach ($this->result as $key => $columns) {
 
@@ -132,9 +130,9 @@ class HydratorAggregator extends Hydrator
             }
         }
 
-        // Yield last result only if there was at least one result
-        if ($currentId !== null && $previousId === $currentId) {
-            yield $key => $this->finalizeAggregate($result, $aggregate);
+        // The pending group, built from its first row like the others (even when the last row was skipped)
+        if ($previousId !== null) {
+            yield $previousKey => $this->finalizeAggregate($previousResult, $aggregate);
         }
     }
 
