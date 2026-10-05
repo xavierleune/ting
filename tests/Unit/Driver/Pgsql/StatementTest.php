@@ -166,7 +166,7 @@ class StatementTest extends TestCase
         $collection = new Collection();
         NativeFunctionMock::override('pg_execute', false);
         NativeFunctionMock::override('pg_query', true);
-        NativeFunctionMock::override('pg_errormessage', 'unknown error');
+        NativeFunctionMock::override('pg_last_error', 'unknown error');
 
         $statement = new Statement(
             'MyStatementName',
@@ -177,7 +177,7 @@ class StatementTest extends TestCase
 
         $this->assertThrows(QueryException::class, function () use ($statement, $collection): void {
             $statement->execute([]);
-        });
+        }, 'unknown error');
     }
 
     public function testExecuteShouldReturnTrueIfNoError()
