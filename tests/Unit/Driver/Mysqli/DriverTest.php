@@ -1225,6 +1225,101 @@ class DriverTest extends TestCase
         $this->assertSame(2, self::countCalls($realConnectCalls, [$hostName, $userName, $password, null, $port]));
     }
 
+    /**
+     * A mysqli whose real_connect() failed: like the real one, any use throws an \Error, not a mysqli_sql_exception.
+     */
+    private function unreachableServerConnection(): Mysqli
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->method('real_connect')
+            ->willThrowException(new \mysqli_sql_exception('Connection refused', 2002));
+        foreach (['query', 'prepare', 'select_db', 'set_charset', 'real_escape_string', 'begin_transaction'] as $method) {
+            $mysqli->method($method)->willThrowException(new \Error('mysqli object is not fully initialized'));
+        }
+
+        return $mysqli;
+    }
+
+    public function testPingShouldRetryTheConnectionAfterAFailedReconnect()
+    {
+        $lostConnection = $this->createStub(Mysqli::class);
+        $lostConnection->method('real_connect')->willReturn(true);
+        $lostConnection->method('select_db')->willReturn(true);
+        $lostConnection->method('query')
+            ->willThrowException(new \mysqli_sql_exception('MySQL server has gone away', 2006));
+        $lostConnection->error = '';
+
+        $realConnectCalls = [];
+        $newConnection = $this->createStub(Mysqli::class);
+        $newConnection->method('real_connect')->willReturnCallback(function (...$arguments) use (&$realConnectCalls) {
+            $realConnectCalls[] = $arguments;
+
+            return true;
+        });
+        $newConnection->method('query')->willReturn(true);
+        $connections = [$this->unreachableServerConnection(), $this->unreachableServerConnection(), $newConnection];
+        NativeFunctionMock::override('mysqli_init', function () use (&$connections) {
+            return array_shift($connections);
+        });
+
+        $driver = new Driver($lostConnection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('db1');
+
+        $this->assertFalse($driver->ping());
+        // The server is still down
+        $this->assertFalse($driver->ping());
+        // The repository selects its database before pinging
+        $driver->setDatabase('db2');
+        // The server is back
+        $this->assertTrue($driver->ping());
+        $this->assertSame([['hostname.test', 'user.test', 'password.test', 'db2', 1234]], $realConnectCalls);
+        $this->assertTrue($driver->execute('SELECT 1'));
+    }
+
+    public function testQueriesAfterAFailedReconnectShouldRaiseAnException()
+    {
+        $lostConnection = $this->createStub(Mysqli::class);
+        $lostConnection->method('real_connect')->willReturn(true);
+        $lostConnection->method('query')
+            ->willThrowException(new \mysqli_sql_exception('MySQL server has gone away', 2006));
+        NativeFunctionMock::override('mysqli_init', $this->unreachableServerConnection());
+
+        $driver = new Driver($lostConnection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $this->assertFalse($driver->ping());
+
+        $this->assertThrows(QueryException::class, function () use ($driver): void {
+            $driver->execute('SELECT * FROM T_BOUH_BOO WHERE name = :name', ['name' => 'Sylvain']);
+        });
+        $this->assertThrows(QueryException::class, function () use ($driver): void {
+            $driver->prepare('SELECT 1');
+        });
+        $this->assertThrows(TransactionException::class, function () use ($driver): void {
+            $driver->startTransaction();
+        });
+    }
+
+    public function testCloseAfterAFailedReconnectShouldNotTouchTheUnopenedConnection()
+    {
+        $lostConnection = $this->createStub(Mysqli::class);
+        $lostConnection->method('real_connect')->willReturn(true);
+        $lostConnection->method('query')->willReturn(false);
+        $unopenedConnection = $this->unreachableServerConnection();
+        $unopenedConnection->method('close')->willThrowException(new \Error('mysqli object is already closed'));
+        NativeFunctionMock::override('mysqli_init', $unopenedConnection);
+
+        $driver = new Driver($lostConnection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $this->assertFalse($driver->ping());
+
+        $driver->close();
+
+        $this->assertThrows(NeverConnectedException::class, function () use ($driver): void {
+            $driver->ping();
+        });
+    }
+
     public function testTimezone()
     {
         $mockDriver = $this->createMock(Mysqli::class);

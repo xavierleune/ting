@@ -45,6 +45,8 @@ use mysqli_sql_exception;
 
 class Driver implements DriverInterface
 {
+    private const RECONNECTION_PENDING = 'the connection was lost and could not be reopened, ping() retries it';
+
     protected string $name = '';
 
     /**
@@ -66,6 +68,12 @@ class Driver implements DriverInterface
     protected bool $connected = false;
 
     protected bool $transactionOpened = false;
+
+    /**
+     * True when reconnect() dropped the connection but could not open a new one: the mysqli object is not usable
+     * (any call throws an \Error), ping() retries the connection and queries throw until it succeeds.
+     */
+    protected bool $reconnectionPending = false;
 
     protected ?DriverLoggerInterface $logger = null;
 
@@ -155,8 +163,12 @@ class Driver implements DriverInterface
     public function close(): static
     {
         if ($this->connected === true) {
-            $this->connection->close();
+            // After a failed reconnect() there is no open connection to close
+            if ($this->reconnectionPending === false) {
+                $this->connection->close();
+            }
             $this->connected = false;
+            $this->reconnectionPending = false;
         }
 
         return $this;
@@ -168,6 +180,12 @@ class Driver implements DriverInterface
     public function setCharset(string $charset): void
     {
         if ($this->currentCharset === $charset) {
+            return;
+        }
+
+        if ($this->reconnectionPending === true) {
+            // Applied by the next reconnect()
+            $this->currentCharset = $charset;
             return;
         }
 
@@ -204,6 +222,12 @@ class Driver implements DriverInterface
             return $this;
         }
 
+        if ($this->reconnectionPending === true) {
+            // Selected by the next reconnect()
+            $this->currentDatabase = $database;
+            return $this;
+        }
+
         $this->connection->select_db($database);
 
         $this->ifIsError(function (): void {
@@ -236,6 +260,8 @@ class Driver implements DriverInterface
      */
     public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): bool|CollectionInterface|array
     {
+        $this->assertNoReconnectionPending();
+
         // One pass: unescaping \: after the substitution would alter the values
         $sql = preg_replace_callback(
             '/\\\\:|' . $this->parameterMatching . '/',
@@ -318,6 +344,8 @@ class Driver implements DriverInterface
      */
     public function prepare(string $sql): StatementInterface
     {
+        $this->assertNoReconnectionPending();
+
         $statementName = sha1($sql);
         $database = $this->currentDatabase;
         if (isset($this->preparedQueries[$statementName][$database])) {
@@ -417,6 +445,10 @@ class Driver implements DriverInterface
      */
     private function runTransactionCommand(string $action, callable $command): void
     {
+        if ($this->reconnectionPending === true) {
+            throw new TransactionException('Cannot ' . $action . ' transaction: ' . self::RECONNECTION_PENDING);
+        }
+
         try {
             $succeeded = $command() !== false;
         } catch (mysqli_sql_exception $exception) {
@@ -480,12 +512,14 @@ class Driver implements DriverInterface
         // We need to reimplement the logic here.
 
         // First try a simple query, if it works we don't need to do anything
-        try {
-            $result = $this->connection->query('SELECT 1');
-            if ($result !== false) {
-                return true;
-            }
-        } catch (mysqli_sql_exception) { }
+        if ($this->reconnectionPending === false) {
+            try {
+                $result = $this->connection->query('SELECT 1');
+                if ($result !== false) {
+                    return true;
+                }
+            } catch (mysqli_sql_exception) { }
+        }
 
         return $this->reconnect();
     }
@@ -493,6 +527,12 @@ class Driver implements DriverInterface
     public function setTimezone(?string $timezone = null): void
     {
         if ($this->currentTimezone === $timezone) {
+            return;
+        }
+
+        if ($this->reconnectionPending === true) {
+            // Applied by the next reconnect()
+            $this->currentTimezone = $timezone;
             return;
         }
 
@@ -509,17 +549,30 @@ class Driver implements DriverInterface
     private function createConnection(): void
     {
         $connection = mysqli_init();
-        if ($connection instanceof \mysqli) {
+        if ($connection !== false) {
             $this->connection = $connection;
             $this->connection->options(MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1);
         }
     }
 
+    /**
+     * Replaces the connection with a new one.
+     *
+     * On failure the driver stays connected, without usable connection: ping() retries, queries throw.
+     */
     public function reconnect(): bool
     {
+        // The previous connection is dropped whatever happens: its statements cannot be reused
+        $this->oldPreparedQueries = array_replace_recursive($this->oldPreparedQueries, $this->preparedQueries);
+        $this->preparedQueries = [];
+        $this->reconnectionPending = true;
+
         try {
             $this->createConnection();
-            $this->connected = $this->connection->real_connect($this->connectionConfig['hostname'], $this->connectionConfig['username'], $this->connectionConfig['password'], $this->currentDatabase, $this->connectionConfig['port']);
+            $connected = $this->connection->real_connect($this->connectionConfig['hostname'], $this->connectionConfig['username'], $this->connectionConfig['password'], $this->currentDatabase, $this->connectionConfig['port']);
+            if ($connected === false) {
+                return false;
+            }
 
             if ($this->currentCharset !== null) {
                 $this->connection->set_charset($this->currentCharset);
@@ -528,11 +581,23 @@ class Driver implements DriverInterface
             if ($this->currentTimezone !== null) {
                 $this->connection->query(sprintf('SET time_zone = "%s";', $this->currentTimezone));
             }
-            $this->oldPreparedQueries = array_replace_recursive($this->oldPreparedQueries, $this->preparedQueries);
-            $this->preparedQueries = [];
-            return true;
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             return false;
+        }
+
+        $this->connected = true;
+        $this->reconnectionPending = false;
+
+        return true;
+    }
+
+    /**
+     * @throws QueryException
+     */
+    private function assertNoReconnectionPending(): void
+    {
+        if ($this->reconnectionPending === true) {
+            throw new QueryException(self::RECONNECTION_PENDING);
         }
     }
 }
