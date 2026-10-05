@@ -40,7 +40,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public const STATE_DELETE  = 3;
     /** @var WeakMap<NotifyPropertyInterface, NotifyPropertyInterface|bool> */
     protected WeakMap $entities;
-    /** @var WeakMap<NotifyPropertyInterface, array<string, array<mixed, mixed>>>  */
+    /** @var WeakMap<NotifyPropertyInterface, array<string, array{0: mixed, 1: mixed}>> property => [old value, new value] */
     protected WeakMap $entitiesChanged;
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
