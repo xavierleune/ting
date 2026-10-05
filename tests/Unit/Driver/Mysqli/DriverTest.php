@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
@@ -800,6 +801,87 @@ class DriverTest extends TestCase
         $this->assertThrows(Exception::class, function () use ($driver): void {
             $driver->rollback();
         });
+    }
+
+    public function testStartTransactionFailureShouldRaiseTransactionException()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->method('begin_transaction')->willReturn(false, true);
+        $mysqli->error = 'Lost connection to server during query';
+        $mysqli->errno = 2013;
+        $driver = new Driver($mysqli);
+
+        $exception = $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->startTransaction();
+            },
+            'Cannot start transaction: Lost connection to server during query'
+        );
+        $this->assertSame(2013, $exception->getCode());
+
+        // No transaction was opened: a new one can start
+        $driver->startTransaction();
+    }
+
+    public function testCommitFailureShouldRaiseTransactionExceptionAndCloseTheTransaction()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->method('commit')->willReturn(false);
+        $mysqli->error = 'Deadlock found when trying to get lock; try restarting transaction';
+        $mysqli->errno = 1213;
+        $driver = new Driver($mysqli);
+        $driver->startTransaction();
+
+        $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->commit();
+            },
+            'Cannot commit transaction: Deadlock found when trying to get lock; try restarting transaction'
+        );
+        $this->assertThrows(TransactionException::class, function () use ($driver): void {
+            $driver->commit();
+        }, 'Cannot commit no transaction');
+    }
+
+    public function testCommitShouldConvertAMysqliExceptionToATransactionException()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        // MYSQLI_REPORT_ERROR set by the application: mysqli throws instead of returning false
+        $mysqli->method('commit')->willThrowException(new \mysqli_sql_exception('MySQL server has gone away', 2006));
+        $driver = new Driver($mysqli);
+        $driver->startTransaction();
+
+        $exception = $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->commit();
+            },
+            'Cannot commit transaction: MySQL server has gone away'
+        );
+        $this->assertSame(2006, $exception->getCode());
+        $this->assertInstanceOf(\mysqli_sql_exception::class, $exception->getPrevious());
+        $driver->startTransaction();
+    }
+
+    public function testRollbackFailureShouldRaiseTransactionExceptionAndCloseTheTransaction()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->method('rollback')->willReturn(false);
+        $mysqli->error = 'MySQL server has gone away';
+        $mysqli->errno = 2006;
+        $driver = new Driver($mysqli);
+        $driver->startTransaction();
+
+        $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->rollback();
+            },
+            'Cannot rollback transaction: MySQL server has gone away'
+        );
+        $driver->startTransaction();
     }
 
     public function testGetInsertedIdShouldReturnInsertedId()

@@ -34,6 +34,7 @@ use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Driver\Pgsql\Statement;
 use CCMBenchmark\Ting\Exceptions\DriverException;
+use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\Fake\Pgsql;
@@ -360,6 +361,8 @@ class DriverTest extends TestCase
             $outerQuery = $query;
         });
 
+        NativeFunctionMock::override('pg_result_status', 'COMMIT');
+
         $driver = new Driver();
         $driver->setDatabase('myDatabase');
         $driver->startTransaction();
@@ -415,6 +418,93 @@ class DriverTest extends TestCase
             },
             'Cannot rollback no transaction'
         );
+    }
+
+    public function testStartTransactionFailureShouldRaiseTransactionException()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query', false);
+        NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->startTransaction();
+            },
+            'Cannot start transaction: server closed the connection unexpectedly'
+        );
+
+        // No transaction was opened
+        $this->assertThrows(TransactionException::class, function () use ($driver): void {
+            $driver->commit();
+        }, 'Cannot commit no transaction');
+    }
+
+    public function testCommitOfAnAbortedTransactionShouldRaiseTransactionException()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query', true);
+        // PostgreSQL answers ROLLBACK, without error, to the COMMIT of a transaction aborted by a failed query
+        NativeFunctionMock::override('pg_result_status', function ($result, $mode) {
+            return $mode === \PGSQL_STATUS_STRING ? 'ROLLBACK' : \PGSQL_COMMAND_OK;
+        });
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->startTransaction();
+
+        $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->commit();
+            },
+            'Cannot commit transaction: the transaction was aborted and has been rolled back'
+        );
+        // The server rolled the transaction back: none is left open
+        $driver->startTransaction();
+    }
+
+    public function testCommitFailureShouldRaiseTransactionExceptionAndCloseTheTransaction()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query', fn ($connection, $query) => $query === 'BEGIN');
+        NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->startTransaction();
+
+        $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->commit();
+            },
+            'Cannot commit transaction: server closed the connection unexpectedly'
+        );
+        $driver->startTransaction();
+    }
+
+    public function testRollbackFailureShouldRaiseTransactionExceptionAndCloseTheTransaction()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query', fn ($connection, $query) => $query === 'BEGIN');
+        NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->startTransaction();
+
+        $this->assertThrows(
+            TransactionException::class,
+            function () use ($driver): void {
+                $driver->rollback();
+            },
+            'Cannot rollback transaction: server closed the connection unexpectedly'
+        );
+        $driver->startTransaction();
     }
 
     public function testGetAffectedRowsWithoutResultShouldReturn0()

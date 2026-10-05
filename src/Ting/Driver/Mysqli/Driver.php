@@ -382,7 +382,7 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === true) {
             throw new TransactionException('Cannot start another transaction');
         }
-        $this->connection->begin_transaction();
+        $this->runTransactionCommand('start', fn () => $this->connection->begin_transaction());
         $this->transactionOpened = true;
     }
 
@@ -394,8 +394,9 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot commit no transaction');
         }
-        $this->connection->commit();
+        // Even when the COMMIT fails, the transaction is over: rolled back by the server or lost with the connection
         $this->transactionOpened = false;
+        $this->runTransactionCommand('commit', fn () => $this->connection->commit());
     }
 
     /**
@@ -406,8 +407,32 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot rollback no transaction');
         }
-        $this->connection->rollback();
         $this->transactionOpened = false;
+        $this->runTransactionCommand('rollback', fn () => $this->connection->rollback());
+    }
+
+    /**
+     * @param callable(): bool $command
+     * @throws TransactionException when the command fails, whatever the mysqli report mode
+     */
+    private function runTransactionCommand(string $action, callable $command): void
+    {
+        try {
+            $succeeded = $command() !== false;
+        } catch (mysqli_sql_exception $exception) {
+            throw new TransactionException(
+                'Cannot ' . $action . ' transaction: ' . $exception->getMessage(),
+                $exception->getCode(),
+                $exception
+            );
+        }
+
+        if ($succeeded === false) {
+            throw new TransactionException(
+                'Cannot ' . $action . ' transaction: ' . $this->connection->error,
+                (int) $this->connection->errno
+            );
+        }
     }
 
     public function getInsertedId(): int
