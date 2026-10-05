@@ -144,6 +144,12 @@ namespace CCMBenchmark\Ting\Driver\Pgsql {
         return NativeFunctionMock::call('pg_affected_rows', $args);
     }
 
+    NativeFunctionMock::declare('pg_get_pid');
+    function pg_get_pid(...$args)
+    {
+        return NativeFunctionMock::call('pg_get_pid', $args);
+    }
+
     NativeFunctionMock::declare('pg_field_name');
     function pg_field_name(...$args)
     {

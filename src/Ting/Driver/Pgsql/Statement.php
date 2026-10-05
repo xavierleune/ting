@@ -48,6 +48,11 @@ class Statement implements StatementInterface
     protected ?\Closure $resultHandler = null;
 
     /**
+     * The session holding the prepared statement is gone (connection reset)
+     */
+    protected bool $detached = false;
+
+    /**
      * @param string              $statementName
      */
     public function __construct(
@@ -69,6 +74,18 @@ class Statement implements StatementInterface
         $this->connection = $connection;
 
         return $this;
+    }
+
+    /**
+     * Forget the connection, whose session (and the prepared statement with it) is gone: the statement can no
+     * longer be executed, and its destructor must not DEALLOCATE a statement of the same name in the new session
+     *
+     * @internal
+     */
+    public function detach(): void
+    {
+        $this->connection = null;
+        $this->detached = true;
     }
 
     /**
@@ -112,6 +129,13 @@ class Statement implements StatementInterface
      */
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
     {
+        if ($this->detached) {
+            throw new QueryException(
+                'The prepared statement ' . $this->statementName
+                . ' is no longer valid: the connection was reset, prepare it again'
+            );
+        }
+
         $values = [];
         foreach (array_keys($this->paramsOrder) as $key) {
             if (!\array_key_exists($key, $params)) {

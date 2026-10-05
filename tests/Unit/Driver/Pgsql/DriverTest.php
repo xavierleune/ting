@@ -937,6 +937,7 @@ class DriverTest extends TestCase
     {
         NativeFunctionMock::override('pg_connect', true);
         NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
 
         $driver = new Driver();
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
@@ -949,6 +950,7 @@ class DriverTest extends TestCase
     {
         NativeFunctionMock::override('pg_connect', true);
         NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override(
             'pg_set_client_encoding',
             function ($connection, $charset) use (&$outerCharset, &$called): void {
@@ -974,6 +976,7 @@ class DriverTest extends TestCase
         $outerArgs = [];
         NativeFunctionMock::override('pg_connect', true);
         NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override('pg_query', function () use (&$called, &$outerArgs) {
             $outerArgs[] = func_get_args();
             $called++;
@@ -990,6 +993,131 @@ class DriverTest extends TestCase
         $this->assertTrue($driver->ping());
         $this->assertSame(2, $called);
         $this->assertSame(array_fill(0, 2, 'SET timezone = "timezone";'), array_column($outerArgs, 1));
+    }
+
+    /**
+     * @return array{0: Driver, 1: \Closure(): int, 2: \Closure(): int} the driver, the count of pg_prepare and of DEALLOCATE calls
+     */
+    private function connectedDriverCountingPrepares(): array
+    {
+        $prepares = 0;
+        $deallocates = 0;
+        NativeFunctionMock::override('pg_connect', fn () => new Pgsql());
+        NativeFunctionMock::override('pg_prepare', function () use (&$prepares): bool {
+            $prepares++;
+
+            return true;
+        });
+        NativeFunctionMock::override('pg_query', function ($connection, $sql) use (&$deallocates): bool {
+            if (str_starts_with($sql, 'DEALLOCATE')) {
+                $deallocates++;
+            }
+
+            return true;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        return [$driver, function () use (&$prepares): int {
+            return $prepares;
+        }, function () use (&$deallocates): int {
+            return $deallocates;
+        }];
+    }
+
+    public function testPingShouldKeepThePreparedStatementsWhenTheConnectionWasNotReset()
+    {
+        [$driver, $prepares] = $this->connectedDriverCountingPrepares();
+        NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
+
+        $statement = $driver->prepare('SELECT 1 FROM myTable WHERE id = :id');
+        $this->assertTrue($driver->ping());
+
+        $this->assertSame($statement, $driver->prepare('SELECT 1 FROM myTable WHERE id = :id'));
+        $this->assertSame(1, $prepares());
+    }
+
+    public function testPingShouldForgetThePreparedStatementsWhenTheConnectionWasReset()
+    {
+        [$driver, $prepares, $deallocates] = $this->connectedDriverCountingPrepares();
+        NativeFunctionMock::override('pg_ping', true);
+        // pg_ping() re-established the lost connection: a new backend, without the prepared statements
+        $pids = [42, 43];
+        NativeFunctionMock::override('pg_get_pid', function () use (&$pids): int {
+            return array_shift($pids) ?? 43;
+        });
+
+        $sql = 'SELECT 1 FROM myTable WHERE id = :id';
+        $statement = $driver->prepare($sql);
+        $this->assertTrue($driver->ping());
+
+        $this->assertNotSame($statement, $driver->prepare($sql));
+        $this->assertSame(2, $prepares());
+
+        // The old statement must not DEALLOCATE the new one, prepared under the same name
+        unset($statement);
+        $this->assertSame(0, $deallocates());
+    }
+
+    public function testPingShouldForgetThePreparedStatementsWhenTheConnectionIsLost()
+    {
+        [$driver, $prepares] = $this->connectedDriverCountingPrepares();
+        NativeFunctionMock::override('pg_ping', false);
+        NativeFunctionMock::override('pg_get_pid', 0);
+
+        $sql = 'SELECT 1 FROM myTable WHERE id = :id';
+        $statement = $driver->prepare($sql);
+        $this->assertFalse($driver->ping());
+
+        $this->assertNotSame($statement, $driver->prepare($sql));
+        $this->assertSame(2, $prepares());
+    }
+
+    public function testReconnectShouldForgetThePreparedStatements()
+    {
+        [$driver, $prepares, $deallocates] = $this->connectedDriverCountingPrepares();
+
+        $sql = 'SELECT 1 FROM myTable WHERE id = :id';
+        $statement = $driver->prepare($sql);
+        $this->assertTrue($driver->reconnect());
+
+        $this->assertNotSame($statement, $driver->prepare($sql));
+        $this->assertSame(2, $prepares());
+
+        unset($statement);
+        $this->assertSame(0, $deallocates());
+    }
+
+    public function testCloseShouldForgetThePreparedStatements()
+    {
+        [$driver, $prepares] = $this->connectedDriverCountingPrepares();
+        NativeFunctionMock::override('pg_close', true);
+
+        $sql = 'SELECT 1 FROM myTable WHERE id = :id';
+        $statement = $driver->prepare($sql);
+        $driver->close();
+        $driver->setDatabase('myDatabase');
+
+        $this->assertNotSame($statement, $driver->prepare($sql));
+        $this->assertSame(2, $prepares());
+    }
+
+    public function testCloseStatementShouldAcceptAStatementForgottenOnReconnect()
+    {
+        // UnitOfWork closes its statements by name, after the process: a reconnection may have happened meanwhile
+        [$driver] = $this->connectedDriverCountingPrepares();
+
+        $driver->prepare('SELECT 1 FROM myTable WHERE id = :id');
+        $driver->reconnect();
+
+        $driver->closeStatement(sha1('SELECT 1 FROM myTable WHERE id = :id'));
+
+        $this->assertThrows(Exception::class, function () use ($driver): void {
+            $driver->closeStatement(sha1('SELECT 1 FROM myTable WHERE id = :id'));
+        });
     }
 
     public function testPingShouldCallRaiseAnExceptionWhenNotConnected()
