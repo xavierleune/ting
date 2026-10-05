@@ -28,7 +28,7 @@ namespace CCMBenchmark\Ting\Tests\Unit;
 
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Repository\Metadata;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
@@ -37,11 +37,11 @@ class MetadataRepositoryTest extends TestCase
 {
     public function testFindMetadataForEntityShouldCallCallbackFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity('tests\fixtures\model\Bouh');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $entity = new Bouh();
@@ -61,11 +61,11 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForClassStringShouldCallCallbackFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata(BouhRepository::class, $metadata);
 
         $metadataRepository->findMetadataForEntity(
@@ -83,11 +83,11 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForEntityShouldCallCallbackNotFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity('tests\fixtures\model\Bouh');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         // Any entity of a class without metadata (atoum generated a "mock\tests\fixtures\model\Bouh2" class)
@@ -108,13 +108,13 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForTableShouldCallCallbackFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setTable('T_BOUH_BOO');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $metadataRepository->findMetadataForTable(
@@ -135,11 +135,11 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForTableShouldCallCallbackNotFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setTable('T_BOUH_BOO');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $metadataRepository->findMetadataForTable(
@@ -160,14 +160,14 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForTableWithRightSchemaShouldCallCallbackFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setTable('T_BOUH_BOO');
         $metadata->setSchema('schemaName');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $metadataRepository->findMetadataForTable(
@@ -188,12 +188,12 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForTableWithWrongSchemaShouldCallCallbackNotFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setTable('T_BOUH_BOO');
         $metadata->setSchema('SchemaName');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $metadataRepository->findMetadataForTable(
@@ -214,14 +214,14 @@ class MetadataRepositoryTest extends TestCase
 
     public function testBatchLoadMetadataShouldCallInitMetadataWithDefaultOptions()
     {
-        $services = new Services();
-        $metadataRepository = $services->get('MetadataRepository');
+        $services = new TingServices();
+        $metadataRepository = $services->metadataRepository();
         $metadataRepository->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../fixtures/model/*Repository.php',
             ['default' => ['connection' => 'connectionName', 'database' => 'databaseName']]
         );
-        $bouhRepository = $services->get('RepositoryFactory')->get('\tests\fixtures\model\BouhRepository');
+        $bouhRepository = $services->repositoryFactory()->get('\tests\fixtures\model\BouhRepository');
         $this->assertIsObject($bouhRepository);
         $this->assertSame(
             ['connection' => 'connectionName', 'database' => 'databaseName'],
@@ -231,8 +231,8 @@ class MetadataRepositoryTest extends TestCase
 
     public function testBatchLoadMetadataShouldCallInitMetadataWithDefaultAndRepositoryOptions()
     {
-        $services = new Services();
-        $metadataRepository = $services->get('MetadataRepository');
+        $services = new TingServices();
+        $metadataRepository = $services->metadataRepository();
         $metadataRepository->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../fixtures/model/*Repository.php',
@@ -241,30 +241,30 @@ class MetadataRepositoryTest extends TestCase
                 'tests\fixtures\model\BouhRepository' => ['database' => 'dbBouh']
             ]
         );
-        $bouhRepository = $services->get('RepositoryFactory')->get('\tests\fixtures\model\BouhRepository');
+        $bouhRepository = $services->repositoryFactory()->get('\tests\fixtures\model\BouhRepository');
         $this->assertIsObject($bouhRepository);
         $this->assertSame(['connection' => 'connectionName', 'database' => 'dbBouh'], $bouhRepository::$options);
     }
 
     public function testBatchLoadMetadataShouldCallInitMetadataWithRepositoryOptions()
     {
-        $services = new Services();
-        $metadataRepository = $services->get('MetadataRepository');
+        $services = new TingServices();
+        $metadataRepository = $services->metadataRepository();
         $metadataRepository->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../fixtures/model/*Repository.php',
             ['tests\fixtures\model\BouhRepository' => ['connection' => 'conBouh', 'database' => 'dbBouh']]
         );
-        $bouhRepository = $services->get('RepositoryFactory')->get('\tests\fixtures\model\BouhRepository');
+        $bouhRepository = $services->repositoryFactory()->get('\tests\fixtures\model\BouhRepository');
         $this->assertIsObject($bouhRepository);
         $this->assertSame(['connection' => 'conBouh', 'database' => 'dbBouh'], $bouhRepository::$options);
     }
 
     public function testBatchLoadMetadataShouldLoad5Repositories()
     {
-        $services = new Services();
+        $services = new TingServices();
         $metadataRepository = new MetadataRepository(
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $this->assertSame(
             [
@@ -286,9 +286,9 @@ class MetadataRepositoryTest extends TestCase
 
     public function testBatchLoadMetadataWithInvalidPathShouldReturnEmptyArray()
     {
-        $services = new Services();
+        $services = new TingServices();
         $metadataRepository = new MetadataRepository(
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $result = $metadataRepository->batchLoadMetadata(
             'tests\fixtures\model',
@@ -301,9 +301,9 @@ class MetadataRepositoryTest extends TestCase
     public function testBatchLoadMetadataFromCacheShouldLoad1Repository()
     {
         $paths = ['tests\fixtures\model\BouhRepository'];
-        $services = new Services();
+        $services = new TingServices();
         $metadataRepository = new MetadataRepository(
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $result = $metadataRepository->batchLoadMetadataFromCache($paths);
         $this->assertIsArray($result);
@@ -312,9 +312,9 @@ class MetadataRepositoryTest extends TestCase
 
     public function testBatchLoadMetadataForRepositoryWhichNotImplementMetadataInitializerShouldDoNothing()
     {
-        $services = new Services();
+        $services = new TingServices();
         $metadataRepository = new MetadataRepository(
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $result = $metadataRepository->batchLoadMetadata(
             'tests\fixtures\model',
@@ -326,14 +326,14 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForOtherConnectionShouldCallCallbackNotFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity('tests\fixtures\model\Bouh');
         $metadata->setConnectionName('connection2');
         $metadata->setDatabase('bouh_world');
         $metadata->setTable('bouh');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $metadataRepository->findMetadataForTable(
@@ -354,14 +354,14 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForOtherDatabaseShouldFailbackAndCallCallbackFound()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity('tests\fixtures\model\Bouh');
         $metadata->setConnectionName('connection');
         $metadata->setDatabase('bouh_world_2');
         $metadata->setTable('bouh');
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
         $metadataRepository->findMetadataForTable(
@@ -382,18 +382,18 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForRightDatabaseShouldCallCallbackFound()
     {
-        $services = new Services();
+        $services = new TingServices();
 
-        $metadataRepository = new MetadataRepository($services->get('SerializerFactory'));
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity('tests\fixtures\model\Bouh');
         $metadata->setConnectionName('connection');
         $metadata->setDatabase('bouh_world');
         $metadata->setTable('bouh');
         $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity('tests\fixtures\model\Bouh2');
         $metadata->setConnectionName('connection');
         $metadata->setDatabase('bouh_world_2');

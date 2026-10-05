@@ -33,7 +33,7 @@ use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\QueryFactory;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -42,11 +42,10 @@ use tests\fixtures\model\BouhRepository;
 
 class UnitOfWorkTest extends TestCase
 {
-    protected $services = null;
+    protected ?TingServices $services = null;
 
     protected function setUp(): void
     {
-        $this->services = new Services();
         $connectionPool = new ConnectionPool();
         $connectionPool->setConfig(
             [
@@ -62,7 +61,7 @@ class UnitOfWorkTest extends TestCase
             ]
         );
 
-        $this->services->set('ConnectionPool', fn ($container) => $connectionPool);
+        $this->services = new TingServices($connectionPool);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -78,9 +77,9 @@ class UnitOfWorkTest extends TestCase
         );
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->manage($mockEntity);
         $this->assertSame($unitOfWork, $outerUnitOfWork);
@@ -92,9 +91,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $this->assertFalse($unitOfWork->isManaged($mockEntity));
     }
@@ -104,9 +103,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->pushSave($mockEntity);
         $this->assertTrue($unitOfWork->shouldBePersisted($mockEntity));
@@ -118,9 +117,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $this->assertFalse($unitOfWork->shouldBePersisted($mockEntity));
     }
@@ -130,9 +129,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->manage($mockEntity);
         $unitOfWork->pushSave($mockEntity);
@@ -145,9 +144,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->propertyChanged($mockEntity, 'firstname', 'Sylvain', 'Sylvain');
         $this->assertFalse($unitOfWork->isPropertyChanged($mockEntity, 'firstname'));
@@ -158,9 +157,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->propertyChanged($mockEntity, 'firstname', 'Sylvain', 'Sylvain');
         $this->assertFalse($unitOfWork->isPropertyChanged($mockEntity, 'firstname'));
@@ -171,9 +170,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->propertyChanged($mockEntity, 'firstname', 'Sylvain', 'Sylvain 2');
         $this->assertTrue($unitOfWork->isPropertyChanged($mockEntity, 'firstname'));
@@ -184,9 +183,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->pushSave($mockEntity);
         $this->assertTrue($unitOfWork->shouldBePersisted($mockEntity));
@@ -200,9 +199,9 @@ class UnitOfWorkTest extends TestCase
         $entity2 = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->pushSave($entity1);
         $unitOfWork->pushSave($entity2);
@@ -216,9 +215,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $this->assertFalse($unitOfWork->shouldBeRemoved($mockEntity));
     }
@@ -228,9 +227,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->pushDelete($mockEntity);
         $this->assertTrue($unitOfWork->shouldBeRemoved($mockEntity));
@@ -241,9 +240,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $this->assertFalse($unitOfWork->shouldBeRemoved($mockEntity));
     }
@@ -253,9 +252,9 @@ class UnitOfWorkTest extends TestCase
         $mockEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $this->assertFalse($unitOfWork->isNew($mockEntity));
     }
@@ -267,9 +266,9 @@ class UnitOfWorkTest extends TestCase
         $deletedEntity = new Bouh();
 
         $unitOfWork = new UnitOfWork(
-            $this->services->get('ConnectionPool'),
-            $this->services->get('MetadataRepository'),
-            $this->services->get('QueryFactory')
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
         );
         $unitOfWork->manage($managedEntity);
         $unitOfWork->propertyChanged($managedEntity, 'name', 'Sylvain', 'Xavier');
@@ -291,11 +290,11 @@ class UnitOfWorkTest extends TestCase
     public function testIsNewAfterProcessShouldReturnFalse()
     {
         $entity = new Bouh();
-        $mockMetadataRepository = new MetadataRepository($this->services->get('SerializerFactory'));
+        $mockMetadataRepository = new MetadataRepository($this->services->serializerFactory());
 
         $mockMetadataRepository->addMetadata(
             'tests\fixtures\model\BouhRepository',
-            BouhRepository::initMetadata($this->services->get('SerializerFactory'))
+            BouhRepository::initMetadata($this->services->serializerFactory())
         );
 
         [$mockConnectionPool, $mockQueryFactory] = $this->createProcessMocks(true);
@@ -317,11 +316,11 @@ class UnitOfWorkTest extends TestCase
     public function testShouldBePersistedAfterProcessShouldReturnFalse()
     {
         $entity = new Bouh();
-        $mockMetadataRepository = new MetadataRepository($this->services->get('SerializerFactory'));
+        $mockMetadataRepository = new MetadataRepository($this->services->serializerFactory());
 
         $mockMetadataRepository->addMetadata(
             'tests\fixtures\model\BouhRepository',
-            BouhRepository::initMetadata($this->services->get('SerializerFactory'))
+            BouhRepository::initMetadata($this->services->serializerFactory())
         );
 
         [$mockConnectionPool, $mockQueryFactory] = $this->createProcessMocks(true);
@@ -348,7 +347,7 @@ class UnitOfWorkTest extends TestCase
     public function testTryingToProcessAnEntityWithoutRepositoryShouldRaiseAnException()
     {
         $entity = new Bouh();
-        $mockMetadataRepository = new MetadataRepository($this->services->get('SerializerFactory'));
+        $mockMetadataRepository = new MetadataRepository($this->services->serializerFactory());
 
         [$mockConnectionPool, $mockQueryFactory] = $this->createProcessMocks(false);
 

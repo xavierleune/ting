@@ -28,7 +28,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Repository\Collection;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\FakeDriver\MysqliResult;
 
@@ -36,15 +36,15 @@ class CollectionFactoryTest extends TestCase
 {
     public function testGetShouldReturnInstanceOfCollection()
     {
-        $services = new Services();
+        $services = new TingServices();
 
-        $collectionFactory = $services->get('CollectionFactory');
+        $collectionFactory = $services->collectionFactory();
         $this->assertInstanceOf(Collection::class, $collectionFactory->get());
     }
 
     public function testGetShouldReturnInstanceOfCollectionWithNewHydrator()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $result = new Result();
         $result->setResult($this->createMysqliResult([['a-Bouh']]));
@@ -56,7 +56,7 @@ class CollectionFactoryTest extends TestCase
         $result2->setConnectionName('main');
         $result2->setDatabase('bouh_world');
 
-        $collectionFactory = $services->get('CollectionFactory');
+        $collectionFactory = $services->collectionFactory();
         $collection = $collectionFactory->get();
         $collection->set($result);
         $collection2 = $collectionFactory->get();

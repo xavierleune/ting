@@ -33,10 +33,10 @@ require __DIR__ . '/../../vendor/autoload.php';
 // sample autoloader
 require __DIR__ . '/../vendor/autoload.php';
 
-$services = new \CCMBenchmark\Ting\Services();
+$services = new \sample\src\TingServices();
 $repositories =
     $services
-        ->get('MetadataRepository')
+        ->metadataRepository()
         ->batchLoadMetadata('sample\src\model', __DIR__ . '/model/*Repository.php');
 
 echo str_repeat("-", 40) . "\n";
@@ -55,18 +55,18 @@ $connections = [
     ],
 ];
 
-$services->get('ConnectionPool')->setConfig($connections);
+$services->connectionPool()->setConfig($connections);
 
 $options = [
     'world' => [
         'timezone' => 'EETDST'
     ]
 ];
-$services->get('ConnectionPool')->setDatabaseOptions($options);
+$services->connectionPool()->setDatabaseOptions($options);
 
 
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
     var_dump($cityRepository->get(['cit_id' => 3]));
     echo str_repeat("-", 40) . "\n";
 
@@ -88,7 +88,7 @@ try {
 }
 
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
     $collection = $cityRepository->getZCountryWithLotsPopulation();
 
     foreach ($collection as $result) {
@@ -104,7 +104,7 @@ try {
     /**
      * @var $cityRepository CityRepository
      */
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
 
     echo str_repeat("-", 40) . "\n";
 

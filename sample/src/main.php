@@ -36,10 +36,10 @@ require __DIR__ . '/../../vendor/autoload.php';
 // sample autoloader
 require __DIR__ . '/../vendor/autoload.php';
 
-$services = new \CCMBenchmark\Ting\Services();
+$services = new \sample\src\TingServices();
 $repositories =
     $services
-        ->get('MetadataRepository')
+        ->metadataRepository()
         ->batchLoadMetadata('sample\src\model', __DIR__ . '/model/*Repository.php');
 
 echo str_repeat("-", 40) . "\n";
@@ -58,16 +58,16 @@ $connections = [
     ]
 ];
 
-$services->get('ConnectionPool')->setConfig($connections);
+$services->connectionPool()->setConfig($connections);
 
 $options = [
     'world' => [
         'timezone' => 'UTC+1'
     ]
 ];
-$services->get('ConnectionPool')->setDatabaseOptions($options);
+$services->connectionPool()->setDatabaseOptions($options);
 
-$cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\ProducerRepository');
+$cityRepository = $services->repositoryFactory()->get('\sample\src\model\ProducerRepository');
 
 
 $query = $cityRepository->getQuery("
@@ -77,7 +77,7 @@ left join t_country_cou on t_country_cou.cou_code = t_city_cit.cou_code
 left join t_countrylanguage_col on t_countrylanguage_col.cou_code = t_country_cou.cou_code
 ");
 
-$hydrator = $services->get('HydratorAggregator');
+$hydrator = $services->hydratorAggregator();
 $hydrator->identityMap(true);
 $hydrator->callableIdIs(fn ($result) => $result['t_city_cit']->getId());
 $hydrator->callableDataIs(fn ($result) => $result['t_countrylanguage_col']);
@@ -110,7 +110,7 @@ left join t_country_cou on t_country_cou.cou_code = t_city_cit.cou_code
 left join t_countrylanguage_col on t_countrylanguage_col.cou_code = t_country_cou.cou_code
 ");
 
-$hydrator = $services->get('HydratorRelational');
+$hydrator = $services->hydratorRelational();
 $hydrator->addRelation(new Hydrator\RelationMany(
     new Hydrator\AggregateFrom('t_countrylanguage_col', 'getLanguage'),
     new Hydrator\AggregateTo('t_country_cou', 'getCode'),
@@ -160,7 +160,7 @@ left join actor on actor.id = actor_in_movie.actor_id"
  */
 
 
-$hydrator = $services->get('HydratorRelational');
+$hydrator = $services->hydratorRelational();
 $hydrator->addRelation((new Hydrator\RelationMany())->aggregate('worker')->to('producer')->setter('workersAre'));
 $hydrator->addRelation((new Hydrator\RelationMany())->aggregate('movie')->to('producer')->setter('moviesAre'));
 $hydrator->addRelation((new Hydrator\RelationMany())->aggregate('actor')->to('movie')->setter('actorsAre'));
@@ -198,7 +198,7 @@ die;
 /**
  * @var $cityRepository CityRepository
  */
-$cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+$cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
 
 $queryCached = $cityRepository->getCachedQuery(
     "select cit_id, cit_name, c.cou_code, cit_district, cit_population, last_modified,
@@ -218,7 +218,7 @@ foreach ($collection as $result) {
 
 echo 'City1'."\n";
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
 
     var_dump($cityRepository->get(3));
     echo str_repeat("-", 40) . "\n";
@@ -250,7 +250,7 @@ try {
 
 echo 'City2'."\n";
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
 
     var_dump($cityRepository->get(3));
     echo str_repeat("-", 40) . "\n";
@@ -287,7 +287,7 @@ try {
 
 echo 'City3'."\n";
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
 
     $query = $cityRepository->getQuery(
         "select
@@ -301,7 +301,7 @@ try {
     );
     $query->selectMaster(true);
 
-    $hydrator = $services->get('HydratorSingleObject');
+    $hydrator = $services->hydratorSingleObject();
     $hydrator
         ->mapAliasTo('broum', 'c', 'setBroum')
         ->mapAliasTo('toto', 'c', 'setTutu')
@@ -319,7 +319,7 @@ try {
 }
 
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
     $collection = $cityRepository->getZCountryWithLotsPopulation();
 
     foreach ($collection as $result) {
@@ -331,7 +331,7 @@ try {
 }
 
 try {
-    $cityRepository = $services->get('RepositoryFactory')->get('\sample\src\model\CityRepository');
+    $cityRepository = $services->repositoryFactory()->get('\sample\src\model\CityRepository');
     $nb = $cityRepository->getNumberOfCities();
     var_dump(['initial' => $nb]);
     $cityRepository->startTransaction();

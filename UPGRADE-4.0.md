@@ -13,6 +13,52 @@ Symfony
 * Symfony 6 support has been dropped: `symfony/property-access` (and the optional `symfony/uid` / `symfony/cache`)
   now require `^7.0 || ^8.0`.
 
+Services Container Removed
+--------------------------
+
+`CCMBenchmark\Ting\Services`, `CCMBenchmark\Ting\ContainerInterface` and the optional `pimple/pimple` dependency have
+been removed, as well as the unused `Repository::$services` property. Ting is now a plain library: every dependency is
+passed to the constructors, and wiring belongs to the integration.
+
+* **With Symfony**, use [ting_bundle](https://github.com/xavierleune/ting_bundle): it already declares every service in
+  the Symfony container, nothing changes for you.
+* **Without a framework**, build the objects yourself, or with any PSR-11 container. Shared objects are the
+  `ConnectionPool`, `MetadataRepository`, `UnitOfWork`, `QueryFactory`, `SerializerFactory`, `Cache` and
+  `RepositoryFactory`; hydrators and `CollectionFactory` are usually created on demand:
+
+```php
+// Before (3.x):
+$services = new \CCMBenchmark\Ting\Services();
+$services->get('ConnectionPool')->setConfig($connections);
+$repository = $services->get('RepositoryFactory')->get(CityRepository::class);
+
+// After (4.0):
+$serializerFactory = new SerializerFactory();
+$connectionPool = new ConnectionPool();
+$connectionPool->setConfig($connections);
+$metadataRepository = new MetadataRepository($serializerFactory);
+$metadataRepository->batchLoadMetadata('App\Repository', __DIR__ . '/src/Repository/*Repository.php');
+$queryFactory = new QueryFactory();
+$unitOfWork = new UnitOfWork($connectionPool, $metadataRepository, $queryFactory);
+$hydrator = new Hydrator();
+$hydrator->setMetadataRepository($metadataRepository);
+$hydrator->setUnitOfWork($unitOfWork);
+$cache = new Cache();
+$cache->setCache(new ArrayAdapter()); // any Symfony cache pool
+$repositoryFactory = new RepositoryFactory(
+    $connectionPool,
+    $metadataRepository,
+    $queryFactory,
+    new CollectionFactory($metadataRepository, $unitOfWork, $hydrator),
+    $unitOfWork,
+    $cache,
+    $serializerFactory
+);
+$repository = $repositoryFactory->get(CityRepository::class);
+```
+
+`sample/src/TingServices.php` shows this wiring in a small class.
+
 Cache: doctrine/cache Replaced by Symfony Cache Contracts
 --------------------------------------------------------
 

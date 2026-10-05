@@ -36,7 +36,7 @@ use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Serializer\Json;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\RequiresPhp;
@@ -52,8 +52,8 @@ class MetadataTest extends TestCase
     {
         $mockConnectionPool = $this->createStub(ConnectionPool::class);
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setDatabase('myDatabase');
         $metadata->setConnectionName('myConnection');
         $this->assertInstanceOf(Connection::class, $metadata->getConnection($mockConnectionPool));
@@ -61,8 +61,8 @@ class MetadataTest extends TestCase
 
     public function testGetConnectionName()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setDatabase('myDatabase');
         $metadata->setConnectionName('myConnection');
         $this->assertSame('myConnection', $metadata->getConnectionName());
@@ -70,8 +70,8 @@ class MetadataTest extends TestCase
 
     public function testGetSchema()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setDatabase('myDatabase');
         $metadata->setSchema('schemaName');
         $this->assertSame('schemaName', $metadata->getSchema());
@@ -79,8 +79,8 @@ class MetadataTest extends TestCase
 
     public function testSetRepositoryShouldRaiseExceptionWhenStartWithSlash()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $this->assertThrows(
             \Throwable::class,
             function () use ($metadata): void {
@@ -92,30 +92,30 @@ class MetadataTest extends TestCase
 
     public function testGetRepository()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setRepository('myRepository');
         $this->assertSame('myRepository', $metadata->getRepository());
     }
 
     public function testSetDatabaseShouldReturnThis()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $this->assertSame($metadata, $metadata->setDatabase('myDatabase'));
     }
 
     public function testSetConnectionShouldReturnThis()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $this->assertSame($metadata, $metadata->setConnectionName('main'));
     }
 
     public function testSetEntityShouldRaiseExceptionWhenStartWithSlash()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $this->assertThrows(
             \Throwable::class,
             function () use ($metadata): void {
@@ -127,8 +127,8 @@ class MetadataTest extends TestCase
 
     public function testAddFieldShouldReturnThis()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $this->assertSame(
             $metadata,
             $metadata->addField(['columnName' => 'BO_BOUH', 'fieldName' => 'bouh', 'type' => 'string'])
@@ -137,8 +137,8 @@ class MetadataTest extends TestCase
 
     public function testGetFields()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->addField(
             ['columnName' => 'user_firstname', 'fieldName' => 'firstname', 'type' => 'string']
         );
@@ -164,8 +164,8 @@ class MetadataTest extends TestCase
 
     public function testAddFieldWithInvalidParametersShouldThrowException()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $exception = $this->assertThrows(
             \Throwable::class,
             function () use ($metadata): void {
@@ -194,8 +194,8 @@ class MetadataTest extends TestCase
 
     public function testIfTableKnownShouldCallCallbackAndReturnTrue()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setTable('Bouh');
@@ -212,8 +212,8 @@ class MetadataTest extends TestCase
 
     public function testIfTableKnownShouldReturnFalse()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setTable('Bouh');
         $this->assertFalse($metadata->ifTableKnown(
             'connectionName',
@@ -226,8 +226,8 @@ class MetadataTest extends TestCase
 
     public function testHasColumnShouldReturnTrue()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setTable('Bouh');
         $metadata->addField(['fieldName' => 'Bouh', 'columnName' => 'boo_bouh', 'type' => 'string']);
         $this->assertTrue($metadata->hasColumn('boo_bouh'));
@@ -235,8 +235,8 @@ class MetadataTest extends TestCase
 
     public function testHasColumnShouldReturnFalse()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setTable('Bouh');
         $metadata->addField(['fieldName' => 'Bouh', 'columnName' => 'BOO_bouh', 'type' => 'string']);
         $this->assertFalse($metadata->hasColumn('boo_no'));
@@ -244,8 +244,8 @@ class MetadataTest extends TestCase
 
     public function testCreateEntityShouldReturnObject()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $bouh = $metadata->createEntity();
         $this->assertInstanceOf(Bouh::class, $bouh);
@@ -253,8 +253,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyWithDefaultSetter()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
 
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
@@ -271,8 +271,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyShouldKeepNull()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
 
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
@@ -289,8 +289,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyShouldCastToInt()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'fieldName'  => 'price',
@@ -306,8 +306,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyShouldCastToDouble()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'fieldName'  => 'price',
@@ -323,8 +323,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyShouldCastToBool()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'fieldName'  => 'enabled',
@@ -340,8 +340,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyShouldUnserializeData()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'fieldName'  => 'roles',
@@ -358,8 +358,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyShouldUnserializeDataWithOptions()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'fieldName'  => 'roles',
@@ -380,8 +380,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testSetEntityPropertyForAutoIncrement()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'primary'       => true,
@@ -403,8 +403,8 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testSetEntityPropertyForAutoIncrementWithoutAutoIncrementColumnShouldReturnFalse()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($this->bouhSpyClass());
         $metadata->addField([
             'primary'    => true,
@@ -428,8 +428,8 @@ class MetadataTest extends TestCase
         $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -449,8 +449,8 @@ class MetadataTest extends TestCase
             function () use ($metadata, $mockConnection, $services): void {
                 $metadata->getByPrimaries(
                     $mockConnection,
-                    $services->get('QueryFactory'),
-                    $services->get('CollectionFactory'),
+                    $services->queryFactory(),
+                    $services->collectionFactory(),
                     1
                 );
             },
@@ -465,8 +465,8 @@ class MetadataTest extends TestCase
         $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -479,8 +479,8 @@ class MetadataTest extends TestCase
             Query::class,
             $metadata->getByPrimaries(
                 $mockConnection,
-                $services->get('QueryFactory'),
-                $services->get('CollectionFactory'),
+                $services->queryFactory(),
+                $services->collectionFactory(),
                 ['id' => 1]
             )
         );
@@ -488,8 +488,8 @@ class MetadataTest extends TestCase
             Query::class,
             $metadata->getByPrimaries(
                 $mockConnection,
-                $services->get('QueryFactory'),
-                $services->get('CollectionFactory'),
+                $services->queryFactory(),
+                $services->collectionFactory(),
                 1
             )
         );
@@ -502,8 +502,8 @@ class MetadataTest extends TestCase
         $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -521,8 +521,8 @@ class MetadataTest extends TestCase
             Query::class,
             $metadata->getOneByCriteria(
                 $mockConnection,
-                $services->get('QueryFactory'),
-                $services->get('CollectionFactory'),
+                $services->queryFactory(),
+                $services->collectionFactory(),
                 ['name' => 'Xavier']
             )
         );
@@ -535,8 +535,8 @@ class MetadataTest extends TestCase
         $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -555,8 +555,8 @@ class MetadataTest extends TestCase
             function () use ($metadata, $mockConnection, $services): void {
                 $metadata->getOneByCriteria(
                     $mockConnection,
-                    $services->get('QueryFactory'),
-                    $services->get('CollectionFactory'),
+                    $services->queryFactory(),
+                    $services->collectionFactory(),
                     ['weirdColumnName' => 'Xavier']
                 );
             }
@@ -570,8 +570,8 @@ class MetadataTest extends TestCase
         $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -584,8 +584,8 @@ class MetadataTest extends TestCase
             Query::class,
             $metadata->getAll(
                 $mockConnection,
-                $services->get('QueryFactory'),
-                $services->get('CollectionFactory')
+                $services->queryFactory(),
+                $services->collectionFactory()
             )
         );
     }
@@ -597,8 +597,8 @@ class MetadataTest extends TestCase
         $mockConnectionPool->method('slave')->willReturn(new FakeDriver());
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -617,8 +617,8 @@ class MetadataTest extends TestCase
             $metadata->getByCriteria(
                 ['name' => 'Xavier'],
                 $mockConnection,
-                $services->get('QueryFactory'),
-                $services->get('CollectionFactory')
+                $services->queryFactory(),
+                $services->collectionFactory()
             )
         );
     }
@@ -646,8 +646,8 @@ class MetadataTest extends TestCase
         $entity = new Bouh();
         $entity->setName('Xavier');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->setTable('bouh');
         $metadata->addField([
@@ -661,7 +661,7 @@ class MetadataTest extends TestCase
             'columnName' => 'boo_name',
             'type'       => 'int'
         ]);
-        $query = $metadata->generateQueryForInsert($mockConnection, $services->get('QueryFactory'), $entity);
+        $query = $metadata->generateQueryForInsert($mockConnection, $services->queryFactory(), $entity);
         $this->assertInstanceOf(PreparedQuery::class, $query);
         $query->execute();
     }
@@ -669,14 +669,14 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldSerializeArray()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
 
         $entity = new Bouh();
         $entity->setRoles(['USER', 'ADMIN']);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -693,13 +693,13 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldSkipUnitializedFields()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
 
         $entity = new PublicPropertiesEntity();
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(PublicPropertiesEntity::class);
         $metadata
             ->addField([
@@ -737,14 +737,14 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldSerializeWithOptions()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
 
         $entity = new Bouh();
         $entity->setRoles(['USER', '"BOUH"']);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -764,14 +764,14 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldNotUseAutoIncrementColumn()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams, $outerSql);
 
         $entity = new Bouh();
         $entity->setRoles(['USER', 'ADMIN']);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'       => true,
@@ -814,8 +814,8 @@ class MetadataTest extends TestCase
         $entity->setId(20);
         $entity->setName('Xavier');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->setTable('bouh');
         $metadata->addField([
@@ -832,7 +832,7 @@ class MetadataTest extends TestCase
         ]);
         $query = $metadata->generateQueryForUpdate(
             $mockConnection,
-            $services->get('QueryFactory'),
+            $services->queryFactory(),
             $entity,
             ['name' => 'Sylvain']
         );
@@ -861,8 +861,8 @@ class MetadataTest extends TestCase
         $entity = new Bouh();
         $entity->setName('Xavier');
 
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(Bouh::class);
         $metadata->addField([
             'primary'    => true,
@@ -873,7 +873,7 @@ class MetadataTest extends TestCase
         $metadata->setTable('bouh');
         $query = $metadata->generateQueryForDelete(
             $mockConnection,
-            $services->get('QueryFactory'),
+            $services->queryFactory(),
             ['id' => 1],
             $entity
         );
@@ -883,8 +883,8 @@ class MetadataTest extends TestCase
 
     public function testSetEntityPropertyWithDefinedSetter()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         // Stand-in for the "mock\repository\Bouh" class atoum generated, with its nameIs() override
         $entityClass = new class () {
             public $name = null;
@@ -914,14 +914,14 @@ class MetadataTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testCustomGetterReturnGoodValue()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
 
         $entity = new BouhCustomGetter();
         $entity->setName('Nicolas');
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(BouhCustomGetter::class);
         $metadata->addField([
             'primary'    => true,
@@ -938,8 +938,8 @@ class MetadataTest extends TestCase
     #[RequiresPhp('>= 8.4.0')]
     public function testSetEntityPropertyShouldByPassPropertyHook()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(HookedPropertiesEntity::class);
         $metadata
             ->addField([
@@ -956,8 +956,8 @@ class MetadataTest extends TestCase
     #[RequiresPhp('>= 8.4.0')]
     public function testGetEntityPropertyShouldUsePropertyHook()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity(HookedPropertiesEntity::class);
         $metadata
             ->addField([
@@ -978,7 +978,7 @@ class MetadataTest extends TestCase
      *
      * @return array{0: Connection, 1: QueryFactory}
      */
-    private function createInsertMocks(Services $services, &$outerParams, &$outerSql = null): array
+    private function createInsertMocks(TingServices $services, &$outerParams, &$outerSql = null): array
     {
         $mockDriver = $this->getMockBuilder(MysqliDriver::class)->onlyMethods(['escapeField'])->getMock();
         $mockDriver->method('escapeField')->willReturnCallback(fn ($field) => (string) $field);
@@ -989,7 +989,7 @@ class MetadataTest extends TestCase
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
 
         $mockPreparedQuery = $this->getMockBuilder(PreparedQuery::class)
-            ->setConstructorArgs(['', $mockConnection, $services->get('CollectionFactory')])
+            ->setConstructorArgs(['', $mockConnection, $services->collectionFactory()])
             ->onlyMethods(['setParams'])
             ->getMock();
         $mockPreparedQuery->method('setParams')->willReturnCallback(

@@ -44,7 +44,7 @@ use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\Hydrator;
 use CCMBenchmark\Ting\Repository\Metadata;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -58,19 +58,19 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGet()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'bouh_world');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $mockQuery = $this->getMockBuilder(Query::class)
-            ->setConstructorArgs(['', $mockConnection, $services->get('CollectionFactory')])
+            ->setConstructorArgs(['', $mockConnection, $services->collectionFactory()])
             ->onlyMethods(['query'])
             ->getMock();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
@@ -90,8 +90,8 @@ class RepositoryTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
 
         $mockCollection = $this->getMockBuilder(Collection::class)
             ->setConstructorArgs([$hydrator])
@@ -103,12 +103,12 @@ class RepositoryTest extends TestCase
 
         $repository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $retrievedEntity = $repository->get([]);
         $this->assertSame($entity->getName(), $retrievedEntity->getName());
@@ -117,19 +117,19 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetOnMaster()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'db');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         // Spy: selectMaster() keeps its real implementation, query() is replaced
-        $mockQuery = new class ('', $mockConnection, $services->get('CollectionFactory')) extends Query {
+        $mockQuery = new class ('', $mockConnection, $services->collectionFactory()) extends Query {
             /** @var list<array<mixed>> */
             public array $selectMasterCalls = [];
             public int $queryCalls = 0;
@@ -156,12 +156,12 @@ class RepositoryTest extends TestCase
 
         $repository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertNull($repository->get([], true));
         $this->assertCount(1, array_filter($mockQuery->selectMasterCalls, fn ($arguments) => $arguments == [true]));
@@ -171,12 +171,12 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testStartTransactionShouldOpenTransaction()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = $this->createDriverSpy($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
@@ -185,12 +185,12 @@ class RepositoryTest extends TestCase
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $bouhRepository->startTransaction();
         $this->assertSame(1, $mockDriver->calls['startTransaction']);
@@ -199,12 +199,12 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testCommitShouldCloseTransaction()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = $this->createDriverSpy($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
@@ -213,12 +213,12 @@ class RepositoryTest extends TestCase
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $bouhRepository->startTransaction();
         $bouhRepository->commit();
@@ -228,12 +228,12 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testRollbackShouldCloseTransaction()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = $this->createDriverSpy($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
@@ -242,12 +242,12 @@ class RepositoryTest extends TestCase
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $bouhRepository->startTransaction();
         $bouhRepository->rollback();
@@ -256,13 +256,13 @@ class RepositoryTest extends TestCase
 
     public function testSaveShouldCallUnitOfWorkSaveThenProcess()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = new ConnectionPool();
         $mockUnitOfWork     = $this->getMockBuilder(UnitOfWork::class)
             ->setConstructorArgs([
                 $mockConnectionPool,
-                $services->get('MetadataRepository'),
-                $services->get('QueryFactory')
+                $services->metadataRepository(),
+                $services->queryFactory()
             ])
             ->onlyMethods(['pushSave', 'process'])
             ->getMock();
@@ -270,7 +270,7 @@ class RepositoryTest extends TestCase
         // process() is declared void: atoum's "process = true" could not be returned anyway
         $mockUnitOfWork->expects($this->once())->method('process');
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
@@ -279,25 +279,25 @@ class RepositoryTest extends TestCase
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
             $mockUnitOfWork,
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $bouhRepository->save($entity);
     }
 
     public function testDeleteShouldCallUnitOfWorkDeleteThenProcess()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = new ConnectionPool();
         $mockUnitOfWork     = $this->getMockBuilder(UnitOfWork::class)
             ->setConstructorArgs([
                 $mockConnectionPool,
-                $services->get('MetadataRepository'),
-                $services->get('QueryFactory')
+                $services->metadataRepository(),
+                $services->queryFactory()
             ])
             ->onlyMethods(['pushDelete', 'process'])
             ->getMock();
@@ -305,7 +305,7 @@ class RepositoryTest extends TestCase
         // process() is declared void: atoum's "process = true" could not be returned anyway
         $mockUnitOfWork->expects($this->once())->method('process');
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
@@ -314,116 +314,116 @@ class RepositoryTest extends TestCase
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
             $mockUnitOfWork,
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $bouhRepository->delete($entity);
     }
 
     public function testGetQueryShouldCallQueryFactoryGet()
     {
-        $services         = new Services();
+        $services         = new TingServices();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
 
         $query            = new Query('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
 
         $mockQueryFactory->expects($this->once())->method('get')->willReturn($query);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $bouhRepository = new BouhRepository(
-            $services->get('ConnectionPool'),
-            $services->get('MetadataRepository'),
+            $services->connectionPool(),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertSame($query, $bouhRepository->getQuery('QUERY'));
     }
 
     public function testGetPreparedQueryShouldCallQueryFactoryGetPrepared()
     {
-        $services         = new Services();
+        $services         = new TingServices();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getPrepared'])->getMock();
 
         $query            = new PreparedQuery('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
 
         $mockQueryFactory->expects($this->once())->method('getPrepared')->willReturn($query);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $bouhRepository = new BouhRepository(
-            $services->get('ConnectionPool'),
-            $services->get('MetadataRepository'),
+            $services->connectionPool(),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertSame($query, $bouhRepository->getPreparedQuery('QUERY'));
     }
 
     public function testGetCachedQueryShouldCallQueryFactoryGetCached()
     {
-        $services         = new Services();
+        $services         = new TingServices();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getCached'])->getMock();
 
         $query            = new CachedQuery('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
 
         $mockQueryFactory->expects($this->once())->method('getCached')->willReturn($query);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $bouhRepository = new BouhRepository(
-            $services->get('ConnectionPool'),
-            $services->get('MetadataRepository'),
+            $services->connectionPool(),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertSame($query, $bouhRepository->getCachedQuery('QUERY'));
     }
 
     public function testGetCachedPreparedQueryShouldCallQueryFactoryGetCachedPreparedQuery()
     {
-        $services         = new Services();
+        $services         = new TingServices();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getCachedPrepared'])->getMock();
 
         $query            = new CachedPreparedQuery('QUERY', new Connection(new ConnectionPool(), 'main', 'db'));
 
         $mockQueryFactory->expects($this->once())->method('getCachedPrepared')->willReturn($query);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $bouhRepository = new BouhRepository(
-            $services->get('ConnectionPool'),
-            $services->get('MetadataRepository'),
+            $services->connectionPool(),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertSame($query, $bouhRepository->getCachedPreparedQuery('QUERY'));
     }
@@ -431,19 +431,19 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetAllShouldReturnAQuery()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'db');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $mockQuery = $this->getMockBuilder(Query::class)
-            ->setConstructorArgs(['', $mockConnection, $services->get('CollectionFactory')])
+            ->setConstructorArgs(['', $mockConnection, $services->collectionFactory()])
             ->onlyMethods(['query'])
             ->getMock();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
@@ -461,12 +461,12 @@ class RepositoryTest extends TestCase
 
         $repository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertInstanceOf(CollectionInterface::class, $repository->getAll());
     }
@@ -474,19 +474,19 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetByCriteriaShouldReturnAQuery()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'db');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
         $mockQuery = $this->getMockBuilder(Query::class)
-            ->setConstructorArgs(['', $mockConnection, $services->get('CollectionFactory')])
+            ->setConstructorArgs(['', $mockConnection, $services->collectionFactory()])
             ->onlyMethods(['query'])
             ->getMock();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
@@ -504,12 +504,12 @@ class RepositoryTest extends TestCase
 
         $repository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertInstanceOf(CollectionInterface::class, $repository->getBy(['name' => 'bouh']));
     }
@@ -517,19 +517,19 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetOneByCriteriaShouldReturnAnEntityOrNull()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['slave'])->getMock();
         $mockConnection     = new Connection($mockConnectionPool, 'main', 'bouh_world');
         $fakeDriver         = $this->createStub(Mysqli::class);
         $mockDriver         = new Driver($fakeDriver);
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/BouhRepository.php'
         );
 
         $mockQuery = $this->getMockBuilder(Query::class)
-            ->setConstructorArgs(['', $mockConnection, $services->get('CollectionFactory')])
+            ->setConstructorArgs(['', $mockConnection, $services->collectionFactory()])
             ->onlyMethods(['query'])
             ->getMock();
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['get'])->getMock();
@@ -549,8 +549,8 @@ class RepositoryTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
 
         $mockCollection = $this->getMockBuilder(Collection::class)
             ->setConstructorArgs([$hydrator])
@@ -567,12 +567,12 @@ class RepositoryTest extends TestCase
 
         $repository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
+            $services->metadataRepository(),
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertInstanceOf($entity::class, $repository->getOneBy(['name' => 'Xavier']));
         $emptyCollection = new Collection();
@@ -582,19 +582,19 @@ class RepositoryTest extends TestCase
 
     public function testGetQueryBuilderShouldThrowExceptionOnUnknownDriver()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        $services->get('ConnectionPool')->setConfig([
+        $services->connectionPool()->setConfig([
             'main' => [
                 'namespace' => '\Unknown\Driver\Mysqli'
             ]
         ]);
 
-        $bouhRepository = $services->get('RepositoryFactory')->get('\tests\fixtures\model\BouhRepository');
+        $bouhRepository = $services->repositoryFactory()->get('\tests\fixtures\model\BouhRepository');
         $this->assertThrows(
             \Throwable::class,
             function () use ($bouhRepository): void {
@@ -606,27 +606,27 @@ class RepositoryTest extends TestCase
 
     public function testGetQueryBuilder()
     {
-        $services = new Services();
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
 
-        $services->get('ConnectionPool')
+        $services->connectionPool()
             ->setConfig(['main' => ['namespace' => '\CCMBenchmark\Ting\Driver\SphinxQL']]);
-        $bouhRepository = $services->get('RepositoryFactory')->get('\tests\fixtures\model\BouhRepository');
+        $bouhRepository = $services->repositoryFactory()->get('\tests\fixtures\model\BouhRepository');
         $this->assertInstanceOf(
             SelectInterface::class,
             $bouhRepository->getQueryBuilder($bouhRepository::QUERY_SELECT)
         );
-        $services->get('ConnectionPool')
+        $services->connectionPool()
             ->setConfig(['main' => ['namespace' => 'CCMBenchmark\Ting\Driver\Pgsql']]);
         $this->assertInstanceOf(SelectInterface::class, $bouhRepository->getQueryBuilder("unkwnon"));
         $this->assertInstanceOf(
             UpdateInterface::class,
             $bouhRepository->getQueryBuilder($bouhRepository::QUERY_UPDATE)
         );
-        $services->get('ConnectionPool')
+        $services->connectionPool()
             ->setConfig(['main' => ['namespace' => '\CCMBenchmark\Ting\Driver\Mysqli']]);
         $this->assertInstanceOf(
             DeleteInterface::class,
@@ -641,7 +641,7 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testPingShouldPingMethodsShouldCallPingOnTheGoodConnections()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)
             ->onlyMethods(['slave', 'master'])
             ->getMock();
@@ -655,7 +655,7 @@ class RepositoryTest extends TestCase
             ->onlyMethods(['ping'])
             ->getMock();
 
-        $services->get('MetadataRepository')->batchLoadMetadata(
+        $services->metadataRepository()->batchLoadMetadata(
             'tests\fixtures\model',
             __DIR__ . '/../../fixtures/model/*Repository.php'
         );
@@ -667,12 +667,12 @@ class RepositoryTest extends TestCase
 
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
-            $services->get('MetadataRepository'),
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $bouhRepository->ping();
         $this->assertSame(1, $slavePing->numberOfInvocations());
@@ -683,7 +683,7 @@ class RepositoryTest extends TestCase
     #[AllowMockObjectsWithoutExpectations]
     public function testGetMetadata()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)
             ->onlyMethods(['slave', 'master'])
             ->getMock();
@@ -691,11 +691,11 @@ class RepositoryTest extends TestCase
         $mockDriverSlave    = new Driver($fakeDriver);
         $mockDriverMaster   = new Driver($fakeDriver);
         $metadataRepository = $this->getMockBuilder(MetadataRepository::class)
-            ->setConstructorArgs([$services->get('SerializerFactory')])
+            ->setConstructorArgs([$services->serializerFactory()])
             ->onlyMethods(['findMetadataForRepository'])
             ->getMock();
         $metadata           = $this->getMockBuilder(Metadata::class)
-            ->setConstructorArgs([$services->get('SerializerFactory')])
+            ->setConstructorArgs([$services->serializerFactory()])
             ->onlyMethods(['getConnection'])
             ->getMock();
         $metadata->method('getConnection')->willReturn(new Connection($mockConnectionPool, 'main', 'db'));
@@ -712,24 +712,24 @@ class RepositoryTest extends TestCase
         $bouhRepository = new BouhRepository(
             $mockConnectionPool,
             $metadataRepository,
-            $services->get('QueryFactory'),
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
-            $services->get('UnitOfWork'),
-            $services->get('SerializerFactory')
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
         );
         $this->assertSame($metadata, $bouhRepository->getMetadata());
     }
 
     public function testResetShouldResetUnitOfWorkAndRenewConnection()
     {
-        $services           = new Services();
+        $services           = new TingServices();
         $mockConnectionPool = new ConnectionPool();
         $firstConnection    = new Connection($mockConnectionPool, 'main', 'db');
         $secondConnection   = new Connection($mockConnectionPool, 'main', 'db');
 
         $metadata = $this->getMockBuilder(Metadata::class)
-            ->setConstructorArgs([$services->get('SerializerFactory')])
+            ->setConstructorArgs([$services->serializerFactory()])
             ->onlyMethods(['getConnection'])
             ->getMock();
         $metadata->setEntity(Bouh::class);
@@ -739,7 +739,7 @@ class RepositoryTest extends TestCase
             ->willReturnOnConsecutiveCalls($firstConnection, $secondConnection);
 
         $metadataRepository = $this->getMockBuilder(MetadataRepository::class)
-            ->setConstructorArgs([$services->get('SerializerFactory')])
+            ->setConstructorArgs([$services->serializerFactory()])
             ->onlyMethods(['findMetadataForRepository'])
             ->getMock();
         $metadataRepository->expects($this->once())->method('findMetadataForRepository')->willReturnCallback(
@@ -751,8 +751,8 @@ class RepositoryTest extends TestCase
         $mockUnitOfWork = $this->getMockBuilder(UnitOfWork::class)
             ->setConstructorArgs([
                 $mockConnectionPool,
-                $services->get('MetadataRepository'),
-                $services->get('QueryFactory')
+                $services->metadataRepository(),
+                $services->queryFactory()
             ])
             ->onlyMethods(['reset'])
             ->getMock();
@@ -768,10 +768,10 @@ class RepositoryTest extends TestCase
             $mockConnectionPool,
             $metadataRepository,
             $mockQueryFactory,
-            $services->get('CollectionFactory'),
-            $services->get('Cache'),
+            $services->collectionFactory(),
+            $services->cache(),
             $mockUnitOfWork,
-            $services->get('SerializerFactory')
+            $services->serializerFactory()
         );
         $bouhRepository->reset();
         $bouhRepository->getQuery('QUERY');

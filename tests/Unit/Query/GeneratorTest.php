@@ -36,7 +36,7 @@ use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 
 class GeneratorTest extends TestCase
@@ -92,7 +92,7 @@ class GeneratorTest extends TestCase
 
     public function testGetByPrimariesShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -103,19 +103,19 @@ class GeneratorTest extends TestCase
         );
         $this->assertInstanceOf(
             Query::class,
-            $generator->getOneByCriteria(['id' => 1], $services->get('CollectionFactory'))
+            $generator->getOneByCriteria(['id' => 1], $services->collectionFactory())
         );
         $this->assertSame(1, $this->mockConnection->calls['slave']);
         $this->assertInstanceOf(
             Query::class,
-            $generator->getOneByCriteria(['id' => 1], $services->get('CollectionFactory'), true)
+            $generator->getOneByCriteria(['id' => 1], $services->collectionFactory(), true)
         );
         $this->assertSame(1, $this->mockConnection->calls['master']);
     }
 
     public function testGetAllShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -124,13 +124,13 @@ class GeneratorTest extends TestCase
             'table',
             ['id', 'population']
         );
-        $this->assertInstanceOf(Query::class, $generator->getAll($services->get('CollectionFactory'), true));
+        $this->assertInstanceOf(Query::class, $generator->getAll($services->collectionFactory(), true));
         $this->assertSame(1, $this->mockConnection->calls['master']);
     }
 
     public function testGetByCriteriaWithArrayValueShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -141,14 +141,14 @@ class GeneratorTest extends TestCase
         );
         $this->assertInstanceOf(
             Query::class,
-            $generator->getByCriteria(['name' => ['Xavier', 'Olivier']], $services->get('CollectionFactory'), true)
+            $generator->getByCriteria(['name' => ['Xavier', 'Olivier']], $services->collectionFactory(), true)
         );
         $this->assertSame(1, $this->mockConnection->calls['master']);
     }
 
     public function testGetByCriteriaWithNullValueShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -159,7 +159,7 @@ class GeneratorTest extends TestCase
         );
         $this->assertInstanceOf(
             Query::class,
-            $generator->getByCriteria(['name' => null], $services->get('CollectionFactory'))
+            $generator->getByCriteria(['name' => null], $services->collectionFactory())
         );
         // atoum withAtLeastArguments: only the first argument is checked, loosely (==)
         $matchingCalls = array_filter(
@@ -171,7 +171,7 @@ class GeneratorTest extends TestCase
 
     public function testGetByCriteriaShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -182,7 +182,7 @@ class GeneratorTest extends TestCase
         );
         $this->assertInstanceOf(
             Query::class,
-            $generator->getByCriteria(['name' => 'Xavier'], $services->get('CollectionFactory'), true)
+            $generator->getByCriteria(['name' => 'Xavier'], $services->collectionFactory(), true)
         );
         $this->assertSame(1, $this->mockConnection->calls['master']);
     }
@@ -228,7 +228,7 @@ class GeneratorTest extends TestCase
 
     public function testGetByCriteriaWithArrayValueAndOrderShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -241,7 +241,7 @@ class GeneratorTest extends TestCase
             Query::class,
             $generator->getByCriteria(
                 ['name' => ['Xavier', 'Olivier']],
-                $services->get('CollectionFactory'),
+                $services->collectionFactory(),
                 true,
                 ['name' => 'ASC']
             )
@@ -251,7 +251,7 @@ class GeneratorTest extends TestCase
 
     public function testGetByCriteriaWithArrayValueAndOrderLimitShouldReturnAQuery()
     {
-        $services = new Services();
+        $services = new TingServices();
 
         $generator = new Generator(
             $this->mockConnection,
@@ -264,7 +264,7 @@ class GeneratorTest extends TestCase
             Query::class,
             $generator->getByCriteria(
                 ['name' => ['Xavier', 'Olivier']],
-                $services->get('CollectionFactory'),
+                $services->collectionFactory(),
                 true,
                 ['name' => 'ASC'],
                 1

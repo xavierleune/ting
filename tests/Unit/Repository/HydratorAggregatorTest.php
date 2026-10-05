@@ -29,7 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Repository\HydratorAggregator;
 use CCMBenchmark\Ting\Repository\Metadata;
-use CCMBenchmark\Ting\Services;
+use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
@@ -41,8 +41,8 @@ class HydratorAggregatorTest extends TestCase
 {
     public function testHydrate()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -66,9 +66,9 @@ class HydratorAggregatorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\City');
@@ -80,7 +80,7 @@ class HydratorAggregatorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
@@ -132,8 +132,8 @@ class HydratorAggregatorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new HydratorAggregator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->callableDataIs(fn ($result) => $result['c']);
         $hydrator->callableIdIs(fn ($result) => $result['bouh']->getId());
         $iterator = $hydrator->setResult($result)->getIterator();
@@ -153,8 +153,8 @@ class HydratorAggregatorTest extends TestCase
 
     public function testHydrateWithFinalize()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -178,9 +178,9 @@ class HydratorAggregatorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\City');
@@ -192,7 +192,7 @@ class HydratorAggregatorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
@@ -244,8 +244,8 @@ class HydratorAggregatorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new HydratorAggregator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->callableDataIs(fn ($result) => $result['c']);
         $hydrator->callableIdIs(fn ($result) => $result['bouh']->getId());
         $hydrator->callableFinalizeAggregate(function ($result, $aggregate) {
@@ -269,8 +269,8 @@ class HydratorAggregatorTest extends TestCase
 
     public function testHydrateWithoutRightSortShouldContinue()
     {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\Bouh');
@@ -294,9 +294,9 @@ class HydratorAggregatorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
 
-        $metadata = new Metadata($services->get('SerializerFactory'));
+        $metadata = new Metadata($services->serializerFactory());
         $metadata->setConnectionName('connectionName');
         $metadata->setDatabase('database');
         $metadata->setEntity('tests\fixtures\model\City');
@@ -308,7 +308,7 @@ class HydratorAggregatorTest extends TestCase
             'type'       => 'string'
         ]);
 
-        $services->get('MetadataRepository')->addMetadata('tests\fixtures\model\CityRepository', $metadata);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\CityRepository', $metadata);
 
         $mockMysqliResult = new MysqliResult([
             [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
@@ -360,8 +360,8 @@ class HydratorAggregatorTest extends TestCase
         $result->setDatabase('database');
 
         $hydrator = new HydratorAggregator();
-        $hydrator->setMetadataRepository($services->get('MetadataRepository'));
-        $hydrator->setUnitOfWork($services->get('UnitOfWork'));
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->callableDataIs(fn ($result) => $result['c']);
         $hydrator->callableIdIs(fn ($result) => $result['bouh']->getId());
         $iterator = $hydrator->setResult($result)->getIterator();
