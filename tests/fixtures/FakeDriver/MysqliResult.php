@@ -33,6 +33,9 @@ class MysqliResult implements ResultInterface
     protected $offset = 0;
     protected $data   = null;
     protected $fields = null;
+    protected $connectionName = null;
+    protected $database = null;
+    protected $objectToFetch = null;
 
     public function __construct(array $data = [])
     {
@@ -130,25 +133,30 @@ class MysqliResult implements ResultInterface
 
     public function setConnectionName(string $connectionName): static
     {
+        $this->connectionName = $connectionName;
         return $this;
     }
 
     public function setDatabase($database): static
     {
+        $this->database = $database;
         return $this;
     }
 
     public function getConnectionName(): ?string
     {
-
+        return $this->connectionName;
     }
 
     public function getDatabase(): ?string
     {
+        return $this->database;
     }
 
     public function setObjectToFetch(string $objectToFetch): static
     {
+        $this->objectToFetch = $objectToFetch;
+        return $this;
     }
 
     public function fetch_object($class_name = null)
