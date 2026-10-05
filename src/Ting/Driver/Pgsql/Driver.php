@@ -92,9 +92,13 @@ class Driver implements DriverInterface
     /**
      * Construct connection information
      */
-    public function connect(string $hostname, string $username, string $password, int $port): static
+    public function connect(string $hostname, ?string $username, ?string $password, int $port): static
     {
-        $this->dsn = 'host=' . $hostname . ' user=' . $username . ' password=' . $password . ' port=' . $port;
+        // Without user or password, libpq uses its defaults (current user, .pgpass)
+        $this->dsn = 'host=' . $hostname
+            . ($username !== null ? ' user=' . $username : '')
+            . ($password !== null ? ' password=' . $password : '')
+            . ' port=' . $port;
         return $this;
     }
 

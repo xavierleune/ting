@@ -118,6 +118,24 @@ class ConnectionPoolTest extends TestCase
         $this->assertSame($connectionPool->master('bouh', 'bouhDb'), $connectionPool->slave('bouh', 'bouhDb'));
     }
 
+    public function testConnectWithoutUserNorPasswordShouldReturnADriver()
+    {
+        $connectionPool = new ConnectionPool();
+        $connectionPool->setConfig(
+            [
+                'bouh' => [
+                    'namespace' => '\tests\fixtures\FakeDriver',
+                    'master'    => [
+                        'host'      => 'master',
+                        'port'      => 3306
+                    ]
+                ]
+            ]
+        );
+
+        $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->master('bouh', 'bouhDb'));
+    }
+
     public function testConnectShouldReturnADriver()
     {
         $connectionPool = new ConnectionPool();

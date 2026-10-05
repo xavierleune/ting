@@ -45,7 +45,7 @@ class Driver implements DriverInterface
         );
     }
 
-    public function connect(string $hostname, string $username, string $password, int $port): static
+    public function connect(string $hostname, ?string $username, ?string $password, int $port): static
     {
         return $this;
     }
