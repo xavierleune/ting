@@ -24,6 +24,7 @@
     * Fix Pgsql reads of a column without table (function, VALUES, CTE...) failing with a TypeError since 4.0.0-rc.1
     * Fix Pgsql Driver::execute() logging the rewritten SQL ($1) instead of the query with its named parameters since 4.0.0-rc.1
     * Fix Pgsql Driver::execute() never stopping the query log when the query fails
+    * Fix Mysqli prepared queries without result set (INSERT, UPDATE, DELETE) returning false on success since 4.0.0-rc.1; they return true again, as Pgsql
     * Security: prevent SQL injection in Pgsql Driver::getInsertedIdForSequence()
     * Include 3.13.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode)
     * Tests: migrate from atoum to PHPUnit

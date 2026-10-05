@@ -96,12 +96,9 @@ class Statement implements StatementInterface
             throw new QueryException($this->driverStatement->error, $this->driverStatement->errno);
         }
 
+        // Errors are handled above: false only means the statement has no result set (INSERT, UPDATE...)
         $result = $this->driverStatement->get_result();
-        if ($result === false) {
-            return false;
-        }
-
-        if ($collection instanceof CollectionInterface) {
+        if ($result !== false && $collection instanceof CollectionInterface) {
             return $this->setCollectionWithResult($result, $collection);
         }
 

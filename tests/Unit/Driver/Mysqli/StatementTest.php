@@ -204,7 +204,8 @@ class StatementTest extends TestCase
         $driverStatement = $this->createStub(MysqliStatement::class);
         $driverStatement->method('close')->willReturn(true);
 
-        $driverStatement->method('get_result')->willReturn(true);
+        // mysqli_stmt::get_result() returns false for a successful statement without result set (INSERT, UPDATE...)
+        $driverStatement->method('get_result')->willReturn(false);
         $driverStatement->errno = 0;
 
         $statement = new Statement(
