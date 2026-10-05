@@ -30,6 +30,7 @@ use CCMBenchmark\Ting\Serializer\BackedEnum;
 use CCMBenchmark\Ting\Serializer\RuntimeException;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\ColorsEnum;
+use tests\fixtures\PriorityEnum;
 
 class BackedEnumTest extends TestCase
 {
@@ -41,6 +42,17 @@ class BackedEnumTest extends TestCase
         $this->assertEquals(
             $color,
             $serializer->unserialize($serializer->serialize($color), ['enum' => ColorsEnum::class])
+        );
+    }
+
+    public function testSerializeAnIntBackedEnumShouldReturnAString()
+    {
+        $serializer = new BackedEnum();
+
+        $this->assertSame('3', $serializer->serialize(PriorityEnum::HIGH));
+        $this->assertSame(
+            PriorityEnum::HIGH,
+            $serializer->unserialize($serializer->serialize(PriorityEnum::HIGH), ['enum' => PriorityEnum::class])
         );
     }
 
