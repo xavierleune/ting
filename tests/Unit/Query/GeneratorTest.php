@@ -164,7 +164,7 @@ class GeneratorTest extends TestCase
         // atoum withAtLeastArguments: only the first argument is checked, loosely (==)
         $matchingCalls = array_filter(
             $this->mockQueryFactory->getCalls,
-            fn (array $args) => $args[0] == 'SELECT `id`, `population` FROM `table` WHERE name IS NULL'
+            fn (array $args) => $args[0] == 'SELECT `id`, `population` FROM `table` WHERE `name` IS NULL'
         );
         $this->assertCount(1, $matchingCalls);
     }
@@ -263,7 +263,27 @@ class GeneratorTest extends TestCase
         $generator->getByCriteria(['name' => 'Xavier'], $services->collectionFactory(), false, ['name' => 'UP'], 5);
 
         $this->assertSame(
-            'SELECT `id`, `population` FROM `table` WHERE name = :#name LIMIT 5',
+            'SELECT `id`, `population` FROM `table` WHERE `name` = :#name LIMIT 5',
+            $this->mockQueryFactory->getCalls[0][0]
+        );
+    }
+
+    public function testGetByCriteriaShouldEscapeTheColumnsOfTheWhereClause()
+    {
+        $services = new TingServices();
+
+        $generator = new Generator(
+            $this->mockConnection,
+            $this->mockQueryFactory,
+            '',
+            'table',
+            ['id', 'order']
+        );
+        // "order" is a reserved word: unescaped, the WHERE clause is invalid SQL
+        $generator->getByCriteria(['order' => 1, 'id' => [1, 2], 'name' => null], $services->collectionFactory());
+
+        $this->assertSame(
+            'SELECT `id`, `order` FROM `table` WHERE `order` = :#order AND `id` IN (:id__1,:id__2) AND `name` IS NULL',
             $this->mockQueryFactory->getCalls[0][0]
         );
     }
