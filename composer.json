@@ -32,8 +32,6 @@
     "require-dev": {
         "ext-pgsql": "*",
         "ext-mysqli": "*",
-        "atoum/atoum": "^4.0",
-        "atoum/stubs": "^2.0",
         "brick/geo": "^0.5.1",
 	    "pimple/pimple": "^3.0",
         "symfony/uid": "^7.0 || ^8.0",
@@ -57,6 +55,9 @@
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": [
+            "@putenv XDEBUG_MODE=off",
+            "phpunit"
+        ]
     }
 }

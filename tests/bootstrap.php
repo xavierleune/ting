@@ -28,3 +28,11 @@ require __DIR__ . '/../vendor/autoload.php';
 // Namespaced overrides of native functions must be declared before any code calling them runs:
 // PHP caches the resolved function per call site, so a late declaration would be silently ignored.
 require __DIR__ . '/Support/native_functions.php';
+
+// Xdebug's develop mode keeps references to the last thrown exceptions, and through their traces to the objects of
+// past tests: their destructors (e.g. Pgsql\Statement calling pg_query) then run in later tests, outside of the
+// overrides they relied on.
+if (\function_exists('xdebug_info') && \in_array('develop', xdebug_info('mode'), true)) {
+    fwrite(STDERR, "Warning: Xdebug develop mode can make tests fail randomly, run them with `composer test` "
+        . "(or XDEBUG_MODE=off).\n\n");
+}
