@@ -459,9 +459,15 @@ A relation takes the alias of the entities to inject (`AggregateFrom`), the alia
 * `RelationMany`: the method receives an array of all the distinct `from` entities related to the target;
 * `RelationOne`: the method receives a single entity.
 
-Relations can be added in any order. `callableFinalizeAggregate(callable $callableFinalizeAggregate)` is optional: it
+Relations can be added in any order: they are applied from the leaves to the root, so a setter receives entities whose
+own relations are already set (`setBooks()` gets books that already have their author). Several relations can share the
+same source, for instance a `RelationMany` and a `RelationOne` both fed by `book`.
+
+The root is the alias that receives entities without being given to any other one (`user` above): the collection yields
+one row per distinct root entity. `callableFinalizeAggregate(callable $callableFinalizeAggregate)` is optional: it
 receives each resulting row and returns what the collection yields. Without it, each row is an array holding the root
-entity (`['user' => User {...}]`). With it:
+entity, without the aliases given to another entity (`['user' => User {...}]`), plus the columns outside any relation.
+With it:
 
 ```text
 User {
@@ -485,6 +491,19 @@ Things to know:
   and its primary key columns must be selected;
 * rows don't need to be sorted, but the whole result is read and hydrated before the first row is returned: there is
   no lazy hydration.
+* the relations can't form a cycle: a bidirectional relation (`book` given to `user` and `user` given to `book`) or an
+  alias given to itself throws a `HydratorException` when the collection is iterated, since no order would let each
+  setter receive complete entities. Declare one direction and set the back reference in its setter:
+
+  ```php
+  public function setBooks(array $books): void
+  {
+      $this->books = $books;
+      foreach ($books as $book) {
+          $book->setUser($this);
+      }
+  }
+  ```
 
 ## Collections
 
