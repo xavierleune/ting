@@ -46,7 +46,7 @@ use CCMBenchmark\Ting\UnitOfWork;
 use Symfony\Contracts\Cache\CacheInterface;
 
 /**
- * @template T on \CCMBenchmark\Ting\Entity\NotifyPropertyInterface
+ * @template T entity type (not necessarily a NotifyPropertyInterface: read-only entities can use public properties)
  */
 abstract class Repository implements ResetInterface
 {

@@ -299,6 +299,31 @@ Type Hints and Strict Types
   - Parameter types (`string`, `array`, `?int`, etc.)
   - Nullable types where applicable
 
+The extension points you are the most likely to implement:
+
+* Loggers (ting_bundle's `DriverLogger` and `CacheLogger` included):
+  ```php
+  // DriverLoggerInterface
+  public function addConnection(string $name, string $connection, array $connectionConfig): void;
+  public function startQuery(string $sql, array $params, string $connection, string $database): void;
+  public function startPrepare(string $sql, string $connection, string $database): void;
+  public function startStatementExecute(string $statement, array $params = []): void;
+  public function stopQuery(): void;
+  public function stopPrepare(string $statement): void;
+  public function stopStatementExecute(string $statement): void;
+
+  // CacheLoggerInterface
+  public function startOperation(string $operation, array|string $keys): void;
+  public function stopOperation(bool $miss = false): void;
+  ```
+* Entities and listeners: `NotifyPropertyInterface::addPropertyListener(PropertyListenerInterface $listener): void`,
+  `PropertyListenerInterface::propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue,
+  mixed $newValue): void`. The `NotifyProperty` trait declares `protected array $listeners = []`: an entity using the
+  trait must not redeclare `$listeners` without this type.
+* Repositories: `Repository::getCollection(?HydratorInterface $hydrator = null): Collection`; an override must return
+  `Collection` (or a subclass), not `CollectionInterface`.
+* `SerializeInterface` and `UnserializeInterface` keep their 3.x signatures (no native return type).
+
 Example of updated method signatures:
 ```php
 // Before (3.x):
