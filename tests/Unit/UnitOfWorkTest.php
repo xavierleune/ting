@@ -514,6 +514,96 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
     }
 
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAFailedQueryShouldNotBeReplayedByTheNextProcess()
+    {
+        $failing = new Bouh();
+        $failing->setName('duplicate');
+        $other = new Bouh();
+        $other->setId(7);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($other);
+
+        $failOn = 'INSERT';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $failing): void {
+            $unitOfWork->pushSave($failing)->process();
+        }, 'Forced failure');
+        $this->assertFalse($unitOfWork->shouldBePersisted($failing));
+        $this->assertCount(1, $closed, 'the statement of the failed query is closed');
+
+        $failOn = null;
+        $other->setName('other');
+        $unitOfWork->pushSave($other)->process();
+        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+
+        // The failed entity can still be saved
+        $unitOfWork->pushSave($failing)->process();
+        $this->assertSame(['UPDATE', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(1, $failing->getId());
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAFailedQueryShouldLeaveTheEntitiesNotProcessedYetQueued()
+    {
+        $done = new Bouh();
+        $done->setId(1);
+        $failing = new Bouh();
+        $failing->setId(2);
+        $pending = new Bouh();
+        $pending->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        foreach ([$done, $failing, $pending] as $entity) {
+            $unitOfWork->manage($entity);
+        }
+        $done->setName('done');
+        $failing->setFirstname('failing');
+        $pending->setName('pending');
+        $unitOfWork->pushSave($done)->pushSave($failing)->pushSave($pending);
+
+        $failOn = 'boo_firstname';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork): void {
+            $unitOfWork->process();
+        }, 'Forced failure');
+        $this->assertFalse($unitOfWork->shouldBePersisted($done));
+        $this->assertFalse($unitOfWork->shouldBePersisted($failing));
+        $this->assertTrue($unitOfWork->isPropertyChanged($failing, 'firstname'), 'the changes of the failed entity are kept');
+        $this->assertTrue($unitOfWork->shouldBePersisted($pending));
+        $this->assertCount(1, $queries);
+
+        $failOn = null;
+        $unitOfWork->process();
+        $this->assertCount(2, $queries, 'only the pending entity is updated');
+        $this->assertStringContainsString('boo_name', $queries[1]);
+        $this->assertFalse($unitOfWork->shouldBePersisted($pending));
+
+        // Saving the failed entity again sends its changes
+        $unitOfWork->pushSave($failing)->process();
+        $this->assertCount(3, $queries);
+        $this->assertStringContainsString('boo_firstname', $queries[2]);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAFailedPrepareShouldRethrowItsException()
+    {
+        $metadataRepository = new MetadataRepository($this->services->serializerFactory());
+        $metadataRepository->addMetadata(
+            'tests\fixtures\model\BouhRepository',
+            BouhRepository::initMetadata($this->services->serializerFactory())
+        );
+        $connectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
+        // The real closeStatement() throws on a statement that was never prepared
+        $driver = $this->getMockBuilder(Driver::class)->onlyMethods(['prepare'])->getMock();
+        $driver->method('prepare')->willThrowException(new QueryException('Prepare failed'));
+        $connectionPool->method('primary')->willReturn($driver);
+        $unitOfWork = new UnitOfWork($connectionPool, $metadataRepository, $this->services->queryFactory());
+
+        $entity = new Bouh();
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $entity): void {
+            $unitOfWork->pushSave($entity)->process();
+        }, 'Prepare failed');
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
     /**
      * Builds a UnitOfWork on Bouh whose queries are recorded instead of executed.
      *

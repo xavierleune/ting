@@ -212,32 +212,46 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * Update flagged entities
      * Delete flagged entities
      *
+     * When a query fails, the entities already processed are done, the failing one is unqueued (its tracked
+     * changes are kept, so it can be saved again) and the following ones stay queued; the exception is rethrown.
+     *
      * @throws Exception
      * @throws QueryException
      */
     public function process(): void
     {
-        foreach ($this->entitiesShouldBePersisted as $details) {
-            switch ($details['state']) {
-                case self::STATE_MANAGED:
-                    $this->processManaged($details['entity']);
-                    break;
+        try {
+            foreach ($this->entitiesShouldBePersisted as $hash => $details) {
+                try {
+                    switch ($details['state']) {
+                        case self::STATE_MANAGED:
+                            $this->processManaged($details['entity']);
+                            break;
 
-                case self::STATE_NEW:
-                    $this->processNew($details['entity']);
-                    break;
+                        case self::STATE_NEW:
+                            $this->processNew($details['entity']);
+                            break;
 
-                case self::STATE_DELETE:
-                    $this->processDelete($details['entity']);
-                    break;
+                        case self::STATE_DELETE:
+                            $this->processDelete($details['entity']);
+                            break;
+                    }
+                } catch (\Throwable $exception) {
+                    // Otherwise every later process() would replay the failed query first
+                    unset($this->entitiesShouldBePersisted[$hash]);
+
+                    throw $exception;
+                }
+            }
+        } finally {
+            $statements = $this->statements;
+            $this->statements = [];
+            foreach ($statements as $statementName => $connections) {
+                foreach ($connections as $connection) {
+                    $connection->closeStatement($statementName);
+                }
             }
         }
-        foreach ($this->statements as $statementName => $connections) {
-            foreach ($connections as $connection) {
-                $connection->closeStatement($statementName);
-            }
-        }
-        $this->statements = [];
     }
 
     /**
@@ -274,8 +288,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $properties
                 );
 
+                $query->prepareExecute();
+                // Only a prepared statement can be closed
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
-                $query->prepareExecute()->execute();
+                $query->execute();
 
                 $this->entitiesChanged->offsetUnset($entity);
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
@@ -303,8 +319,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $this->queryFactory,
                     $entity
                 );
+                $query->prepareExecute();
+                // Only a prepared statement can be closed
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
-                $query->prepareExecute()->execute();
+                $query->execute();
 
                 $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
 
@@ -347,8 +365,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $properties,
                     $entity
                 );
+                $query->prepareExecute();
+                // Only a prepared statement can be closed
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
-                $query->prepareExecute()->execute();
+                $query->execute();
                 $this->detach($entity);
             },
             function () use ($entity): void {
