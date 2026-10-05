@@ -82,7 +82,10 @@ class Statement implements StatementInterface
             $values[] = $value;
         }
 
-        $this->driverStatement->bind_param($types, ...$values);
+        // bind_param('') throws a ValueError: a statement without placeholder has nothing to bind
+        if ($types !== '') {
+            $this->driverStatement->bind_param($types, ...$values);
+        }
 
         if ($this->logger !== null) {
             $this->logger->startStatementExecute($this->objectHash, $params);
