@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -32,7 +33,6 @@ use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Serializer\UnserializeInterface;
 use CCMBenchmark\Ting\UnitOfWork;
 use Generator;
-use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
 use WeakMap;
 
 /**
@@ -266,6 +266,7 @@ class Hydrator implements HydratorInterface
         $validEntities = []; // Entity marked as valid will fill an object
         // (a valid Entity is a entity with at less one property not null)
         $fromReferences = []; // Prevents from hydrating if an entity is already ref for a table
+        $rowReferences  = []; // Identity map key of each table of the row, false without a complete primary key
         foreach ($columns as $column) {
 
             // Bypass if an entity has already been hydrated with this column
@@ -297,15 +298,12 @@ class Hydrator implements HydratorInterface
             }
 
             if (isset($this->metadataList[$column['table']])) {
-
-                $id = '';
-                foreach ($this->metadataList[$column['table']]->getPrimaries() as $columnName => $primary) {
-                    if ($column['orgName'] === $columnName && $column['value'] !== null) {
-                        $id = $column['value'] . '-';
-                    }
-                }
-                
-                if ($id !== '' && $this->identityMap && isset($this->references[$ref = $column['table'] . '-' . $id]) === true) {
+                if (
+                    $this->identityMap
+                    && $this->metadataList[$column['table']]->hasColumn($column['orgName'])
+                    && ($ref = $rowReferences[$column['table']] ??= $this->referenceFromColumns($column['table'], $columns)) !== false
+                    && isset($this->references[$ref]) === true
+                ) {
                     // This entity was already created and stored into references
                     // If identityMap is enabled, reuse the same object
                     $result[$column['table']] = $this->references[$ref];
@@ -373,17 +371,9 @@ class Hydrator implements HydratorInterface
             }
 
             // It's a valid entity (unknown data are put in a value table 0)
-            if (\is_int($table) === false) {
-                $ref = $table . '-';
-                foreach ($this->metadataList[$table]->getPrimaries() as $primary) {
-                    try {
-                        $ref .= $this->metadataList[$table]->getEntityPropertyByFieldName($entity, $primary['fieldName']) . '-';
-                    } catch (UninitializedPropertyException) {
-                        // Skip primary if value not fetched
-                    }
-                }
-
-                if (isset($this->references[$ref]) === false && $this->identityMap) {
+            if (\is_int($table) === false && $this->identityMap) {
+                $ref = $rowReferences[$table] ??= $this->referenceFromColumns($table, $columns);
+                if ($ref !== false && isset($this->references[$ref]) === false) {
                     $this->references[$ref] = $entity;
                 }
             }
@@ -414,6 +404,42 @@ class Hydrator implements HydratorInterface
         }
 
         return $result;
+    }
+
+    /**
+     * Identity map key of the entity of $table in the row: every primary value, read from the columns
+     *
+     * @return string|false false when a primary of the table is missing from the row or null
+     */
+    private function referenceFromColumns(string $table, array $columns): string|false
+    {
+        $values = [];
+        foreach ($this->metadataList[$table]->getPrimaries() as $columnName => $primary) {
+            foreach ($columns as $column) {
+                if ($column['table'] === $table && $column['orgName'] === $columnName) {
+                    if ($column['value'] === null) {
+                        return false;
+                    }
+                    $values[] = $column['value'];
+                    continue 2;
+                }
+            }
+
+            return false;
+        }
+
+        return $values === [] ? false : $this->referenceKey($table, $values);
+    }
+
+    /**
+     * Key identifying an entity of $alias by its primary values, without collision between values
+     * (concatenated, ("a-b", "c") and ("a", "b-c") would share the same key)
+     *
+     * @param list<mixed> $primaryValues
+     */
+    protected function referenceKey(string $alias, array $primaryValues): string
+    {
+        return serialize([$alias, $primaryValues]);
     }
 
     /**

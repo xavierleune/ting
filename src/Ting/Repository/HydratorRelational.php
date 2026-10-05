@@ -159,7 +159,7 @@ final class HydratorRelational extends Hydrator
      */
     private function saveReference(string $alias, array $result): string
     {
-        $key = $alias . '-' . $this->getIdentifiers($alias, $result[$alias]);
+        $key = $this->getIdentifiers($alias, $result[$alias]);
 
         if (isset($this->referencesRelation[$key]) === false) {
             $this->referencesRelation[$key] = $result[$alias];
@@ -219,16 +219,16 @@ final class HydratorRelational extends Hydrator
                 );
             }
 
-            $keyResult = '';
+            $rootKeys = [];
             foreach ($roots as $root) {
-                $keyResult .= (isset($result[$root]) ? $this->saveReference($root, $result) : $root . '-') . '|';
+                $rootKeys[] = isset($result[$root]) ? $this->saveReference($root, $result) : null;
             }
 
             foreach ($sources as $source) {
                 unset($result[$source]);
             }
 
-            $results[$keyResult] ??= $result;
+            $results[serialize($rootKeys)] ??= $result;
         }
 
         $this->assignResourcesToReferences($relations);
@@ -271,15 +271,15 @@ final class HydratorRelational extends Hydrator
      */
     private function getIdentifiers($table, $entity): string
     {
-        $id = '';
+        $values = [];
         foreach ($this->metadataList[$table]->getPrimaries() as $primary) {
-            $id .= $this->metadataList[$table]->getEntityPropertyByFieldName($entity, $primary['fieldName']) . '-';
+            $values[] = $this->metadataList[$table]->getEntityPropertyByFieldName($entity, $primary['fieldName']);
         }
 
-        if ($id === '') {
+        if ($values === []) {
             throw new HydratorException(sprintf('No primary found for "%s"', $this->metadataList[$table]->getEntity()));
         }
 
-        return $id;
+        return $this->referenceKey($table, $values);
     }
 }

@@ -45,6 +45,7 @@ use tests\fixtures\model\CountryWithPublicPropertiesRepository;
 use function array_keys;
 use function array_map;
 use function array_values;
+use function in_array;
 
 use const MYSQLI_TYPE_VAR_STRING;
 
@@ -1085,6 +1086,64 @@ class HydratorRelationalTest extends TestCase
         $this->assertSame('Palaiseau', $rows[0]['bouh']->getCity()->getName());
         $this->assertSame(['Palaiseau', 'Montbéliard', 'Luxiol'], $names($rows[1]['bouh']->getCities()));
         $this->assertSame('Luxiol', $rows[1]['bouh']->getCity()->getName());
+    }
+
+    public function testHydrateShouldIdentifyRootsByTheirWholeCompositeKey(): void
+    {
+        $services = new TingServices();
+        $tables = [
+            ['tests\fixtures\model\Bouh', 'T_BOUH_BOO', 'b', ['name' => 'boo_name', 'firstname' => 'boo_firstname'], ['name', 'firstname']],
+            ['tests\fixtures\model\City', 'T_CITY_CIT', 'c', ['id' => 'cit_id', 'name' => 'cit_name'], ['id']],
+        ];
+        $fields = [];
+        foreach ($tables as [$entity, $table, $alias, $columns, $primaries]) {
+            $metadata = new Metadata($services->serializerFactory());
+            $metadata->setConnectionName('connectionName');
+            $metadata->setDatabase('database');
+            $metadata->setEntity($entity);
+            $metadata->setTable($table);
+            foreach ($columns as $fieldName => $columnName) {
+                $metadata->addField([
+                    'primary'    => in_array($fieldName, $primaries, true),
+                    'fieldName'  => $fieldName,
+                    'columnName' => $columnName,
+                    'type'       => 'string',
+                ]);
+
+                $field = new \stdClass();
+                $field->name     = $columnName;
+                $field->orgname  = $columnName;
+                $field->table    = $alias;
+                $field->orgtable = $table;
+                $field->type     = MYSQLI_TYPE_VAR_STRING;
+                $fields[] = $field;
+            }
+            $services->metadataRepository()->addMetadata($entity . 'Repository', $metadata);
+        }
+
+        // With "-" between the values, both keys of b are "Jean-Pierre-Paul-"
+        $mockMysqliResult = new MysqliResult([['Jean', 'Pierre-Paul', '1', 'Paris'], ['Jean-Pierre', 'Paul', '2', 'Lyon']]);
+        $mockMysqliResult->setFields($fields);
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new HydratorRelational();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('b'), 'citiesAre'));
+
+        $rows = iterator_to_array($hydrator->setResult($result)->getIterator(), false);
+
+        $this->assertSame(
+            [['Jean', 'Pierre-Paul', ['Paris']], ['Jean-Pierre', 'Paul', ['Lyon']]],
+            array_map(static fn (array $row) => [
+                $row['b']->getName(),
+                $row['b']->getFirstname(),
+                array_map(static fn ($city) => $city->getName(), array_values($row['b']->getCities())),
+            ], $rows)
+        );
     }
 
     public function testHydrateRejectsABidirectionalRelation(): void
