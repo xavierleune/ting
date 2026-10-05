@@ -332,10 +332,19 @@ The criteria are combined with `AND`. Each value is converted for the database w
 | object                            | with a serializer                                                 | serialized, `=` (or element of the `IN` list) |
 | `Stringable` object               | without serializer                                                | as is (the driver casts it to string)         |
 | other object                      | without serializer                                                | `ValueException`                              |
-| scalar (string, int, float, bool) | any                                                               | as is                                         |
+| scalar (string, int, float, bool) | serializer implementing `Serializer\ScalarValueInterface` (`Ip`, `Boolean`) | serialized, `=` (or element of the `IN` list) |
+| scalar (string, int, float, bool) | other fields                                                      | as is                                         |
 
 So an enum, a `DateTime` or a `Uuid` can be passed as is for a field with the matching serializer (or type), and a
-database value (`CityStatus::Active->value`, a formatted date) still works. The serialize options of the field
+database value (`CityStatus::Active->value`, a formatted date) still works.
+
+A serializer whose PHP value is a scalar implements the marker interface `CCMBenchmark\Ting\Serializer\ScalarValueInterface`:
+`Ip` (`'10.0.0.1'`, stored as an integer) and the `Boolean` serializers of the drivers (`true` / `false`, stored as
+`1` / `0` or `'t'` / `'f'`). For such a field, a scalar is the PHP value and goes through the serializer, exactly as
+`save()` stores it: `getBy(['ip' => '10.0.0.1'])` compares the column with `167772161`, and
+`getBy(['active' => false])` works with PostgreSQL (`false` sent as is would be an empty string). The database value
+is no longer accepted: `Ip` throws a `Serializer\RuntimeException` for `167772161`, and a value the serializer
+converts to `NULL` (`'t'` or `1` for a `Boolean` field) throws a `ValueException` instead of matching no row. The serialize options of the field
 (`serializer_options.serialize`) are used. `get()` with a single value (one primary key) follows the same rules.
 
 `null` or a nested array inside an `IN` list throws a `ValueException` as well: an `IN` list never matches `NULL`.

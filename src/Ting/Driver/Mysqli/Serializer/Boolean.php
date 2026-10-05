@@ -25,9 +25,10 @@
 
 namespace CCMBenchmark\Ting\Driver\Mysqli\Serializer;
 
+use CCMBenchmark\Ting\Serializer\ScalarValueInterface;
 use CCMBenchmark\Ting\Serializer\SerializerInterface;
 
-class Boolean implements SerializerInterface
+class Boolean implements SerializerInterface, ScalarValueInterface
 {
     /**
      * @param mixed $toSerialize

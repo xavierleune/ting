@@ -31,6 +31,7 @@ use CCMBenchmark\Ting\Serializer\DateTime;
 use CCMBenchmark\Ting\Serializer\DateTimeImmutable;
 use CCMBenchmark\Ting\Serializer\DateTimeZone;
 use CCMBenchmark\Ting\Serializer\Json;
+use CCMBenchmark\Ting\Serializer\ScalarValueInterface;
 use CCMBenchmark\Ting\Serializer\Ip;
 use CCMBenchmark\Ting\Serializer\Geometry;
 use CCMBenchmark\Ting\Serializer\SerializerInterface;
@@ -601,7 +602,7 @@ class Metadata
      * - an array is serialized as a whole when the serializer of the field implements ArrayValueInterface,
      *   otherwise each element is converted (IN list);
      * - an object is serialized by the serializer of the field (a Stringable object without serializer is sent as is);
-     * - a scalar is sent as is.
+     * - a scalar is serialized when the serializer of the field implements ScalarValueInterface, otherwise sent as is.
      *
      * @param Field $field
      * @throws ValueException
@@ -663,7 +664,22 @@ class Metadata
         string $context
     ): mixed {
         if (is_object($value) === false) {
-            return $value;
+            if ($serializer instanceof ScalarValueInterface === false) {
+                return $value;
+            }
+
+            $databaseValue = $serializer->serialize($value, $field['serializer_options']['serialize'] ?? []);
+            if ($databaseValue === null) {
+                // Compared with "=", NULL would never match: reject the value instead of returning no row
+                throw new ValueException(sprintf(
+                    'Invalid value %s for property "%s" in %s: the serializer of the field converts it to NULL',
+                    var_export($value, true),
+                    $field['fieldName'],
+                    $context
+                ));
+            }
+
+            return $databaseValue;
         }
 
         if ($serializer === null) {
