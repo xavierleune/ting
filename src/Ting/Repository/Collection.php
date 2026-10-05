@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -48,6 +49,14 @@ class Collection implements CollectionInterface, JsonSerializable
     protected bool $fromCache = false;
 
     /**
+     * First item of the last iteration: first() must not move the cursor of an iteration in progress
+     * (a result has one cursor, shared by every iteration)
+     */
+    private mixed $first = null;
+
+    private bool $hasFirst = false;
+
+    /**
      * @param HydratorInterface<T>|null $hydrator
      */
     public function __construct(?HydratorInterface $hydrator = null)
@@ -59,6 +68,8 @@ class Collection implements CollectionInterface, JsonSerializable
     {
         $this->result = $result;
         $this->hydrator->setResult($result);
+        $this->first = null;
+        $this->hasFirst = false;
     }
 
     /**
@@ -120,14 +131,12 @@ class Collection implements CollectionInterface, JsonSerializable
             return null;
         }
 
-        $iterator = $this->getIterator();
+        if ($this->hasFirst === false) {
+            // Starting an iteration stores its first item
+            $this->getIterator()->current();
+        }
 
-        /**
-         * Some iterator need to be rewind to use current
-         */
-        $iterator->rewind();
-
-        return $iterator->current();
+        return $this->first;
     }
 
 
@@ -141,7 +150,16 @@ class Collection implements CollectionInterface, JsonSerializable
             return;
         }
 
-        yield from $this->hydrator->getIterator();
+        $isFirst = true;
+        foreach ($this->hydrator->getIterator() as $key => $item) {
+            if ($isFirst) {
+                $this->first = $item;
+                $this->hasFirst = true;
+                $isFirst = false;
+            }
+
+            yield $key => $item;
+        }
     }
 
     public function count(): int
