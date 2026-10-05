@@ -142,7 +142,15 @@ class Statement implements StatementInterface
      */
     protected function close(): void
     {
-        pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"');
+        if ($this->connection === null) {
+            return;
+        }
+
+        try {
+            pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"');
+        } catch (\Error) {
+            // The connection is closed (close(), reconnect()): the prepared statement is gone with it
+        }
     }
 
     /**
