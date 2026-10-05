@@ -27,57 +27,38 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\HydratorValueObject;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\FakeDriver\MysqliResult;
-use tests\fixtures\ValueObject\Bouh;
+use tests\fixtures\ValueObject\Person;
 
 class HydratorValueObjectTest extends TestCase
 {
-    public function testHydrateShouldReturnBouhObject()
+    public function testHydrateShouldReturnTheValueObject()
     {
-        $data = ['Sylvain', 'Robez-Masson'];
-        $mockMysqliResult = $this->getMockBuilder(MysqliResult::class)
-            ->setConstructorArgs([[$data]])
-            ->onlyMethods(['fetch_object'])
-            ->getMock();
-        $mockMysqliResult->setFieldsCallback(function () {
-            $fields = [];
-            $stdClass = new \stdClass();
-            $stdClass->name     = 'firstname';
-            $stdClass->orgname  = 'boo_firstname';
-            $stdClass->table    = 'bouh';
-            $stdClass->orgtable = 'T_BOUH_BOO';
-            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
-            $fields[] = $stdClass;
+        $hydrator = new HydratorValueObject(Person::class);
+        $person = $hydrator->setResult($this->createResult())->getIterator()->current();
 
-            $stdClass = new \stdClass();
-            $stdClass->name     = 'name';
-            $stdClass->orgname  = 'boo_name';
-            $stdClass->table    = 'bouh';
-            $stdClass->orgtable = 'T_BOUH_BOO';
-            $stdClass->type     = MYSQLI_TYPE_VAR_STRING;
-            $fields[] = $stdClass;
-            return $fields;
-        });
+        $this->assertInstanceOf(Person::class, $person);
+        $this->assertSame('Sylvain', $person->getFirstname());
+        // Properties are set before the constructor runs, which receives no argument
+        $this->assertSame('Sylvain Robez-Masson', $person->getFullName());
+    }
 
-        $mockMysqliResult->expects($this->once())
-            ->method('fetch_object')
-            ->willReturnCallback(function () use ($data) {
-                return new Bouh(...$data);
-            });
+    public function testHydrateShouldGiveTheSameObjectsWithAndWithoutCache()
+    {
+        $withoutCache = new Collection(new HydratorValueObject(Person::class));
+        $withoutCache->set($this->createResult());
 
-        $result = new Result();
-        $result->setResult($mockMysqliResult);
-        $result->setConnectionName('connectionName');
-        $result->setDatabase('database');
+        // What a cached query stores on a miss, and rebuilds on a hit
+        $missed = new Collection(new HydratorValueObject(Person::class));
+        $missed->set($this->createResult());
+        $fromCache = new Collection(new HydratorValueObject(Person::class));
+        $fromCache->fromCache(unserialize(serialize($missed->toCache())));
 
-        $hydrator = new HydratorValueObject(Bouh::class);
-        $iterator = $hydrator->setResult($result)->getIterator();
-        $bouh = $iterator->current();
-        $this->assertInstanceOf(Bouh::class, $bouh);
-        $this->assertSame('Robez-Masson', $bouh->getName());
-        $this->assertSame('Sylvain', $bouh->getFirstname());
+        $this->assertTrue($fromCache->isFromCache());
+        $this->assertEquals(iterator_to_array($withoutCache), iterator_to_array($fromCache));
     }
 
     public function testCountShouldReturn2()
@@ -85,8 +66,32 @@ class HydratorValueObjectTest extends TestCase
         $result = $this->createStub(Result::class);
         $result->method('getNumRows')->willReturn(2);
 
-        $hydrator = new HydratorValueObject(Bouh::class);
+        $hydrator = new HydratorValueObject(Person::class);
         $hydrator->setResult($result);
         $this->assertSame(2, $hydrator->count());
+    }
+
+    private function createResult(): Result
+    {
+        $field = function (string $name, string $column): \stdClass {
+            $field = new \stdClass();
+            $field->name     = $name;
+            $field->orgname  = $column;
+            $field->table    = 'p';
+            $field->orgtable = 'T_PERSON';
+            $field->type     = MYSQLI_TYPE_VAR_STRING;
+
+            return $field;
+        };
+
+        $result = new Result();
+        $result->setResult(
+            (new MysqliResult([['Sylvain', 'Robez-Masson']]))
+                ->setFields([$field('firstname', 'per_firstname'), $field('name', 'per_name')])
+        );
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        return $result;
     }
 }

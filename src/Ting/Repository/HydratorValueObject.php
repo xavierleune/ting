@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -31,7 +32,7 @@ use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\UnitOfWork;
 
 /**
- * @template T
+ * @template T of object
  *
  * @template-implements HydratorInterface<T>
  */
@@ -42,7 +43,7 @@ class HydratorValueObject implements HydratorInterface
      */
     protected string $objectToHydrate;
     /**
-     * @var ResultInterface<T>
+     * @var ResultInterface<list<array{name: string, value: mixed}>>|null rows as formatted by the driver
      */
     protected ?ResultInterface $result = null;
 
@@ -60,11 +61,35 @@ class HydratorValueObject implements HydratorInterface
      */
     public function getIterator(): \Generator
     {
-        $this->result->setObjectToFetch($this->objectToHydrate);
+        $class = new \ReflectionClass($this->objectToHydrate);
+        $constructor = $class->getConstructor();
 
         foreach ($this->result as $key => $row) {
-            yield $key => $row;
+            yield $key => $this->hydrate($class, $constructor, $row);
         }
+    }
+
+    /**
+     * Same rules as the native fetch_object() functions: each column is written to the property named after the column
+     * (or its alias) whatever its visibility, then the constructor is called without arguments
+     *
+     * @param \ReflectionClass<T> $class
+     * @param list<array{name: string, value: mixed}> $row columns as formatted by the driver
+     * @return T
+     */
+    private function hydrate(\ReflectionClass $class, ?\ReflectionMethod $constructor, array $row): object
+    {
+        $object = $class->newInstanceWithoutConstructor();
+        foreach ($row as $column) {
+            if ($class->hasProperty($column['name'])) {
+                $class->getProperty($column['name'])->setValue($object, $column['value']);
+            } else {
+                $object->{$column['name']} = $column['value'];
+            }
+        }
+        $constructor?->invoke($object);
+
+        return $object;
     }
 
     /**

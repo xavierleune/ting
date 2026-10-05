@@ -159,8 +159,8 @@ Columns with the same name overwrite each other (`u.id` and `b.id` both become `
 ## HydratorValueObject
 
 `HydratorValueObject` hydrates instances of any class, without metadata: a DTO, a read model, a projection. It takes
-the class name and asks the driver to build the objects itself, through `ResultInterface::setObjectToFetch()`
-(`mysqli_result::fetch_object()` with MySQL, `pg_fetch_object()` with PostgreSQL).
+the class name and builds one object per row, the same way whether the result comes from the database or from the
+[cache](cache.md).
 
 ```php
 namespace App\ReadModel;
@@ -198,13 +198,15 @@ foreach ($this->getSummaries() as $summary) {
 }
 ```
 
-Rules come from the native `fetch_object()` functions:
+Rules, the same as the native `fetch_object()` functions:
 
-* each column is written to the property named after the column or its alias, so alias the columns to match the
-  property names; a column without matching property creates a dynamic property (deprecated since PHP 8.2);
+* each column is written to the property named after the column or its alias, whatever its visibility, so alias the
+  columns to match the property names; a column without matching property creates a dynamic property (deprecated
+  since PHP 8.2);
 * properties are set **before** the constructor is called, and the constructor receives no argument: give the class
   no constructor, or one without required parameters;
-* Ting serializers are not applied: values are the ones returned by the driver.
+* Ting serializers are not applied: values are typed by the driver as for entities (with MySQL, integers and floats,
+  `DECIMAL` as float; with PostgreSQL, strings).
 
 The objects are not entities: the unit of work doesn't manage them.
 
