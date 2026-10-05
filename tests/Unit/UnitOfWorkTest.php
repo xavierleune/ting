@@ -318,6 +318,31 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testProcessShouldTriggerNoDeprecation()
+    {
+        $entity = new Bouh();
+        $metadataRepository = new MetadataRepository($this->services->get('SerializerFactory'));
+        $metadataRepository->addMetadata(
+            'tests\fixtures\model\BouhRepository',
+            BouhRepository::initMetadata($this->services->get('SerializerFactory'))
+        );
+
+        [$mockConnectionPool, $mockQueryFactory] = $this->createProcessMocks(true);
+        $unitOfWork = new UnitOfWork($mockConnectionPool, $metadataRepository, $mockQueryFactory);
+
+        $deprecations = $this->collectDeprecations(function () use ($unitOfWork, $entity): void {
+            // insert, then update of the primary key, then delete
+            $unitOfWork->pushSave($entity)->process();
+            $entity->setId(2);
+            $entity->setName('newName');
+            $unitOfWork->pushSave($entity)->process();
+            $unitOfWork->pushDelete($entity)->process();
+        });
+
+        $this->assertSame([], $deprecations);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testTryingToProcessAnEntityWithoutRepositoryShouldRaiseAnException()
     {
         $entity = new Bouh();

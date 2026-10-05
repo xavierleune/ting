@@ -238,7 +238,7 @@ abstract class Repository implements ResetInterface
     /**
      * Retrieve one object from database
      *
-     * @param $primariesKeyValue array|int|string column => value or if one primary : just the value
+     * @param $primariesKeyValue array|int|string property => value or if one primary : just the value
      * @param bool $forceMaster
      * @return T|null
      */
@@ -278,8 +278,9 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * @param array $criteria
+     * @param array $criteria property => value (an array of values is an IN list)
      * @param bool  $forceMaster
+     * @param array<string, string> $order property => ASC|DESC
      * @return CollectionInterface<T>
      */
     public function getBy(array $criteria, $forceMaster = false, array $order = [], int $limit = 0)
@@ -298,7 +299,7 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * @param array $criteria
+     * @param array $criteria property => value (an array of values is an IN list)
      * @param bool  $forceMaster
      * @return T|null
      */
