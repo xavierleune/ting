@@ -241,7 +241,8 @@ class Result implements ResultInterface
             if ($match['table'] !== '') {
                 $stdClass->table = strtolower($match['table']);
             } elseif ($match['complex'] === false) {
-                $stdClass->table = $tableToAlias[$stdClass->orgtable];
+                // No table for a column from a function, VALUES, a CTE...
+                $stdClass->table = $tableToAlias[$stdClass->orgtable] ?? '';
             } else {
                 $stdClass->table = $stdClass->orgtable;
             }

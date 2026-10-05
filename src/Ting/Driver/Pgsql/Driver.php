@@ -176,7 +176,7 @@ class Driver implements DriverInterface
      */
     public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): string|int|bool|array|CollectionInterface|null
     {
-        [$sql, $paramsOrder] = $this->convertParameters($sql);
+        [$convertedSql, $paramsOrder] = $this->convertParameters($sql);
 
         $this->validateConnection();
 
@@ -193,22 +193,19 @@ class Driver implements DriverInterface
         }
 
         if ($values === []) {
-            $result = pg_query($this->connection, $sql);
-            if ($result === false) {
-                throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $sql . ')');
-            }
-            $this->result = $result;
+            $result = pg_query($this->connection, $convertedSql);
         } else {
-            $result = pg_query_params($this->connection, $sql, $values);
-            if ($result === false) {
-                throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $sql . ')');
-            }
-            $this->result = $result;
+            $result = pg_query_params($this->connection, $convertedSql, $values);
         }
 
         if ($this->logger !== null) {
             $this->logger->stopQuery();
         }
+
+        if ($result === false) {
+            throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $convertedSql . ')');
+        }
+        $this->result = $result;
 
 
         if (!$collection instanceof CollectionInterface) {
@@ -219,7 +216,7 @@ class Driver implements DriverInterface
             return $resultStatus;
         }
 
-        return $this->setCollectionWithResult($sql, $collection);
+        return $this->setCollectionWithResult($convertedSql, $collection);
     }
 
     /**
