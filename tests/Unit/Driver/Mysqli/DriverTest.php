@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Driver\Mysqli;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\Exception;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
+use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
@@ -397,6 +398,23 @@ class DriverTest extends TestCase
                 $collection
             )
         );
+    }
+
+    public function testDriverWithoutNameNorDatabaseShouldExecuteAndPrepare()
+    {
+        $driverFake = $this->createStub(Mysqli::class);
+        $driverFake->error = '';
+        $driverFake->method('query')->willReturn((new MysqliResult([]))->setFields([]));
+        $driverStatement = $this->createStub(MysqliStatement::class);
+        $driverStatement->method('close')->willReturn(true);
+        $driverFake->method('prepare')->willReturn($driverStatement);
+
+        // Used directly, without ConnectionPool (which always sets them)
+        $driver = new Driver($driverFake);
+        $driver->setLogger(new FakeDriverLogger());
+
+        $this->assertInstanceOf(Collection::class, $driver->execute('SELECT 1', [], new Collection()));
+        $this->assertInstanceOf(Statement::class, $driver->prepare('SELECT 1'));
     }
 
     public function testExecuteShouldThrowExceptionOnErrorWithQuery()

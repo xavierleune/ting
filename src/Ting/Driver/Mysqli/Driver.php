@@ -44,7 +44,7 @@ use mysqli_sql_exception;
 
 class Driver implements DriverInterface
 {
-    protected string $name;
+    protected string $name = '';
 
     /**
      * @var mysqli_driver|null $driver
@@ -56,7 +56,7 @@ class Driver implements DriverInterface
      */
     protected $connection = null;
 
-    protected ?string $currentDatabase = null;
+    protected string $currentDatabase = '';
 
     protected ?string $currentCharset = null;
 

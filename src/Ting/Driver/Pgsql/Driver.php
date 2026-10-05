@@ -42,7 +42,7 @@ class Driver implements DriverInterface
     /**
      * @var string
      */
-    protected $name;
+    protected string $name = '';
 
     protected string $database  = '';
 
