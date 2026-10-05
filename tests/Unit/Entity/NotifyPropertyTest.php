@@ -29,6 +29,9 @@ namespace CCMBenchmark\Ting\Tests\Unit\Entity;
 use CCMBenchmark\Ting\Entity\PropertyListenerInterface;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\model\Bouh;
+use tests\fixtures\model\TrackedChild;
+use tests\fixtures\model\TrackedChildOfUntracked;
+use tests\fixtures\model\UntrackedBase;
 
 class NotifyPropertyTest extends TestCase
 {
@@ -65,19 +68,72 @@ class NotifyPropertyTest extends TestCase
         $entity->addPropertyListener($mockListener);
         $entity->addPropertyListener($mockListener2);
 
+        // Mangled names, as serialize() writes them without __serialize()
         $expected = [
-            'id' => 20,
-            'firstname' => null,
-            'name' => 'Xavier',
-            'enabled' => null,
-            'price' => null,
-            'roles' => ['USER'],
-            'city' => null,
-            'retrievedTime' => null,
-            'originalCity' => null,
-            'cities' => [],
+            "\0*\0id" => 20,
+            "\0*\0firstname" => null,
+            "\0*\0name" => 'Xavier',
+            "\0*\0enabled" => null,
+            "\0*\0price" => null,
+            "\0*\0roles" => ['USER'],
+            "\0*\0city" => null,
+            "\0*\0retrievedTime" => null,
+            "\0*\0originalCity" => null,
+            "\0*\0cities" => [],
         ];
         $this->assertSame($expected, $entity->__serialize());
+    }
+
+    public function testUnserializeShouldRestoreThePrivatePropertiesOfTheParentAndChildClasses()
+    {
+        $entity = new TrackedChild();
+        $entity->setOwner('owner');
+        $entity->setTitle('title');
+        $listener = $this->createMock(PropertyListenerInterface::class);
+        $listener->expects($this->never())->method('propertyChanged');
+        $entity->addPropertyListener($listener);
+
+        $copy = unserialize(serialize($entity));
+
+        $this->assertSame('owner', $copy->getOwner());
+        $this->assertSame('title', $copy->getTitle());
+        $copy->setTitle('other');
+    }
+
+    public function testUnserializeShouldRestoreThePrivatePropertiesOfAParentWithoutTheTrait()
+    {
+        $entity = new TrackedChildOfUntracked();
+        $entity->setSecret('secret');
+        $entity->setTitle('title');
+        $entity->addPropertyListener($this->createStub(PropertyListenerInterface::class));
+
+        $copy = unserialize(serialize($entity));
+
+        $this->assertSame('secret', $copy->getSecret());
+        $this->assertSame('title', $copy->getTitle());
+    }
+
+    public function testUnserializeShouldReadAnEntitySerializedWithUnmangledNames()
+    {
+        // As written before 4.0.0: get_object_vars() in the scope of the trait
+        $serialized = 'O:25:"tests\\fixtures\\model\\Bouh":2:{s:2:"id";i:20;s:4:"name";s:6:"Xavier";}';
+
+        $copy = unserialize($serialized);
+
+        $this->assertSame(20, $copy->getId());
+        $this->assertSame('Xavier', $copy->getName());
+    }
+
+    public function testDebugInfoShouldExposeThePrivatePropertiesOfTheParentAndChildClasses()
+    {
+        $entity = new TrackedChildOfUntracked();
+        $entity->setSecret('secret');
+        $entity->setTitle('title');
+
+        $this->assertSame(
+            ["\0" . UntrackedBase::class . "\0secret" => 'secret', "\0" . TrackedChildOfUntracked::class . "\0title" => 'title'],
+            $entity->__debugInfo()
+        );
     }
 
     public function testDebugInfoShouldNotExposeListeners()
@@ -88,7 +144,7 @@ class NotifyPropertyTest extends TestCase
 
         $debugInfo = $entity->__debugInfo();
 
-        $this->assertArrayNotHasKey('listeners', $debugInfo);
-        $this->assertSame('Xavier', $debugInfo['name']);
+        $this->assertArrayNotHasKey("\0*\0listeners", $debugInfo);
+        $this->assertSame('Xavier', $debugInfo["\0*\0name"]);
     }
 }
