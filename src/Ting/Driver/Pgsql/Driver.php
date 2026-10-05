@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -362,7 +363,9 @@ class Driver implements DriverInterface
             throw new TransactionException('Cannot start another transaction');
         }
         $this->validateConnection();
-        pg_query($this->connection, 'BEGIN');
+        if (pg_query($this->connection, 'BEGIN') === false) {
+            throw new TransactionException('Cannot start transaction: ' . pg_last_error($this->connection));
+        }
         $this->transactionOpened = true;
     }
 
@@ -376,8 +379,18 @@ class Driver implements DriverInterface
             throw new TransactionException('Cannot commit no transaction');
         }
         $this->validateConnection();
-        pg_query($this->connection, 'COMMIT');
+        // Even when the COMMIT fails, the transaction is over: rolled back by the server or lost with the connection
         $this->transactionOpened = false;
+        $result = pg_query($this->connection, 'COMMIT');
+        if ($result === false) {
+            throw new TransactionException('Cannot commit transaction: ' . pg_last_error($this->connection));
+        }
+        // The COMMIT of a transaction aborted by a failed statement succeeds, but answers ROLLBACK
+        if (pg_result_status($result, \PGSQL_STATUS_STRING) !== 'COMMIT') {
+            throw new TransactionException(
+                'Cannot commit transaction: the transaction was aborted and has been rolled back'
+            );
+        }
     }
 
     /**
@@ -390,8 +403,10 @@ class Driver implements DriverInterface
             throw new TransactionException('Cannot rollback no transaction');
         }
         $this->validateConnection();
-        pg_query($this->connection, 'ROLLBACK');
         $this->transactionOpened = false;
+        if (pg_query($this->connection, 'ROLLBACK') === false) {
+            throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($this->connection));
+        }
     }
 
     /**
