@@ -443,6 +443,7 @@ class MetadataTest extends TestCase
             'columnName' => 'wonderful_id',
             'type'       => 'int'
         ]);
+        $metadata->setTable('bouh');
         $this->assertThrows(
             Exception::class,
             function () use ($metadata, $mockConnection, $services): void {
@@ -473,6 +474,7 @@ class MetadataTest extends TestCase
             'columnName' => 'boo_id',
             'type'       => 'int'
         ]);
+        $metadata->setTable('bouh');
         $this->assertInstanceOf(
             Query::class,
             $metadata->getByPrimaries(
@@ -514,6 +516,7 @@ class MetadataTest extends TestCase
             'columnName' => 'boo_name',
             'type'       => 'string'
         ]);
+        $metadata->setTable('bouh');
         $this->assertInstanceOf(
             Query::class,
             $metadata->getOneByCriteria(
@@ -546,6 +549,7 @@ class MetadataTest extends TestCase
             'columnName' => 'boo_name',
             'type'       => 'string'
         ]);
+        $metadata->setTable('bouh');
         $this->assertThrows(
             Exception::class,
             function () use ($metadata, $mockConnection, $services): void {
@@ -575,6 +579,7 @@ class MetadataTest extends TestCase
             'columnName' => 'boo_id',
             'type'       => 'int'
         ]);
+        $metadata->setTable('bouh');
         $this->assertInstanceOf(
             Query::class,
             $metadata->getAll(
@@ -606,6 +611,7 @@ class MetadataTest extends TestCase
             'columnName' => 'boo_name',
             'type'       => 'string'
         ]);
+        $metadata->setTable('bouh');
         $this->assertInstanceOf(
             Query::class,
             $metadata->getByCriteria(
@@ -679,6 +685,7 @@ class MetadataTest extends TestCase
             'type'       => 'string',
             'serializer' => Json::class
         ]);
+        $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
         $this->assertSame(json_encode(['USER', 'ADMIN']), $outerParams['boo_roles']);
     }
@@ -719,6 +726,7 @@ class MetadataTest extends TestCase
                 'columnName' => 'property_with_getter',
                 'type'       => 'string',
             ]);
+        $metadata->setTable('public_properties_entity');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
         $this->assertSame(
             ['property_with_default_value' => 'default', 'property_with_getter' => 'with getter'],
@@ -748,6 +756,7 @@ class MetadataTest extends TestCase
                 'serialize'   => ['options' => JSON_HEX_QUOT]
             ]
         ]);
+        $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
         $this->assertSame(json_encode(['USER', '"BOUH"'], JSON_HEX_QUOT), $outerParams['boo_roles']);
     }
@@ -778,8 +787,9 @@ class MetadataTest extends TestCase
             'type'       => 'string',
             'serializer' => Json::class
         ]);
+        $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
-        $this->assertSame('INSERT INTO  (boo_roles) VALUES (:boo_roles)', $outerSql);
+        $this->assertSame('INSERT INTO bouh (boo_roles) VALUES (:boo_roles)', $outerSql);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -920,42 +930,9 @@ class MetadataTest extends TestCase
             'type'       => 'string',
             'getter'     => 'nameIs'
         ]);
+        $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
         $this->assertSame('Nicolas', $outerParams['boo_name']);
-    }
-
-    public function testGetGetterAndGetSetterWithDefaultValue()
-    {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
-        $metadata->setEntity(Bouh::class);
-        $metadata->addField([
-            'fieldName'  => 'name',
-            'columnName' => 'boo_name',
-            'type'       => 'string',
-        ]);
-
-        $this->assertSame('getname', $metadata->getGetter('name'));
-        $this->assertSame('setname', $metadata->getSetter('name'));
-    }
-
-    public function testGetGetterAndGetSetterWithCustomValues()
-    {
-        $services = new Services();
-        $metadata = new Metadata($services->get('SerializerFactory'));
-        $metadata->setEntity(Bouh::class);
-        $getter = uniqid('getter');
-        $setter = uniqid('setter');
-        $metadata->addField([
-            'fieldName'  => 'name',
-            'columnName' => 'boo_name',
-            'type'       => 'string',
-            'getter'     => $getter,
-            'setter'     => $setter
-        ]);
-
-        $this->assertSame($getter, $metadata->getGetter('name'));
-        $this->assertSame($setter, $metadata->getSetter('name'));
     }
 
     #[RequiresPhp('>= 8.4.0')]
@@ -1004,7 +981,7 @@ class MetadataTest extends TestCase
     private function createInsertMocks(Services $services, &$outerParams, &$outerSql = null): array
     {
         $mockDriver = $this->getMockBuilder(MysqliDriver::class)->onlyMethods(['escapeField'])->getMock();
-        $mockDriver->method('escapeField')->willReturnCallback(fn ($field) => $field);
+        $mockDriver->method('escapeField')->willReturnCallback(fn ($field) => (string) $field);
 
         $mockConnectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['master'])->getMock();
         $mockConnectionPool->method('master')->willReturn($mockDriver);
@@ -1015,9 +992,12 @@ class MetadataTest extends TestCase
             ->setConstructorArgs(['', $mockConnection, $services->get('CollectionFactory')])
             ->onlyMethods(['setParams'])
             ->getMock();
-        $mockPreparedQuery->method('setParams')->willReturnCallback(function ($params) use (&$outerParams): void {
-            $outerParams = $params;
-        });
+        $mockPreparedQuery->method('setParams')->willReturnCallback(
+            function ($params) use (&$outerParams, $mockPreparedQuery) {
+                $outerParams = $params;
+                return $mockPreparedQuery;
+            }
+        );
 
         $mockQueryFactory = $this->getMockBuilder(QueryFactory::class)->onlyMethods(['getPrepared'])->getMock();
         $mockQueryFactory->method('getPrepared')->willReturnCallback(

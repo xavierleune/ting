@@ -260,6 +260,33 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->isNew($mockEntity));
     }
 
+    public function testResetShouldForgetEveryEntity()
+    {
+        $managedEntity = new Bouh();
+        $newEntity     = new Bouh();
+        $deletedEntity = new Bouh();
+
+        $unitOfWork = new UnitOfWork(
+            $this->services->get('ConnectionPool'),
+            $this->services->get('MetadataRepository'),
+            $this->services->get('QueryFactory')
+        );
+        $unitOfWork->manage($managedEntity);
+        $unitOfWork->propertyChanged($managedEntity, 'name', 'Sylvain', 'Xavier');
+        $unitOfWork->pushSave($managedEntity);
+        $unitOfWork->pushSave($newEntity);
+        $unitOfWork->pushDelete($deletedEntity);
+
+        $unitOfWork->reset();
+
+        $this->assertFalse($unitOfWork->isManaged($managedEntity));
+        $this->assertFalse($unitOfWork->isPropertyChanged($managedEntity, 'name'));
+        $this->assertFalse($unitOfWork->shouldBePersisted($managedEntity));
+        $this->assertFalse($unitOfWork->shouldBePersisted($newEntity));
+        $this->assertFalse($unitOfWork->isNew($newEntity));
+        $this->assertFalse($unitOfWork->shouldBeRemoved($deletedEntity));
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testIsNewAfterProcessShouldReturnFalse()
     {
@@ -373,10 +400,8 @@ class UnitOfWorkTest extends TestCase
         $mockDriver = $this->getMockBuilder(Driver::class)
             ->onlyMethods($driverMethods)
             ->getMock();
+        // closeStatement() is declared void: atoum's "closeStatement = true" could not be returned anyway
         $mockDriver->method('getInsertedId')->willReturn(1);
-        if ($mockCloseStatement) {
-            $mockDriver->method('closeStatement')->willReturn(true);
-        }
 
         $mockQueryFactory->method('getPrepared')->willReturn($mockPreparedQuery);
         $mockConnectionPool->method('master')->willReturn($mockDriver);
