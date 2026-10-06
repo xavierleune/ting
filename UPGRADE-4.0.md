@@ -576,6 +576,27 @@ public function setConfig(array $config): void
 }
 ```
 
+### Generics and array shapes
+
+For static analysis (PHPStan, Psalm), the PHPDoc of Ting is fully typed. Code analysed against Ting may get new
+reports, and the following PHPDoc types changed:
+
+* `Repository<T>`: `get()` and `getOneBy()` return `?T`, `getAll()` and `getBy()` a `CollectionInterface<T>`,
+  `getMetadata()` a `Metadata<T>`. Criteria are `array<string, mixed>` (property name => value), orders
+  `array<string, string>` (property name => direction).
+* The type parameter of `CollectionInterface<T>` and `HydratorInterface<T>` (both covariant) is the type of their
+  items: a collection iterates `T`, a hydrator yields `T`. `HydratorArray` yields `array<string, mixed>` and is no
+  longer generic. The items of `Hydrator`, `HydratorSingleObject`, `HydratorAggregator` and `HydratorRelational`
+  depend on the query: their type parameter is the type documented by the caller.
+* `QueryInterface<T>` and the query classes are typed by the items of the collections of their collection factory;
+  `query($collection)` returns a `CollectionInterface<U>` for a `CollectionInterface<U>` given.
+* `Driver\ResultInterface` is no longer generic: it iterates the rows of the driver, typed by the aliases `Column`
+  and `Row` (`list<Column>`) of the interface.
+* Array shapes are named by `@phpstan-type` aliases you can import with `@phpstan-import-type`: `ConnectionConfig`,
+  `ServerConfig` and `DatabaseOptions` (`ConnectionPoolInterface`), `ConnectionParameters` (`Driver\DriverInterface`),
+  `SerializerOptions` (`Serializer\SerializeInterface`), `Field` (`Repository\Metadata`, which now documents the
+  `sequenceName` option) and `CachedCollection` (`Repository\CollectionInterface`).
+
 Hydrators and Transactions
 --------------------------
 
