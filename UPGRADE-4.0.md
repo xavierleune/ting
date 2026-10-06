@@ -10,8 +10,8 @@ PHP Version
 Symfony
 -------
 
-* Symfony 6 support has been dropped: `symfony/property-access` (and the optional `symfony/uid` / `symfony/cache`)
-  now require `^7.0 || ^8.0`.
+* Symfony 6 support has been dropped: `symfony/property-access` now requires `^7.0 || ^8.0`. The optional
+  `symfony/uid` and `symfony/cache` (suggested, not required) are tested with `^7.0 || ^8.0`.
 
 Primary / Replica (formerly Master / Slave)
 -------------------------------------------
@@ -25,7 +25,7 @@ aliases:
 | `ConnectionPool(Interface)::slave(string $name, string $database)`  | `ConnectionPool(Interface)::replica(string $name, string $database)` |
 | `Connection::master()`                                            | `Connection::primary()`                                             |
 | `Connection::slave()`                                             | `Connection::replica()`                                             |
-| `Query(Interface)::selectMaster(bool $useMaster)`                 | `Query(Interface)::selectPrimary(bool $usePrimary)`                 |
+| `Query::selectMaster($value)` (not declared by `QueryInterface`)  | `Query(Interface)::selectPrimary(bool $usePrimary)`                 |
 | `Repository::pingMaster()`                                        | `Repository::pingPrimary()`                                         |
 | `$forceMaster` parameter of `Repository::get()`, `getAll()`, `getBy()`, `getOneBy()`, `Metadata` and `Generator` methods | `$forcePrimary` |
 | `master` configuration key                                        | `primary`                                                           |
@@ -58,12 +58,18 @@ $city = $cityRepository->get(3, forcePrimary: true);
 ```
 
 * Ting 3.14 already offers the new names and deprecates the old ones: you can migrate on 3.x first, fix the
-  deprecations, then upgrade to 4.0.
+  deprecations, then upgrade to 4.0. Named arguments are the exception: on 3.14 / 3.15 the parameters are still
+  called `$forceMaster` (repository methods) and `$value` (`selectPrimary()`), so `forcePrimary:` and `usePrimary:`
+  only work once on 4.0. Rename them when switching to 4.0, or pass these arguments positionally.
 * `ConnectionPool::setConfig()` throws a `CCMBenchmark\Ting\Exceptions\ConfigException` when a connection still uses
   the `master` or `slaves` key (e.g. `Connection "main": the "master" key was renamed "primary" in Ting 4.0`).
-* Named arguments must be renamed as well: `forceMaster:` becomes `forcePrimary:` (and `useMaster:` becomes
-  `usePrimary:`), otherwise PHP throws an `Error` (unknown named parameter).
+* Named arguments must be renamed as well: `forceMaster:` becomes `forcePrimary:`, and the `value:` of
+  `selectMaster()` / `selectPrimary()` becomes `usePrimary:`, otherwise PHP throws an `Error` (unknown named
+  parameter).
 * As before, a replica falls back to the primary when no replica is configured.
+* The `port` key is now required for the primary and every replica: without it, PHP warns `Undefined array key "port"`
+  and the driver throws a `TypeError` (`connect()` takes an `int $port`). 3.x only warned, and connected to the
+  default port.
 
 Repository reads: property names and entity values
 --------------------------------------------------
@@ -76,11 +82,11 @@ values of the criteria with the serializers of the fields, as `save()` does:
 | Composite primary key of `get([...])`     | column names, raw values                | property names, converted values               |
 | Criteria of `getBy()` / `getOneBy()`      | property names, raw values              | property names, converted values               |
 | `$order` of `getBy()`                     | column names                            | property names                                 |
-| Order direction other than `ASC` / `DESC` | silently ignored                        | `ValueException`                               |
+| Order direction other than `ASC` / `DESC` | ignored (invalid SQL when all were)     | `ValueException`                               |
 | Empty array in the criteria               | invalid SQL (`IN ()`)                   | `ValueException`                               |
 
 ```php
-// Before (3.x):
+// Before (3.x), with the sample model (sample/src/model/CountryLanguageRepository.php):
 $language = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
 $cities = $cityRepository->getBy(
     ['status' => CityStatus::Active->value, 'createdAt' => $date->format('Y-m-d H:i:s')],
@@ -88,7 +94,7 @@ $cities = $cityRepository->getBy(
 );
 
 // After (4.0):
-$language = $countryLanguageRepository->get(['countryCode' => 'AGO', 'language' => 'Kongo']);
+$language = $countryLanguageRepository->get(['code' => 'AGO', 'language' => 'Kongo']);
 $cities = $cityRepository->getBy(
     ['status' => CityStatus::Active, 'createdAt' => $date],
     order: ['name' => 'ASC'],
@@ -109,10 +115,13 @@ Each value of the criteria (and of a composite key given to `get()`) is converte
 | scalar (string, int, float, bool) | serializer implementing `Serializer\ScalarValueInterface` (`Ip`, `Boolean`) | serialized, `=` (or element of the `IN` list) |
 | scalar (string, int, float, bool) | other fields                                                        | as is                                         |
 
-* An unknown key throws a `CCMBenchmark\Ting\Exceptions\ValueException`. When the key is a column name, the message
-  names the property to use, e.g.
+* An unknown key throws a `CCMBenchmark\Ting\Exceptions\ValueException`, as in 3.x for the criteria, but with a new
+  message (`Undefined property "foo" in the criteria of Repository::getBy()` instead of
+  `Undefined property foo in your criteria`). When the key is a column name, the message names the property to use,
+  e.g.
   `"cit_name" is a column name: use the property name "name" in the order of Repository::getBy()`.
-* An order direction other than `ASC` or `DESC` (case-insensitive) throws a `ValueException`, e.g.
+* An order direction other than `ASC` or `DESC` (case-insensitive) throws a `ValueException` (3.x ignored it, and
+  produced an invalid `ORDER BY` without column when every direction was invalid), e.g.
   `Invalid direction "UP" for property "name" in the order of Repository::getBy(): use "ASC" or "DESC"`.
 * An empty array throws a `ValueException`
   (`Empty array for property "id" in the criteria of Repository::getBy(): nothing can match`)
@@ -136,10 +145,12 @@ Each value of the criteria (and of a composite key given to `get()`) is converte
   `IN` list. See [the caveats on JSON equality](docs/repositories.md#criteria-keys-and-values).
 * A custom serializer whose PHP value is an array can implement the marker interface
   `CCMBenchmark\Ting\Serializer\ArrayValueInterface` to get the same behaviour.
-* `get()` with a single value (one primary key) follows the same rules: scalars and `null` are unchanged, an object is
-  now serialized.
+* `get()` with a single value (one primary key) follows the same rules: an object is now serialized, including by a
+  serializer that comes from the type of the field (`datetime`, `uuid`...), and so is a scalar for a
+  `ScalarValueInterface` serializer; other scalars and `null` are unchanged.
 * Ting 3.15 already accepts both the 3.x and the 4.0 forms, and deprecates the 3.x ones: you can migrate on 3.x first,
-  fix the deprecations, then upgrade to 4.0.
+  fix the deprecations, then upgrade to 4.0. 3.15 does not cover everything: it still sends the scalars of
+  `Ip` and `Boolean` fields as is and doesn't reject empty criteria, without deprecation, so check these by hand.
 
 Services Container Removed
 --------------------------
@@ -221,9 +232,14 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
 });
 ```
 
-* Cached queries keep the same API (`setTtl()`, `setCacheKey()`, `setForce()`) and behaviour: a TTL of `0` still means
-  "no expiration", `setForce(true)` still recomputes and stores the result. Concurrent misses on the same key are now
-  protected against cache stampede by Symfony.
+* Cached queries keep the same API (`setTtl()`, `setCacheKey()`, `setForce()`), and `setForce(true)` still recomputes
+  and stores the result. Concurrent misses on the same key are now protected against cache stampede by Symfony.
+  Two behaviours change with Symfony pools:
+  * a TTL of `0` stores the item without expiration of its own (`expiresAfter(null)`), so the pool's default lifetime
+    applies: a pool created with a default lifetime expires these items, unlike doctrine/cache;
+  * keys containing a reserved character (`{}()/\@:`, e.g. `user:42`) are rejected with a
+    `Psr\Cache\InvalidArgumentException` (a `Symfony\Component\Cache\Exception\InvalidArgumentException`): replace
+    these characters, or hash the variable part of the key (`'user_' . md5($id)`).
 * If you extend cached queries: the protected `Query\Cached\Query::checkCache()` has been replaced by
   `queryThroughCache()`.
 * `Query\Cached\Query::setVersion()` has been removed: the version has not been part of the cache key since cache
@@ -255,8 +271,10 @@ $generator->getByCriteriaWithOrderAndLimit(['status' => 'active'], $collectionFa
 $generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
 ```
 
-* `Generator` is mostly used internally: from a repository, `getBy($criteria, $forcePrimary, $order, $limit)` is
-  unchanged (apart from `$forceMaster` renamed `$forcePrimary`, see "Primary / Replica").
+* `Generator` is mostly used internally: from a repository, use `getBy($criteria, $forcePrimary, $order, $limit)`.
+  Its signature only renames `$forceMaster` to `$forcePrimary` (see "Primary / Replica"), but its arguments changed:
+  property names in the order, converted values, validated directions (see "Repository reads: property names and
+  entity values").
 
 Repository and RepositoryFactory Constructors
 ---------------------------------------------
@@ -273,18 +291,18 @@ Metadata
 
 * The `Metadata::getGetter()` method has been removed.
 * The `Metadata::getSetter()` method has been removed.
-* If you were using these methods, you should define custom getters/setters directly in your field configuration:
+* They returned the `getter` / `setter` option of the field (an option that already existed in 3.x), or
+  `'get' . $fieldName` / `'set' . $fieldName` without it. If you need the method names, read the field configuration:
 
 ```php
-// In your Repository::initMetadata():
-$metadata->addField([
-    'fieldName' => 'myField',
-    'columnName' => 'my_field',
-    'type' => 'string',
-    'getter' => 'getMyCustomField',  // Custom getter method name
-    'setter' => 'setMyCustomField',  // Custom setter method name
-]);
+$fields = array_column($metadata->getFields(), null, 'fieldName');
+$getter = $fields['myField']['getter'] ?? 'get' . ucfirst('myField');
+$setter = $fields['myField']['setter'] ?? 'set' . ucfirst('myField');
 ```
+
+* Without these options, Ting itself doesn't call `get<Field>()` blindly: it reads and writes the property through
+  Symfony PropertyAccess (`getMyField()`, `isMyField()`, a public property...), see
+  [How Ting reads and writes properties](docs/entities.md#how-ting-reads-and-writes-properties).
 
 UnitOfWork
 ----------
@@ -468,7 +486,10 @@ The extension points you are the most likely to implement:
   trait must not redeclare `$listeners` without this type.
 * Repositories: `Repository::getCollection(?HydratorInterface $hydrator = null): Collection`; an override must return
   `Collection` (or a subclass), not `CollectionInterface`.
-* `SerializeInterface` and `UnserializeInterface` keep their 3.x signatures (no native return type).
+* `SerializeInterface` and `UnserializeInterface` keep their 3.x signatures (no native return type), so a serializer
+  implementing them directly needs no change. The built-in serializers, however, now declare native return types: a
+  class **extending** one of them must declare a compatible return type on the methods it overrides (see
+  "Smaller changes for extensions").
 
 Example of updated method signatures:
 ```php
@@ -484,3 +505,45 @@ public function setConfig(array $config): void
     // ...
 }
 ```
+
+Hydrators and Transactions
+--------------------------
+
+* `HydratorRelational` throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when its relations form a cycle (a
+  bidirectional relation, or an alias given to itself); 3.x partially ignored them. Declare one direction and set the
+  back reference in the setter, see [HydratorRelational](docs/hydrators.md#hydratorrelational).
+* The array given to a `RelationMany` method is still indexed by an internal reference, but its format changed
+  (`'book-1-'` in 3.x): use `array_values()` rather than relying on these keys.
+* `startTransaction()`, `commit()` and `rollback()` throw a `CCMBenchmark\Ting\Exceptions\TransactionException` when
+  the database refuses them (3.x did not check their result), including the `COMMIT` of a PostgreSQL transaction
+  aborted by a failed query. A failed `commit()` leaves no transaction open: calling `rollback()` after it throws, see
+  [Transactions](docs/repositories.md#transactions).
+
+Smaller Changes for Extensions
+------------------------------
+
+These changes only matter if you extend Ting classes or rely on their internals.
+
+* Built-in serializers now declare native return types on `serialize()` / `unserialize()`: `Serializer\DateTime`,
+  `DateTimeImmutable`, `DateTimeZone`, `Json`, `Ip`, `Uuid`, `BackedEnum` (`unserialize()`),
+  `Driver\Mysqli\Serializer\Boolean` and `Driver\Pgsql\Serializer\Boolean`. A subclass overriding one of these methods
+  without a compatible return type is a fatal error: copy the return type of the parent method (e.g.
+  `public function serialize($toSerialize, array $options = []): ?string` for `DateTime`).
+* Protected properties renamed or removed:
+
+  | Class                          | 3.13                                 | 4.0                                       |
+  |--------------------------------|--------------------------------------|-------------------------------------------|
+  | `ConnectionPool`               | `$connectionSlaves`                  | `$connectionReplicas` (already in 3.14)   |
+  | `Query\Query`                  | `$selectMaster`                      | `$selectPrimary`                          |
+  | `Repository\RepositoryFactory` | `$collection`, `$serializerFactory`  | removed                                   |
+  | `Repository\Repository`        | `$services`                          | removed                                   |
+  | `Repository\HydratorArray`     | `$metadataRepository`, `$unitOfWork` | removed (they were unused)                |
+  | `Query\Cached\Query`           | `$version`                           | removed (see `setVersion()` above)        |
+  | `Driver\Pgsql\Statement`       | `$queryType`                         | removed                                   |
+
+  Most remaining properties are now typed: a subclass redeclaring one must use the same type.
+* `Connection::__construct()` (internal, called by the repositories) types `$name` and `$database` as `string` and
+  throws a `RuntimeException` when one of them is empty (3.x only rejected `null`).
+* The protected `Metadata::getColumnsFromCriteria()` and `Metadata::getPrimariesKeyValuesAsArray()` now validate the
+  keys (property names only, `ValueException` otherwise) and return the converted database values, not the values
+  given. An override must do the same, see "Repository reads: property names and entity values".
