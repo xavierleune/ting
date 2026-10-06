@@ -185,7 +185,7 @@ class Driver implements DriverInterface
     }
 
     /**
-     * @throws DriverException
+     * @throws DriverException when the server rejects the charset, which is then not recorded
      */
     public function setCharset(string $charset): void
     {
@@ -199,10 +199,31 @@ class Driver implements DriverInterface
             return;
         }
 
-        if ($this->connection->set_charset($charset) === false) {
-            throw new DriverException('Can\'t set charset ' . $charset . ' (' . $this->connection->error . ')');
-        }
+        $this->applyCharset($charset);
         $this->currentCharset = $charset;
+    }
+
+    /**
+     * @throws DriverException
+     */
+    private function applyCharset(string $charset): void
+    {
+        try {
+            $succeeded = $this->connection->set_charset($charset) !== false;
+        } catch (mysqli_sql_exception $exception) {
+            throw new DriverException(
+                'Can\'t set charset ' . $charset . ' (' . $exception->getMessage() . ')',
+                $exception->getCode(),
+                $exception
+            );
+        }
+
+        if ($succeeded === false) {
+            throw new DriverException(
+                'Can\'t set charset ' . $charset . ' (' . $this->connection->error . ')',
+                (int) $this->connection->errno
+            );
+        }
     }
 
     /**
@@ -664,7 +685,13 @@ class Driver implements DriverInterface
             }
 
             if ($this->currentCharset !== null) {
-                $this->connection->set_charset($this->currentCharset);
+                try {
+                    $this->applyCharset($this->currentCharset);
+                } catch (DriverException) {
+                    // As for the timezone: the session keeps the server default, and the next setCharset() with
+                    // this charset applies it again and reports the error
+                    $this->currentCharset = null;
+                }
             }
 
             if ($this->currentTimezone !== null) {

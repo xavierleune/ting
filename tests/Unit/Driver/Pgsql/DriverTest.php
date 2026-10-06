@@ -1409,6 +1409,57 @@ class DriverTest extends TestCase
         $this->assertSame(3, $queryCalls);
     }
 
+    public function testPingShouldForgetACharsetRejectedByTheServer()
+    {
+        $rejected = false;
+        $setCharsetCalls = 0;
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
+        NativeFunctionMock::override('pg_set_client_encoding', function () use (&$rejected, &$setCharsetCalls) {
+            $setCharsetCalls++;
+
+            return $rejected ? -1 : 0;
+        });
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  invalid value for parameter "client_encoding"');
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setCharset('LATIN9');
+
+        // e.g. the connection was re-established on a server rejecting this encoding
+        $rejected = true;
+        $this->assertTrue($driver->ping());
+        // The session kept the server default: setting the charset again tries it, and reports the error
+        $this->assertThrows(DriverException::class, fn () => $driver->setCharset('LATIN9'));
+        $this->assertSame(3, $setCharsetCalls);
+    }
+
+    public function testReconnectShouldForgetACharsetRejectedByTheServer()
+    {
+        $rejected = false;
+        $setCharsetCalls = 0;
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_set_client_encoding', function () use (&$rejected, &$setCharsetCalls) {
+            $setCharsetCalls++;
+
+            return $rejected ? -1 : 0;
+        });
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  invalid value for parameter "client_encoding"');
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setCharset('LATIN9');
+
+        $rejected = true;
+        // The connection is open: the reconnection succeeded
+        $this->assertTrue($driver->reconnect());
+        $this->assertThrows(DriverException::class, fn () => $driver->setCharset('LATIN9'));
+        $this->assertSame(3, $setCharsetCalls);
+    }
+
     private const TRANSACTION_LOST = 'The transaction was lost with the connection: the server rolled it back';
 
     /**

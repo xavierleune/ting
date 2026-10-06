@@ -1563,6 +1563,79 @@ class DriverTest extends TestCase
         $this->assertCount(2, $setTimezoneCalls);
     }
 
+    public function testSetCharsetShouldConvertAMysqliExceptionToADriverExceptionAndNotRecordIt()
+    {
+        $setCharsetCalls = 0;
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->method('real_connect')->willReturn(true);
+        $mockDriver->method('set_charset')->willReturnCallback(function () use (&$setCharsetCalls) {
+            $setCharsetCalls++;
+
+            throw new \mysqli_sql_exception('Invalid character set was provided', 2019);
+        });
+
+        $driver = new Driver($mockDriver);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+
+        $exception = $this->assertThrows(
+            DriverException::class,
+            fn () => $driver->setCharset('utf8x'),
+            'Can\'t set charset utf8x (Invalid character set was provided)'
+        );
+        $this->assertSame(2019, $exception->getCode());
+        $this->assertInstanceOf(\mysqli_sql_exception::class, $exception->getPrevious());
+        // Not recorded as the current charset: tried again
+        $this->assertThrows(DriverException::class, fn () => $driver->setCharset('utf8x'));
+        $this->assertSame(2, $setCharsetCalls);
+    }
+
+    public static function charsetRejectionProvider(): iterable
+    {
+        yield 'set_charset() returns false' => [false];
+        yield 'set_charset() throws a mysqli_sql_exception (MYSQLI_REPORT_STRICT)' => [true];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('charsetRejectionProvider')]
+    public function testReconnectShouldForgetACharsetRejectedByTheServer(bool $throws)
+    {
+        $lostConnection = $this->createStub(Mysqli::class);
+        $lostConnection->method('real_connect')->willReturn(true);
+        $lostConnection->method('query')
+            ->willThrowException(new \mysqli_sql_exception('MySQL server has gone away', 2006));
+
+        $setCharsetCalls = [];
+        $newConnection = $this->createStub(Mysqli::class);
+        $newConnection->method('real_connect')->willReturn(true);
+        $newConnection->method('set_charset')->willReturnCallback(
+            function (string $charset) use (&$setCharsetCalls, $throws) {
+                $setCharsetCalls[] = $charset;
+                if ($throws) {
+                    throw new \mysqli_sql_exception('Invalid character set was provided', 2019);
+                }
+
+                return false;
+            }
+        );
+        $newConnection->error = 'Invalid character set was provided';
+        $connections = [$this->unreachableServerConnection(), $newConnection];
+        NativeFunctionMock::override('mysqli_init', function () use (&$connections) {
+            return array_shift($connections);
+        });
+
+        $driver = new Driver($lostConnection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $this->assertFalse($driver->ping());
+        // Recorded while the reconnection is pending, cannot be checked yet
+        $driver->setCharset('utf8x');
+
+        // The connection is open: the reconnection succeeded
+        $this->assertTrue($driver->ping());
+        $this->assertSame(['utf8x'], $setCharsetCalls);
+        // The session kept the server default: setting the charset again tries it, and reports the error
+        $this->assertThrows(DriverException::class, fn () => $driver->setCharset('utf8x'));
+        $this->assertCount(2, $setCharsetCalls);
+    }
+
     private const TRANSACTION_LOST = 'The transaction was lost with the connection: the server rolled it back';
 
     /**
