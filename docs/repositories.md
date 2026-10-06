@@ -419,6 +419,13 @@ public function delete(NotifyPropertyInterface $entity): void;
 primary key. Both are shortcuts for the [unit of work](unit-of-work.md): `pushSave()` / `pushDelete()` followed by
 `process()`.
 
+When the metadata of the repository map the class of the entity, `save()` and `delete()` write with them, even when
+another repository maps the same class (another table such as an archive, or a lighter projection without some
+columns): `$mainArtRepository->save($art)` writes into the table of `MainArtRepository`, `$userRepository->save($user)`
+writes every column of `UserRepository`. `pushSave()` and `pushDelete()` called on the unit of work, and `save()`
+through a repository of another class, use the metadata registered for the class of the entity: those of the last
+repository built, or registered last.
+
 ```php
 use App\Entity\City;
 
@@ -445,7 +452,8 @@ Methods of the repository build queries bound to its connection:
 | `getCollection(?HydratorInterface $hydrator = null)` | an empty `Collection` using that hydrator, to pass to `query()` |
 
 The rows of these queries, and of the reading methods above, hydrate the tables the repository maps with its own
-metadata: two repositories can map the same table (a full entity and a lighter projection), see
+metadata when several of them share the database and the schema of the table: two repositories can map the same
+table (a full entity and a lighter projection), see
 [Several repositories on the same table](hydrators.md#several-repositories-on-the-same-table).
 
 Add them as methods of your repository:
