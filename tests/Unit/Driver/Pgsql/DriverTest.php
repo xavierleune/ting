@@ -109,6 +109,22 @@ class DriverTest extends TestCase
         $this->assertSame("host='hostname.test' port='1234' dbname='bouh'", $outerDsn);
     }
 
+    public function testReconnectBeforeConnectShouldRaiseNeverConnectedException()
+    {
+        $pgConnectCalled = false;
+        NativeFunctionMock::override('pg_connect', function () use (&$pgConnectCalled) {
+            $pgConnectCalled = true;
+
+            return true;
+        });
+
+        // Without connect(), the DSN is empty: libpq would connect with its default settings
+        $driver = new Driver();
+
+        $this->assertThrows(NeverConnectedException::class, fn () => $driver->reconnect());
+        $this->assertFalse($pgConnectCalled);
+    }
+
     public function testCloseShouldReturnSelf()
     {
         $driver = new Driver();
