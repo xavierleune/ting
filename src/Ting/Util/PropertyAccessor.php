@@ -7,6 +7,7 @@ use PropertyHookType;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 use Psr\Cache\CacheItemPoolInterface;
+use Symfony\Component\PropertyAccess\Exception\AccessException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
 use Symfony\Component\PropertyAccess\PropertyPathInterface;
@@ -96,6 +97,36 @@ class PropertyAccessor
             return true;
         }
         return $this->propertyAccessor->isReadable($objectOrArray, $propertyPath);
+    }
+
+    /**
+     * getValue() of a property that isReadable(), reading it once instead of twice
+     *
+     * @return array{0: bool, 1: mixed} [false, null] when the property is not readable (see isReadable()), [true, its
+     *                                  value] otherwise
+     */
+    public function getValueIfReadable(object $object, string $propertyPath, ?string $getter): array
+    {
+        try {
+            if ($getter !== null) {
+                if (method_exists($object, $getter) === false) {
+                    return [false, null];
+                }
+
+                return [true, $object->$getter()];
+            }
+
+            return [true, $this->propertyAccessor->getValue($object, $propertyPath)];
+        } catch (AccessException) {
+            // No such property, or a typed property not initialized
+            return [false, null];
+        } catch (\Error $error) {
+            if (str_contains($error->getMessage(), 'must not be accessed before initialization')) {
+                return [false, null];
+            }
+
+            throw $error;
+        }
     }
 
     /**

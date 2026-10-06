@@ -1648,7 +1648,7 @@ class HydratorTest extends TestCase
         $this->assertCount(3, array_unique(array_map('spl_object_id', $bouhs)));
     }
 
-    public function testHydrationShouldUnserializeEachFieldOnceAndSerializeNothing()
+    public function testHydrationShouldUnserializeEachFieldOnceAndSerializeEachMutableFieldOnce()
     {
         CountingJson::resetCounters();
         $services = new TingServices();
@@ -1659,7 +1659,7 @@ class HydratorTest extends TestCase
         $metadata->setTable('T_BOUH_BOO');
         $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
         $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
-        // A serializer of its own: mutable, yet nothing is kept for it at hydration
+        // A serializer of its own: mutable, its database value is kept at hydration
         $metadata->addField([
             'fieldName'          => 'roles',
             'columnName'         => 'boo_roles',
@@ -1689,7 +1689,7 @@ class HydratorTest extends TestCase
         $this->assertSame([['A'], ['B'], []], array_map(fn ($bouh) => $bouh->getRoles(), $bouhs));
         $this->assertTrue($unitOfWork->isManaged($bouhs[0]));
         $this->assertSame(3, CountingJson::$unserialized);
-        $this->assertSame(0, CountingJson::$serialized);
+        $this->assertSame(3, CountingJson::$serialized);
     }
 
     private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass

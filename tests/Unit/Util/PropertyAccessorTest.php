@@ -186,6 +186,40 @@ class PropertyAccessorTest extends TestCase
         $this->assertTrue($accessor->isReadable($entity, 'computed', 'computed'));
     }
 
+    public function testGetValueIfReadableShouldReadAsIsReadableAndGetValue()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new PublicPropertiesEntity();
+        $customGetter = new CustomGetterEntity();
+
+        $this->assertSame([false, null], $accessor->getValueIfReadable($entity, 'propertyWithoutSetter', null));
+        $this->assertSame([false, null], $accessor->getValueIfReadable($entity, 'missing', null));
+        $this->assertSame([false, null], $accessor->getValueIfReadable($entity, 'propertyWithGetter', 'wrongGetterName'));
+        $this->assertSame([false, null], $accessor->getValueIfReadable($customGetter, 'label', 'label'));
+        $this->assertSame([true, 'draft'], $accessor->getValueIfReadable($customGetter, 'label', 'labelOrDefault'));
+        $customGetter->setLabel('initialized');
+        $this->assertSame([true, 'initialized'], $accessor->getValueIfReadable($customGetter, 'label', 'label'));
+        $this->assertSame(
+            [true, $accessor->getValue($entity, 'propertyWithDefaultValue')],
+            $accessor->getValueIfReadable($entity, 'propertyWithDefaultValue', null)
+        );
+    }
+
+    public function testGetValueIfReadableShouldRethrowAnotherErrorOfACustomGetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            public function broken(): string
+            {
+                throw new \LogicException('Broken getter');
+            }
+        };
+
+        $this->assertThrows(\LogicException::class, function () use ($accessor, $entity): void {
+            $accessor->getValueIfReadable($entity, 'broken', 'broken');
+        }, 'Broken getter');
+    }
+
     public function testIsWritableShouldReturnTrueWhenASetterIsDefined()
     {
         $accessor = new PropertyAccessor();

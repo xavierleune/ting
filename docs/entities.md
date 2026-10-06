@@ -139,16 +139,30 @@ So Ting splits the fields in two:
 
 * **immutable** fields (scalars, `\DateTimeImmutable`, `\DateTimeZone`, enums, UUIDs, IPs, geometries, JSON decoded to
   arrays): their value can only change through the setter, they are updated **when notified**;
-* **mutable** fields (`\DateTime`, JSON decoded to objects, values of a serializer of your own): Ting cannot know
-  whether they changed, so it writes them, with their current value, in the `UPDATE` of **every save** of a managed
-  entity, together with the notified changes. No copy of their value is kept: hydration costs nothing more.
+* **mutable** fields (`\DateTime`, JSON decoded to objects, values of a serializer of your own): no notification tells
+  that they changed, so the unit of work compares them. When the entity becomes managed (hydrated, inserted, passed
+  to `manage()`), it keeps the **database value** of each of its mutable fields: the value Ting would write back,
+  that is the hydrated value serialized again (not the raw column value). On save, a mutable field is written when its
+  current database value differs from the kept one, or when its change was notified through its setter. After the
+  `INSERT` or `UPDATE`, the value written is the kept one.
 
-A mutable field is only written when its value is **known**: read from the database, set through its setter, or
-written by the `INSERT` of the entity. An entity read **partially** (a query selecting some of its columns, a join
-selecting some columns of the joined entity) leaves the other fields with their PHP default (`null`, or a value set by
-the constructor, such as `new \DateTime()`): the mutable fields not read are left out of its `UPDATE`, so a save does
+Comparing database values means that a value which does not survive a round trip is not rewritten by an unrelated
+save, as long as it is not modified: the microseconds of a `DATETIME(6)` column read by a `Y-m-d H:i:s` serializer, a
+time in the DST gap of the PHP timezone (read one hour later), a MySQL zero date (`0000-00-00`, read as
+`-0001-11-30`), a JSON big integer (decoded to a float) or JSON written with other spaces or escapes. Once modified (in
+place or through the setter), the field is written with what Ting can write: the microseconds, the zero date or the
+big integer are then lost.
+
+The kept values are packed into one string per entity, held weakly by the unit of work, for the managed entities that
+have a mutable field only. Hydrating such an entity serializes each of its mutable fields once more (about 3 µs and
+220 bytes per entity with two dates and a JSON object); saving it serializes them as the `UPDATE` needs anyway.
+
+A mutable field is only compared, and written, when its value is **known**: read from the database, set through its
+setter, or written by the `INSERT` of the entity. An entity read **partially** (a query selecting some of its columns,
+a join selecting some columns of the joined entity) leaves the other fields with their PHP default (`null`, or a value
+set by the constructor, such as `new \DateTime()`): the fields not read are left out of its `UPDATE`, so a save does
 not overwrite their column with that default. Once set through its setter (with a new value), such a field is known,
-and written by every save. A value modified in place without setter, on a field not read, is not written.
+and written. A value modified in place without setter, on a field not read, is not written.
 
 The default comes from the serializer of the field: `Serializer\DateTime`, `Serializer\Json` decoding objects
 (without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag) and any serializer of your own are mutable; the serializers shipped with Ting for immutable values
@@ -158,19 +172,14 @@ only reachable through a setter, it hydrates a `\DateTime` (mutable), as in 3.x.
 `mutable` option of the field, see [field options](repositories.md#field-options) — `'mutable' => false` on a field
 you only ever replace through its setter (a readonly value object serialized by your own serializer, for instance).
 
-Writing the mutable fields on every save has costs:
-
-* saving a managed entity with a mutable field **always runs an `UPDATE`**, even when nothing changed (on MySQL a round
-  trip, a row lock and the `BEFORE UPDATE` triggers; on PostgreSQL a new row version, written to the WAL, to vacuum
-  later);
-* a concurrent write to such a column between your read and your save is **overwritten** with the value you read;
-* `UnitOfWork::isPropertyChanged()` is always `true` for a mutable field of a managed entity, unless the field was not
-  read (see above).
+`UnitOfWork::isPropertyChanged()` tells whether a mutable field will be written: its change was notified, or its
+database value differs from the kept one. A serializer returning an object, rather than a scalar, makes its field
+always different, so always written.
 
 Prefer immutable values: type your dates `\DateTimeImmutable` (not `\DateTimeInterface`), decode JSON to arrays
 (`'serializer_options' => ['unserialize' => ['assoc' => true]]`), make your value objects `readonly`, and replace them
-through the setter. A mutable primary key (a `\DateTime` key, say) modified in place still targets its row: its
-database value is kept when the entity becomes managed, and refreshed by each `UPDATE`.
+through the setter: nothing is kept nor compared for them. A mutable primary key (a `\DateTime` key, say) modified in
+place still targets its row: the `UPDATE` (or `DELETE`) finds it by its kept database value.
 
 ## How Ting reads and writes properties
 

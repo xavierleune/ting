@@ -41,6 +41,7 @@ use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Account;
 use tests\fixtures\model\AccountRepository;
@@ -1079,26 +1080,29 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingACloneShouldWriteItsMutableFieldsThenManageIt()
+    public function testSavingACloneShouldWriteItsMutableFieldsChangedThenManageIt()
     {
         $entity = $this->createDocument();
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
         $unitOfWork->manage($entity);
 
         $clone = clone $entity;
+        $clone->setPublishedAt(new \DateTime('2026-05-01 10:00:00'));
+        // The payload is the one stored for the original: not written
         $unitOfWork->pushSave($clone)->process();
         $clone->setTitle('new');
+        $unitOfWork->pushSave($clone)->process();
+        $clone->getPublishedAt()->modify('+1 hour');
         $unitOfWork->pushSave($clone)->process();
 
         $this->assertSame(
             [
-                'UPDATE `T_DOCUMENT_DOC` SET `doc_title` = :v1_doc_title, `doc_payload` = :v2_doc_payload, '
-                    . '`doc_published_at` = :v3_doc_published_at WHERE `doc_id` = :w1_doc_id',
-                // Managed: the notified change, then the mutable fields
-                'UPDATE `T_DOCUMENT_DOC` SET `doc_title` = :v1_doc_title, `doc_payload` = :v2_doc_payload, '
-                    . '`doc_published_at` = :v3_doc_published_at WHERE `doc_id` = :w1_doc_id',
+                ['v1_doc_title' => 'title', 'v2_doc_published_at' => '2026-05-01 10:00:00', 'w1_doc_id' => 1],
+                // Managed: its changes only
+                ['v1_doc_title' => 'new', 'w1_doc_id' => 1],
+                ['v1_doc_published_at' => '2026-05-01 11:00:00', 'w1_doc_id' => 1],
             ],
-            $queries
+            $params
         );
     }
 
@@ -1110,7 +1114,9 @@ class UnitOfWorkTest extends TestCase
         $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_payload' => '{"tags":[]}']);
 
         $clone = clone $entity;
+        // Nothing to write: the payload is the one stored, the other fields were not read
         $unitOfWork->pushSave($clone)->process();
+        $this->assertTrue($unitOfWork->isManaged($clone));
         // Still not read by the clone, once managed
         $unitOfWork->pushSave($clone)->process();
         // Set on the copy: written
@@ -1118,14 +1124,7 @@ class UnitOfWorkTest extends TestCase
         $other->setTitle('title');
         $unitOfWork->pushSave($other)->process();
 
-        $this->assertSame(
-            [
-                ['v1_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1],
-                ['v1_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1],
-                ['v1_doc_title' => 'title', 'v2_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1],
-            ],
-            $params
-        );
+        $this->assertSame([['v1_doc_title' => 'title', 'w1_doc_id' => 1]], $params);
         $this->assertFalse($unitOfWork->isPropertyChanged($clone, 'publishedAt'));
     }
 
@@ -1298,17 +1297,14 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            ['UPDATE `T_DOCUMENT_DOC` SET `doc_payload` = :v1_doc_payload, `doc_published_at` = :v2_doc_published_at WHERE `doc_id` = :w1_doc_id'],
+            ['UPDATE `T_DOCUMENT_DOC` SET `doc_payload` = :v1_doc_payload WHERE `doc_id` = :w1_doc_id'],
             $queries
         );
-        $this->assertSame(
-            [['v1_doc_payload' => '{"tags":["php"]}', 'v2_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1]],
-            $params
-        );
+        $this->assertSame([['v1_doc_payload' => '{"tags":["php"]}', 'w1_doc_id' => 1]], $params);
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingAnEntityWithAMutableFieldShouldUpdateItEvenWithoutChange()
+    public function testSavingAnEntityWithAMutableFieldShouldNotUpdateItWithoutChange()
     {
         $entity = $this->createDocument();
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
@@ -1316,15 +1312,12 @@ class UnitOfWorkTest extends TestCase
 
         $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame(
-            [['v1_doc_payload' => '{"tags":[]}', 'v2_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1]],
-            $params
-        );
+        $this->assertSame([], $queries);
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingAnEntityShouldWriteItsMutableFieldsWithItsNotifiedChanges()
+    public function testSavingAnEntityShouldWriteItsMutableFieldsChangedWithItsNotifiedChanges()
     {
         $entity = $this->createDocument();
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
@@ -1333,28 +1326,128 @@ class UnitOfWorkTest extends TestCase
         $entity->setTitle('new');
         $entity->getPublishedAt()->modify('+1 hour');
         $unitOfWork->pushSave($entity)->process();
+        // Written: the value stored from now on
+        $unitOfWork->pushSave($entity)->process();
+        $entity->getPublishedAt()->modify('-1 hour');
+        $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            [['v1_doc_title' => 'new', 'v2_doc_payload' => '{"tags":[]}', 'v3_doc_published_at' => '2026-01-01 11:00:00', 'w1_doc_id' => 1]],
+            [
+                ['v1_doc_title' => 'new', 'v2_doc_published_at' => '2026-01-01 11:00:00', 'w1_doc_id' => 1],
+                ['v1_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1],
+            ],
             $params
         );
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testIsPropertyChangedShouldBeTrueForTheMutableFieldsOfAManagedEntity()
+    public function testAMutableValueReplacedThroughItsSetterShouldBeWritten()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $entity = $this->hydrateDocument(
+            $unitOfWork,
+            $metadataRepository,
+            ['doc_id' => '1', 'doc_title' => 'title', 'doc_payload' => '{"a":1}', 'doc_published_at' => '2026-01-01 10:00:00']
+        );
+
+        $entity->setPublishedAt(new \DateTime('2026-03-01 10:00:00'));
+        // Notified: written even with the value read
+        $entity->setPayload((object) ['a' => 1]);
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(
+            [['v1_doc_payload' => '{"a":1}', 'v2_doc_published_at' => '2026-03-01 10:00:00', 'w1_doc_id' => 1]],
+            $params
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}> column => raw value, timezone of PHP
+     */
+    public static function provideValuesNotSurvivingARoundTrip(): array
+    {
+        return [
+            // DATETIME(6), PostgreSQL timestamp: the microseconds are not written back
+            'microseconds'         => ['doc_published_at', '2024-05-06 12:34:56.123456', 'UTC'],
+            // Stored by another writer in UTC: read as 03:30 in the DST gap of Europe/Paris
+            'time in a DST gap'    => ['doc_published_at', '2024-03-31 02:30:00', 'Europe/Paris'],
+            // MySQL zero date: read as -0001-11-30
+            'zero date'            => ['doc_published_at', '0000-00-00 00:00:00', 'UTC'],
+            // Decoded to a float
+            'JSON big integer'     => ['doc_payload', '{"n":12345678901234567890}', 'UTC'],
+            'JSON spaces, escapes' => ['doc_payload', '{"a": 1, "s": "é"}', 'UTC'],
+        ];
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    #[DataProvider('provideValuesNotSurvivingARoundTrip')]
+    public function testAnUnrelatedSaveShouldNotRewriteAMutableValueRead(string $column, string $value, string $timezone)
+    {
+        $previousTimezone = date_default_timezone_get();
+        date_default_timezone_set($timezone);
+        try {
+            $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+            $entity = $this->hydrateDocument(
+                $unitOfWork,
+                $metadataRepository,
+                ['doc_id' => '1', 'doc_title' => 'title', 'doc_payload' => '{}', 'doc_published_at' => null, $column => $value]
+            );
+
+            $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+            $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+            $entity->setTitle('only the title changes');
+            $unitOfWork->pushSave($entity)->process();
+        } finally {
+            date_default_timezone_set($previousTimezone);
+        }
+
+        $this->assertSame([['v1_doc_title' => 'only the title changes', 'w1_doc_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAMutableFieldWhoseDatabaseValueIsNotAScalarShouldBeCompared()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $metadata = new Metadata($this->services->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setTable('T_BOUH_BOO');
+        $metadata->addField(['primary' => true, 'autoincrement' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+        // No serializer: its database value is the PHP array
+        $metadata->addField(['fieldName' => 'roles', 'columnName' => 'boo_roles', 'type' => 'string', 'mutable' => true]);
+        $metadataRepository->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork->manage($entity);
+        $unitOfWork->pushSave($entity)->process();
+        $entity->setRoles(['ADMIN']);
+        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame([['v1_boo_roles' => ['ADMIN'], 'w1_boo_id' => 3]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testIsPropertyChangedShouldTellWhetherAMutableFieldChanged()
     {
         $entity = $this->createDocument();
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
 
         $unitOfWork->manage($entity);
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+
+        $entity->getPayload()->tags[] = 'php';
         $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
-        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
 
-        // Written by each save: still "changed" afterwards
+        // Written: unchanged afterwards
         $unitOfWork->pushSave($entity)->process();
-        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1362,11 +1455,16 @@ class UnitOfWorkTest extends TestCase
     {
         $entity = $this->createDocument();
         $entity->setId(null);
-        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
 
         $unitOfWork->pushSave($entity)->process();
+        // The values inserted are the ones stored
+        $unitOfWork->pushSave($entity)->process();
+        $entity->getPayload()->tags[] = 'php';
+        $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_doc_payload' => '{"tags":["php"]}', 'w1_doc_id' => 1], $params[1]);
         $this->assertSame(1, $entity->getId());
     }
 
@@ -1414,7 +1512,7 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame(
             [
                 'UPDATE `T_SLOT_SLO` SET `slo_day` = :v1_slo_day WHERE `slo_day` = :w1_slo_day',
-                'UPDATE `T_SLOT_SLO` SET `slo_label` = :v1_slo_label, `slo_day` = :v2_slo_day WHERE `slo_day` = :w1_slo_day',
+                'UPDATE `T_SLOT_SLO` SET `slo_label` = :v1_slo_label WHERE `slo_day` = :w1_slo_day',
                 'DELETE FROM `T_SLOT_SLO` WHERE `slo_day` = :w1_slo_day',
             ],
             $queries
@@ -1422,7 +1520,7 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame(
             [
                 ['v1_slo_day' => '2026-01-02 00:00:00', 'w1_slo_day' => '2026-01-01 00:00:00'],
-                ['v1_slo_label' => 'b', 'v2_slo_day' => '2026-01-02 00:00:00', 'w1_slo_day' => '2026-01-02 00:00:00'],
+                ['v1_slo_label' => 'b', 'w1_slo_day' => '2026-01-02 00:00:00'],
                 ['w1_slo_day' => '2026-01-02 00:00:00'],
             ],
             $params
@@ -1458,14 +1556,13 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame(1, $entity->getId()?->value);
         $this->assertSame(
             [
-                // A mutable field: written by every save
-                'UPDATE `T_ACCOUNT_ACC` SET `acc_name` = :v1_acc_name, `acc_id` = :v2_acc_id WHERE `acc_id` = :w1_acc_id',
+                'UPDATE `T_ACCOUNT_ACC` SET `acc_name` = :v1_acc_name WHERE `acc_id` = :w1_acc_id',
                 'DELETE FROM `T_ACCOUNT_ACC` WHERE `acc_id` = :w1_acc_id',
             ],
             \array_slice($queries, 1)
         );
         $this->assertSame(
-            [['v1_acc_name' => 'b', 'v2_acc_id' => 1, 'w1_acc_id' => 1], ['w1_acc_id' => 1]],
+            [['v1_acc_name' => 'b', 'w1_acc_id' => 1], ['w1_acc_id' => 1]],
             \array_slice($params, 1)
         );
     }
@@ -1513,11 +1610,12 @@ class UnitOfWorkTest extends TestCase
             ['boo_name' => 'Sylvain', 'doc_id' => '1', 'doc_payload' => '{"tags":[]}']
         );
 
+        $entity->getPayload()->tags[] = 'php';
         $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
         $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame([['v1_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1]], $params);
+        $this->assertSame([['v1_doc_payload' => '{"tags":["php"]}', 'w1_doc_id' => 1]], $params);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1529,7 +1627,7 @@ class UnitOfWorkTest extends TestCase
         $entity->setPublishedAt(new \DateTime('2026-02-01 10:00:00'));
         $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
         $unitOfWork->pushSave($entity)->process();
-        // Known from now on: written by every save, as a mutable field read
+        // Known from now on: written when changed, as a mutable field read
         $entity->getPublishedAt()->modify('+1 hour');
         $unitOfWork->pushSave($entity)->process();
 
@@ -1543,7 +1641,7 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingAnEntityReadWithEveryColumnShouldWriteItsMutableFields()
+    public function testSavingAnEntityReadWithEveryColumnShouldWriteItsMutableFieldsChanged()
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
         $entity = $this->hydrateDocument(
@@ -1553,11 +1651,10 @@ class UnitOfWorkTest extends TestCase
         );
 
         $unitOfWork->pushSave($entity)->process();
+        $entity->getPublishedAt()?->modify('+1 day');
+        $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame(
-            [['v1_doc_payload' => null, 'v2_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1]],
-            $params
-        );
+        $this->assertSame([['v1_doc_published_at' => '2026-01-02 10:00:00', 'w1_doc_id' => 1]], $params);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1570,10 +1667,13 @@ class UnitOfWorkTest extends TestCase
         // Managed again by hand: its current values are taken as the stored ones
         $entity->setPublishedAt(new \DateTime('2026-02-01 10:00:00'));
         $unitOfWork->manage($entity);
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $entity->getPublishedAt()?->modify('+1 hour');
+        $entity->setPayload((object) ['tags' => []]);
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            [['v1_doc_payload' => null, 'v2_doc_published_at' => '2026-02-01 10:00:00', 'w1_doc_id' => 1]],
+            [['v1_doc_payload' => '{"tags":[]}', 'v2_doc_published_at' => '2026-02-01 11:00:00', 'w1_doc_id' => 1]],
             $params
         );
     }
