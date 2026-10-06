@@ -14,7 +14,9 @@ use Symfony\Component\PropertyAccess\PropertyPathInterface;
 
 class PropertyAccessor
 {
+    /** @var array<string, array{public: bool, supportsHook: bool, hasSetHook: bool}> by class and property name */
     private array $reflectionData = [];
+    /** @var array<string, ReflectionProperty> by class and property name */
     private array $reflectionProperties = [];
     /** @var array<string, ?ReflectionProperty> declaring property, by class and property name */
     private array $declaredProperties = [];
@@ -59,6 +61,9 @@ class PropertyAccessor
         return $this->propertyAccessor->getValue($object, $propertyPath);
     }
 
+    /**
+     * @param object|array<mixed> $objectOrArray
+     */
     public function isWritable(object|array $objectOrArray, PropertyPathInterface|string $propertyPath, ?string $setter): bool
     {
         if ($setter !== null) {
@@ -67,6 +72,9 @@ class PropertyAccessor
         return $this->propertyAccessor->isWritable($objectOrArray, $propertyPath);
     }
 
+    /**
+     * @param object|array<mixed> $objectOrArray
+     */
     public function isReadable(object|array $objectOrArray, PropertyPathInterface|string $propertyPath, ?string $getter): bool
     {
         if ($getter !== null) {
