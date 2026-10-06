@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Trait CCMBenchmark\\Ting\\Entity\\NotifyProperty is used zero times and is not analysed\.$#'
-			identifier: trait.unused
-			count: 1
-			path: src/Ting/Entity/NotifyProperty.php
-
-		-
 			message: '#^Parameter \#1 \$repositoryClass of method CCMBenchmark\\Ting\\MetadataRepository\:\:addMetadata\(\) expects class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<object\>\>, \(int\|string\) given\.$#'
 			identifier: argument.type
 			count: 1
