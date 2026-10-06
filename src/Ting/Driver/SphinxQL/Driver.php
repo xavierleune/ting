@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -27,21 +28,11 @@ namespace CCMBenchmark\Ting\Driver\SphinxQL;
 
 use CCMBenchmark\Ting\Driver\Mysqli;
 
+/**
+ * Values are quoted as by Mysqli\Driver: null as NULL, booleans as 0 / 1 (SphinxQL has no boolean literal)
+ */
 class Driver extends Mysqli\Driver
 {
-    /**
-     * Quote value according to the type of variable
-     *
-     * @internal
-     */
-    protected function quoteValue(mixed $value): int|float|string
-    {
-        return match (\gettype($value)) {
-            "integer", "double" => $value,
-            default => "'" . $this->connection->real_escape_string($value) . "'",
-        };
-    }
-
     public function escapeField(mixed $field = null): string
     {
         return $field;

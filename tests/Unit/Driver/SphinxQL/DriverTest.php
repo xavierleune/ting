@@ -28,6 +28,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Driver\SphinxQL;
 
 use CCMBenchmark\Ting\Driver\SphinxQL\Driver;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use tests\fixtures\Fake\Mysqli;
 use tests\fixtures\Fake\SphinxQL;
 
 class DriverTest extends TestCase
@@ -39,5 +40,31 @@ class DriverTest extends TestCase
         $driver = new Driver($mockDriver);
 
         $this->assertSame('Bouh', $driver->escapeField('Bouh'));
+    }
+
+    public function testExecuteShouldQuoteValuesAsMysqli()
+    {
+        $queries = [];
+        $connection = $this->createStub(Mysqli::class);
+        $connection->method('real_escape_string')->willReturnCallback(fn (string $value) => addslashes($value));
+        $connection->method('query')->willReturnCallback(function (string $sql) use (&$queries): bool {
+            $queries[] = $sql;
+
+            return true;
+        });
+
+        $driver = new Driver($connection);
+        $driver->execute(
+            'SELECT id FROM idx WHERE MATCH(:match) AND deleted = :deleted AND visible = :visible'
+                . ' AND parent = :parent AND weight > :weight AND score > :score',
+            ['match' => "l'été", 'deleted' => false, 'visible' => true, 'parent' => null, 'weight' => 3, 'score' => 1.5]
+        );
+
+        // null became '' (with a deprecation) and false became ''
+        $this->assertSame(
+            ["SELECT id FROM idx WHERE MATCH('l\\'été') AND deleted = 0 AND visible = 1"
+                . " AND parent = null AND weight > 3 AND score > 1.5"],
+            $queries
+        );
     }
 }
