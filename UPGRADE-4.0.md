@@ -71,6 +71,31 @@ $city = $cityRepository->get(3, forcePrimary: true);
   and the driver throws a `TypeError` (`connect()` takes an `int $port`). 3.x only warned, and connected to the
   default port.
 
+Database Timezone Option: an Invalid Value Now Fails Every Connection
+---------------------------------------------------------------------
+
+**Check the `timezone` of your database options before upgrading.** In 3.x, the `timezone` option
+(`ConnectionPool::setDatabaseOptions(['world' => ['timezone' => ...]])`) was sent to the server and its result
+ignored: a value the server rejected (a typo, a named zone such as `Europe/Paris` on a MySQL server whose time zone
+tables are not loaded) was silently dropped, and the session kept the server's time zone.
+
+In 4.0, `setTimezone()` (Mysqli and Pgsql) throws a `CCMBenchmark\Ting\Exceptions\DriverException` when the server
+rejects the time zone (`Can't set timezone Europe/Pari (...)`, with the database error), and does not record it. As
+`ConnectionPool` applies the option on **every** `primary()` / `replica()`, the rejected value is sent again, and
+throws again, on every access to the connection: a configuration that worked on 3.x (with its time zone silently
+ignored) now makes **every query on that database fail**.
+
+The fix is to correct the value, not to catch the exception:
+
+* MySQL accepts an offset (`'+00:00'`), `'SYSTEM'`, or a named zone (`'Europe/Paris'`) only when its time zone tables
+  are loaded (`mysql_tzinfo_to_sql`);
+* PostgreSQL accepts the names listed by `SELECT name FROM pg_timezone_names` (`Europe/Paris`, `UTC`...);
+* to keep the server's time zone, which is what 3.x did with a rejected value, remove the option.
+
+Try the value on each server first: `SET time_zone = '<value>';` (MySQL) or `SET timezone = '<value>';`
+(PostgreSQL). With Mysqli, the value is now sent as a single-quoted string: under the sql_mode `ANSI_QUOTES`, 3.x sent
+it as an identifier, which always failed silently, so the time zone configured there now applies for the first time.
+
 Repository reads: property names and entity values
 --------------------------------------------------
 
@@ -838,6 +863,32 @@ Hydrators and Transactions
   the database refuses them (3.x did not check their result), including the `COMMIT` of a PostgreSQL transaction
   aborted by a failed query. A failed `commit()` leaves no transaction open: calling `rollback()` after it throws, see
   [Transactions](docs/repositories.md#transactions).
+
+Queries, Entities and the Unit of Work
+--------------------------------------
+
+* **A missing placeholder value throws** a `CCMBenchmark\Ting\Driver\QueryException`
+  (`Value has not been set for param name`) with every driver, prepared query or not. In 3.x, only the non-prepared
+  Mysqli queries threw: PostgreSQL queries (prepared or not) and Mysqli prepared queries silently sent `NULL` for the
+  missing value. A value explicitly set to `null` is still sent as `NULL`. Check the queries whose parameters are
+  built conditionally.
+* **`UnitOfWork::isManaged()` is `false` for a new entity until its `INSERT` has run.** In 3.x, `pushSave()` made a
+  new entity managed at once, before `process()`; an `INSERT` that failed then left it managed, and saving it again ran
+  nothing. Use `isNew()` or `shouldBePersisted()` to know whether an entity is queued. Likewise, `pushDelete()` no
+  longer makes an entity managed: an entity never inserted (queued for its `INSERT`, or not managed and without primary
+  key) is only removed from the queue, without query, and an entity not managed but with its primary key is deleted by
+  that key and stays not managed. See [the unit of work](docs/unit-of-work.md#saving-and-deleting).
+* **Mysqli non-prepared queries turn the escaped colon `\:` into `:`**, as prepared queries and the PostgreSQL driver
+  already did. 3.x sent the backslash to MySQL, which dropped it inside a string literal (except under the sql_mode
+  `NO_BACKSLASH_ESCAPES`, where the backslash was kept) and received it as is elsewhere. A query that relied on the
+  backslash reaching MySQL must double it.
+* **SphinxQL quotes values as Mysqli does**: `null` is sent as `NULL` and booleans as `0` / `1`. 3.x sent `null` and
+  `false` as `''` (with a "Passing null to parameter" deprecation) and `true` as `'1'`.
+* **`NotifyProperty::__serialize()` and `__debugInfo()` return mangled keys** (`"\0*\0name"` for a protected property,
+  `"\0App\Entity\City\0name"` for a private one, as `get_mangled_object_vars()`), so that the private properties of a
+  parent or child class are no longer lost. `serialize()` / `unserialize()` and `var_dump()` are not affected, and
+  payloads are compatible both ways: entities serialized by 3.x are read by 4.0, and payloads written by 4.0 are still
+  read by 3.13. Only code calling these methods directly and reading the keys must handle the mangled names.
 
 Smaller Changes for Extensions
 ------------------------------
