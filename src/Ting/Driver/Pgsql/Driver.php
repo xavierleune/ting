@@ -618,6 +618,11 @@ class Driver implements DriverInterface
 
     public function reconnect(): bool
     {
+        if ($this->dsn === '') {
+            // Without connect(), libpq would connect with its default settings
+            throw new NeverConnectedException('Please connect to your database before trying to reconnect.');
+        }
+
         $this->connection = null;
         $this->forgetPreparedQueries();
         $this->loseTransaction();

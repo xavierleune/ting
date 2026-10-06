@@ -100,6 +100,7 @@
     * Fix Metadata used before setConnectionName() / setDatabase() (getConnection(), so a Repository) or setTable() (the generated queries): it throws a ConfigException instead of a TypeError
     * Fix MetadataRepository::findMetadataForEntity() on an unknown entity without callbackNotFound: it does nothing, as findMetadataForRepository(), instead of throwing an Error
     * Add Connection::getName()
+    * Fix Pgsql Driver::reconnect() before connect() connecting with libpq's default settings (empty connection string): it throws a NeverConnectedException, like Mysqli
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
