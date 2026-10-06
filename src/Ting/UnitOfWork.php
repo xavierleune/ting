@@ -39,7 +39,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public const STATE_NEW     = 1;
     public const STATE_MANAGED = 2;
     public const STATE_DELETE  = 3;
-    /** @var WeakMap<NotifyPropertyInterface, NotifyPropertyInterface|bool> */
+    /** @var WeakMap<NotifyPropertyInterface, true> the managed entities */
     protected WeakMap $entities;
     /**
      * Changes notified by propertyChanged() since the last write
@@ -299,7 +299,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * Flag the entity to be deleted on next process
      *
      * An entity never inserted (queued for its INSERT, or not managed and without primary key) has no row: it is
-     * unqueued, no query is run. An entity not managed but with its primary key is deleted by that key.
+     * unqueued, no query is run. An entity not managed but with its primary key is deleted by that key: it does not
+     * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, inserts it.
      */
     public function pushDelete(NotifyPropertyInterface $entity): static
     {
@@ -313,7 +314,6 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         }
 
         $this->entitiesShouldBePersisted[$hash] = ['state' => self::STATE_DELETE, 'entity' => $entity];
-        $this->entities[$entity] = $entity;
 
         return $this;
     }
