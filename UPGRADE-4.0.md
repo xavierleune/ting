@@ -903,6 +903,11 @@ Smaller Changes for Extensions
 
 These changes only matter if you extend Ting classes or rely on their internals.
 
+Elements marked `@internal` (methods such as `MetadataRepository::findMetadataForEntity()` /
+`findMetadataForRepository()`, classes, traits) are reserved for Ting and for
+[ting_bundle](https://github.com/xavierleune/ting_bundle), which is released along with Ting and may use them. They are
+not covered by the backward compatibility promise for any other code: they may change in a minor version.
+
 * A custom driver supporting sequences must implement `CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface`
   (`getInsertedIdForSequence(string $sequenceName): int`): having a method of that name is no longer enough for the
   `sequenceName` option of an autoincrement field.
