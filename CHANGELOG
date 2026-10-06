@@ -119,6 +119,8 @@
     * Fix HydratorRelational collapsing the whole result into one row when an alias of a relation was not in the result (a typo in AggregateFrom / AggregateTo): it throws a HydratorException; the rows without root entity (LEFT JOIN on the root side), which collapsed into one row holding a null root, are skipped
     * Fix HydratorValueObject overwriting a static property of the class with a column of the same name: the column is handled as one without property (a dynamic property)
     * Fix Serializer\BackedEnum accepting an int value followed by a newline ("1\n" gave the case 1): the value must hold an integer and nothing else
+    * Fix Serializer\Ip::unserialize() on a value which is not an integer: "abc" or "" threw a TypeError, "1.5" gave 0.0.0.1 with a deprecation, and a value beyond 32 bits wrapped; it throws a Serializer\RuntimeException unless the value is an integer from -2147483648 to 4294967295 (signed or unsigned 32 bits column)
+
 
 
 

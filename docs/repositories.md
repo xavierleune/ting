@@ -200,7 +200,7 @@ Types listed above with a default serializer use it unless the field declares an
 | `Serializer\Json`                    | `array`, `\stdClass`...       | `options` and `depth` of `json_encode()` / `json_decode()`, `assoc` on unserialize (default `false`: objects) |
 | `Serializer\BackedEnum`              | backed enum                   | `enum` on unserialize (required): the enum class                                                             |
 | `Serializer\Uuid`                    | `Symfony\Component\Uid\Uuid`  | None                                                                                                         |
-| `Serializer\Ip`                      | IPv4 as a string              | None. IPv4 only: an IPv6 address throws a `Serializer\RuntimeException` (store it as a `string`)             |
+| `Serializer\Ip`                      | IPv4 as a string              | None. IPv4 only: an IPv6 address, or a stored value which is not a 32 bits integer, throws a `Serializer\RuntimeException` (store IPv6 as a `string`) |
 | `Serializer\Geometry`                | `Brick\Geo\Geometry`          | None                                                                                                         |
 | `Driver\Mysqli\Serializer\Boolean`   | `bool`                        | None                                                                                                         |
 | `Driver\Pgsql\Serializer\Boolean`    | `bool`                        | None                                                                                                         |

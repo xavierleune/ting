@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -51,9 +52,10 @@ class Ip implements SerializerInterface, ScalarValueInterface
     }
 
     /**
-     * @param mixed $serialized
+     * @param mixed $serialized an integer, or a string holding one, from -2147483648 to 4294967295 (a signed or an
+     *                          unsigned 32 bits column)
      * @param SerializerOptions $options unused
-     * @throws RuntimeException
+     * @throws RuntimeException when $serialized is not such an integer
      */
     public function unserialize($serialized, array $options = []): null|string|bool
     {
@@ -61,8 +63,19 @@ class Ip implements SerializerInterface, ScalarValueInterface
             return null;
         }
 
-        $value = long2ip($serialized);
+        // long2ip() would throw a TypeError on 'abc', truncate '1.5' with a deprecation and wrap beyond 32 bits
+        $value = false;
+        if (is_int($serialized) || (is_string($serialized) && trim($serialized) === $serialized)) {
+            $value = filter_var(
+                $serialized,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => -2147483648, 'max_range' => 4294967295]]
+            );
+        }
+        if ($value === false) {
+            throw new RuntimeException('IPv4 Internet network address is invalid: an integer is expected');
+        }
 
-        return $value;
+        return long2ip($value);
     }
 }

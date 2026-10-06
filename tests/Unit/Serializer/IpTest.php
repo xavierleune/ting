@@ -49,6 +49,31 @@ class IpTest extends TestCase
         });
     }
 
+    public function testUnserializeShouldAcceptAnInteger()
+    {
+        $serializer = new Ip();
+
+        $this->assertSame('10.0.0.1', $serializer->unserialize(167772161));
+        $this->assertSame('10.0.0.1', $serializer->unserialize('167772161'));
+        $this->assertSame('255.255.255.255', $serializer->unserialize('4294967295'));
+        // A signed 32 bits column
+        $this->assertSame('255.255.255.255', $serializer->unserialize('-1'));
+        $this->assertSame('128.0.0.0', $serializer->unserialize(-2147483648));
+    }
+
+    public function testUnserializeShouldRejectWhatIsNotAnIPv4Integer()
+    {
+        $serializer = new Ip();
+
+        foreach (['abc', '', '1.5', 1.5, 2.0, ' 1', "1\n", '4294967296', '-2147483649', true] as $value) {
+            $thrown = null;
+            $types = $this->collectErrorTypes(static fn () => $serializer->unserialize($value), $thrown);
+
+            $this->assertInstanceOf(RuntimeException::class, $thrown, var_export($value, true));
+            $this->assertSame([], $types, var_export($value, true));
+        }
+    }
+
     public function testNullValueShouldBeReturned()
     {
         $serializer = new Ip();
