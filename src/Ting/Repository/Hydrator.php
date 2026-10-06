@@ -106,7 +106,7 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * @return Generator<int, T|stdClass>
+     * @return Generator<int, array<int|string, T|stdClass|null>>
      */
     public function getIterator(): Generator
     {
@@ -257,7 +257,7 @@ class Hydrator implements HydratorInterface
      * @param string $database
      * @param array  $columns
      *
-     * @return array<int, T|stdClass>
+     * @return array<int|string, T|stdClass|null>
      */
     protected function hydrateColumns(string $connectionName, $database, array $columns): array
     {

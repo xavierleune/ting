@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Generator expects value type stdClass\|T, array\<int, stdClass\|T\> given\.$#'
-			identifier: generator.valueType
-			count: 1
-			path: src/Ting/Repository/Hydrator.php
-
-		-
 			message: '#^Property CCMBenchmark\\Ting\\Repository\\Metadata\<T\>\:\:\$fields \(array\<string, array\{fieldName\: string, columnName\: string, type\: string, primary\?\: bool, autoincrement\?\: bool, serializer\?\: class\-string\<CCMBenchmark\\Ting\\Serializer\\SerializerInterface\>, serializer_options\?\: array\{serialize\?\: array\<mixed\>, unserialize\?\: array\<mixed\>\}, setter\?\: string, \.\.\.\}\>\) does not accept non\-empty\-array\<non\-empty\-array\>\.$#'
 			identifier: assign.propertyType
 			count: 1
