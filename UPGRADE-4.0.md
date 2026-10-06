@@ -257,7 +257,9 @@ Util\Debug
   and uninitialized properties are skipped.
 * A date is exported as `['__CLASS__' => ..., 'date' => '2026-01-02T03:04:05.000000+01:00', 'timezone' => ...]`,
   other internal objects with the properties `var_dump()` shows. Virtual hooked properties are skipped, and
-  generators are not iterated (exported as `['__CLASS__' => 'Generator']`).
+  generators are not iterated (exported as `['__CLASS__' => 'Generator']`), nor the iterators over a generator
+  (`IteratorIterator`...) and `NoRewindIterator`. An iterable with object keys (a `WeakMap`, held for instance by the
+  unit of work) is exported as a list of `['key' => ..., 'value' => ...]` pairs.
 * For a quick look at an entity, `var_dump($entity)` is enough: `NotifyProperty::__debugInfo()` hides the listeners.
 
 Generator
