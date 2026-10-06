@@ -282,10 +282,13 @@ class Driver implements DriverInterface
             $this->logger->startQuery($sql, $params, $this->objectHash, $this->currentDatabase);
         }
 
-        $result = $this->connection->query($sql);
-
-        if ($this->logger !== null) {
-            $this->logger->stopQuery();
+        try {
+            $result = $this->connection->query($sql);
+        } finally {
+            // Also when mysqli throws (report mode MYSQLI_REPORT_ERROR)
+            if ($this->logger !== null) {
+                $this->logger->stopQuery();
+            }
         }
 
         if ($result === false) {
@@ -366,14 +369,20 @@ class Driver implements DriverInterface
         if ($this->logger !== null) {
             $this->logger->startPrepare($sql, $this->objectHash, $this->currentDatabase);
         }
-        $driverStatement = $this->connection->prepare($sql);
+        $driverStatement = false;
+        try {
+            $driverStatement = $this->connection->prepare($sql);
+        } finally {
+            // Also on failure (false, or a mysqli_sql_exception under MYSQLI_REPORT_ERROR): named after the SQL
+            if ($this->logger !== null) {
+                $this->logger->stopPrepare(
+                    $driverStatement !== false ? spl_object_hash($driverStatement) : $statementName
+                );
+            }
+        }
 
         if ($driverStatement === false) {
             throw new QueryException($this->connection->error . ' (Query: ' . $sql . ')', $this->connection->errno);
-        }
-
-        if ($this->logger !== null) {
-            $this->logger->stopPrepare(spl_object_hash($driverStatement));
         }
 
         $statement = new Statement($driverStatement, $paramsOrder, $this->name, $database);
@@ -467,13 +476,23 @@ class Driver implements DriverInterface
         }
     }
 
+    /**
+     * @throws QueryException
+     */
     public function getInsertedId(): int
     {
+        $this->assertNoReconnectionPending();
+
         return (int) $this->connection->insert_id;
     }
 
+    /**
+     * @throws QueryException
+     */
     public function getAffectedRows(): int|string
     {
+        $this->assertNoReconnectionPending();
+
         if ($this->connection->affected_rows < 0) {
             return 0;
         }

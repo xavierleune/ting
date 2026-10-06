@@ -256,4 +256,22 @@ class StatementTest extends TestCase
         $statement->setLogger($mockLogger);
         $statement->execute([], $collection);
     }
+
+    public function testExecuteThrowingAMysqliExceptionShouldStopTheLog()
+    {
+        // Under the report mode MYSQLI_REPORT_ERROR, mysqli throws instead of setting errno
+        $driverStatement = $this->createStub(MysqliStatement::class);
+        $driverStatement->method('close')->willReturn(true);
+        $driverStatement->method('execute')
+            ->willThrowException(new \mysqli_sql_exception('Duplicate entry', 1062));
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startStatementExecute');
+        $mockLogger->expects($this->once())->method('stopStatementExecute');
+
+        $statement = new Statement($driverStatement, [], 'connectionName', 'database');
+        $statement->setLogger($mockLogger);
+
+        $this->assertThrows(\mysqli_sql_exception::class, fn () => $statement->execute([]));
+    }
 }
