@@ -33,8 +33,11 @@ use CCMBenchmark\Ting\Driver\Mysqli;
  */
 class Driver extends Mysqli\Driver
 {
+    /**
+     * SphinxQL identifiers are not quoted: the field is returned as a string (null, the default, as an empty name)
+     */
     public function escapeField(mixed $field = null): string
     {
-        return $field;
+        return (string) $field;
     }
 }

@@ -42,6 +42,15 @@ class DriverTest extends TestCase
         $this->assertSame('Bouh', $driver->escapeField('Bouh'));
     }
 
+    public function testEscapeFieldShouldAcceptNoFieldAndScalars(): void
+    {
+        $driver = new Driver(new SphinxQL());
+
+        // The interface makes the field optional: the default null gives an empty name, as (string) null
+        $this->assertSame('', $driver->escapeField());
+        $this->assertSame('42', $driver->escapeField(42));
+    }
+
     public function testExecuteShouldQuoteValuesAsMysqli()
     {
         $queries = [];

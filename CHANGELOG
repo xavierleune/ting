@@ -129,6 +129,7 @@
     * Fix a column name holding a colon after a non-word character ("x :y") breaking every generated query on Mysqli and Pgsql (since 3.x): its :y was taken for a placeholder; Mysqli and Pgsql escapeField() escape the colon (\:), which the drivers unescape as in any SQL they are given
     * Fix NotifyProperty ignoring the __sleep() of an entity (since 3.12, when __serialize() was added): the properties it leaves out were serialized anyway (into the cache, for instance); __serialize() now keeps only the properties __sleep() lists, as serialize() does, and never the listeners
     * BC Fix saving a clone of a managed entity (or a detached entity, one read from a cache, one built with its id) inserting a new row: an entity not managed whose autoincrement primary key is set was inserted with a new generated id, its id ignored then overwritten; it is now an existing row, updated by its primary key with every readable mapped field, then managed (isNew() is false for it). To duplicate a row, set the autoincrement property of the copy to null before saving it. An entity deleted by process() is still inserted again by its next save
+    * Fix SphinxQL Driver::escapeField() called without field (the default null of the interface) throwing a TypeError: it returns the field as a string
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
