@@ -53,6 +53,7 @@ use tests\fixtures\Fake\Mysqli;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
+use tests\fixtures\model\City;
 use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\SameTable\User;
 use tests\fixtures\model\SameTable\UserLight;
@@ -330,6 +331,52 @@ class RepositoryTest extends TestCase
             $services->serializerFactory()
         );
         $bouhRepository->delete($entity);
+    }
+
+    /**
+     * Another repository on the same entity may have been registered after it: save() and delete() write with the
+     * metadata of the repository, unless they map another entity
+     */
+    public function testSaveAndDeleteShouldGiveTheMetadataOfTheRepositoryForItsEntity()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../../fixtures/model/*Repository.php'
+        );
+        $unitOfWork = $this->getMockBuilder(UnitOfWork::class)
+            ->setConstructorArgs([new ConnectionPool(), $services->metadataRepository(), $services->queryFactory()])
+            ->onlyMethods(['pushSave', 'pushDelete', 'process'])
+            ->getMock();
+        $bouhRepository = new BouhRepository(
+            new ConnectionPool(),
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $unitOfWork
+        );
+        $bouh = new Bouh();
+        $city = new City();
+
+        $unitOfWork->expects($this->exactly(2))->method('pushSave')
+            ->willReturnCallback(function (object $entity, ?Metadata $metadata = null) use ($unitOfWork, $bouh, $bouhRepository) {
+                $this->assertSame($entity === $bouh ? $bouhRepository->getMetadata() : null, $metadata);
+
+                return $unitOfWork;
+            });
+        $unitOfWork->expects($this->exactly(2))->method('pushDelete')
+            ->willReturnCallback(function (object $entity, ?Metadata $metadata = null) use ($unitOfWork, $bouh, $bouhRepository) {
+                $this->assertSame($entity === $bouh ? $bouhRepository->getMetadata() : null, $metadata);
+
+                return $unitOfWork;
+            });
+        $unitOfWork->expects($this->exactly(4))->method('process');
+
+        $bouhRepository->save($bouh);
+        $bouhRepository->save($city);
+        $bouhRepository->delete($bouh);
+        $bouhRepository->delete($city);
     }
 
     public function testGetQueryShouldCallQueryFactoryGet()
