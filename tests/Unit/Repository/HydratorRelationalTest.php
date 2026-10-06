@@ -1191,6 +1191,57 @@ class HydratorRelationalTest extends TestCase
     }
 
     /**
+     * @return array<string, array{RelationMany, string}>
+     */
+    public static function unknownAliasProvider(): array
+    {
+        return [
+            'target' => [
+                new RelationMany(new AggregateFrom('c'), new AggregateTo('bouhh'), 'citiesAre'),
+                'The alias "bouhh" of the relation c -> bouhh is not in the result, which holds: bouh, c, dep, auth',
+            ],
+            'source' => [
+                new RelationMany(new AggregateFrom('city'), new AggregateTo('bouh'), 'citiesAre'),
+                'The alias "city" of the relation city -> bouh is not in the result, which holds: bouh, c, dep, auth',
+            ],
+        ];
+    }
+
+    #[DataProvider('unknownAliasProvider')]
+    public function testHydrateRejectsARelationAliasMissingFromTheResult(RelationMany $relation, string $message): void
+    {
+        $hydrator = $this->getTreeHydrator(new TingServices(), [
+            [1, 'Leune', 10, 'Paris', 100, 1000],
+            [2, 'Robez-Masson', 12, 'Nancy', 100, 1000],
+        ]);
+        $hydrator->addRelation($relation);
+
+        $this->assertThrows(HydratorException::class, fn () => iterator_to_array($hydrator->getIterator()), $message);
+    }
+
+    public function testHydrateSkipsTheRowsWithoutRoot(): void
+    {
+        // LEFT JOIN on the root side: Paris and Lyon have no bouh
+        $hydrator = $this->getTreeHydrator(new TingServices(), [
+            [null, null, 10, 'Paris', 100, 1000],
+            [1, 'Leune', 12, 'Nancy', 100, 1000],
+            [null, null, 11, 'Lyon', 100, 1000],
+            [2, 'Robez-Masson', 13, 'Metz', 100, 1000],
+        ]);
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+
+        $rows = iterator_to_array($hydrator->getIterator(), false);
+
+        $this->assertSame(
+            [['Leune', ['Nancy']], ['Robez-Masson', ['Metz']]],
+            array_map(static fn (array $row) => [
+                $row['bouh']->getName(),
+                array_map(static fn ($city) => $city->getName(), array_values($row['bouh']->getCities())),
+            ], $rows)
+        );
+    }
+
+    /**
      * A hydrator over rows (bouh.id, bouh.name, c.id, c.name, dep.id, auth.id).
      */
     private function getTreeHydrator(TingServices $services, array $rows): HydratorRelational

@@ -528,6 +528,11 @@ Things to know:
   both books above share the same `Author` instance;
 * every entity involved in a relation needs a primary key in its metadata (otherwise a `HydratorException` is thrown),
   and its primary key columns must be selected;
+* every alias of a relation must be in the result: an alias absent from the columns (a typo in `AggregateFrom` or
+  `AggregateTo`) throws a `HydratorException` when the collection is iterated;
+* a row without root entity (all the roots `null`, for instance a `LEFT JOIN` on the root side) is skipped: there is
+  no root to yield it with, so its entities are given to no one. To get them, select from their side or make them a
+  root;
 * rows don't need to be sorted, but the whole result is read and hydrated before the first row is returned: there is
   no lazy hydration.
 * the relations can't form a cycle: a bidirectional relation (`book` given to `user` and `user` given to `book`) or an
