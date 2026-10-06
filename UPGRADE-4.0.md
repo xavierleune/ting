@@ -110,8 +110,12 @@ values of the criteria with the serializers of the fields, as `save()` does:
 | Order direction other than `ASC` / `DESC` | ignored (invalid SQL when all were)     | `ValueException`                               |
 | Empty array in the criteria               | invalid SQL (`IN ()`)                   | `ValueException`                               |
 
+The `CountryLanguage` call below uses the sample model (`sample/src/model/CountryLanguageRepository.php`). The `City`
+criteria are illustrative: they assume `status` (an enum `CityStatus`) and `createdAt` (a `datetime`) fields, which the
+sample `City` does not have.
+
 ```php
-// Before (3.x), with the sample model (sample/src/model/CountryLanguageRepository.php):
+// Before (3.x):
 $language = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
 $cities = $cityRepository->getBy(
     ['status' => CityStatus::Active->value, 'createdAt' => $date->format('Y-m-d H:i:s')],
@@ -302,9 +306,13 @@ $generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['n
 ```
 
 * `Generator` is mostly used internally: from a repository, use `getBy($criteria, $forcePrimary, $order, $limit)`.
-  Its signature only renames `$forceMaster` to `$forcePrimary` (see "Primary / Replica"), but its arguments changed:
-  property names in the order, converted values, validated directions (see "Repository reads: property names and
-  entity values").
+  Its signature only renames `$forceMaster` to `$forcePrimary` (see "Primary / Replica").
+* `Generator` itself still works at the database level, as in 3.x: its criteria and its order take **column names**
+  and **database values**, sent as given, and an order direction other than `ASC` / `DESC` is still silently left
+  out. The rules of "Repository reads: property names and entity values" (property names, values converted by the
+  serializers, `ValueException` on an invalid direction or an empty array) are applied before it, by `Metadata` and
+  `Repository`. Code calling `Generator` directly keeps passing column names and database values; only the generated
+  parameter names changed (see "Smaller Changes for Extensions").
 
 Repository and RepositoryFactory Constructors
 ---------------------------------------------
