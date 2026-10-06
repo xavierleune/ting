@@ -41,11 +41,8 @@ trait NotifyProperty
     /**
      * Notify all observers with old and new values.
      * The same value given as old and new value, objects included, is not a change: nothing is notified.
-     * @param string $propertyName
-     * @param mixed $oldValue
-     * @param mixed $newValue
      */
-    public function propertyChanged($propertyName, $oldValue, $newValue): void
+    public function propertyChanged(string $propertyName, mixed $oldValue, mixed $newValue): void
     {
         if ($oldValue === $newValue) {
             return;
