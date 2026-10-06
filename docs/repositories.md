@@ -190,7 +190,7 @@ Types listed above with a default serializer use it unless the field declares an
 
 | Serializer (`CCMBenchmark\Ting\...`) | PHP value                     | Options                                                                                                      |
 |--------------------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------|
-| `Serializer\DateTime`                | `\DateTime`                   | `format` (default `Y-m-d H:i:s`, a MySQL `DATETIME` / PostgreSQL `timestamp`); `unSerializeUseFormat` (default `true`: read with `format`, then with `new \DateTime()` when it does not match; `false`: with `new \DateTime()` only) |
+| `Serializer\DateTime`                | `\DateTime`                   | `format` (default `Y-m-d H:i:s`, a MySQL `DATETIME` / PostgreSQL `timestamp`; `Y-m-d` for a `DATE` reads midnight); `unSerializeUseFormat` (default `true`: read with `format`, then with `new \DateTime()` when it does not match; `false`: with `new \DateTime()` only) |
 | `Serializer\DateTimeImmutable`       | `\DateTimeImmutable`          | Same                                                                                                         |
 | `Serializer\DateTimeZone`            | `\DateTimeZone`               | None                                                                                                         |
 | `Serializer\Json`                    | `array`, `\stdClass`...       | `options` and `depth` of `json_encode()` / `json_decode()`, `assoc` on unserialize (default `false`: objects) |
