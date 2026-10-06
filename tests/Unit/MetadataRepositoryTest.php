@@ -768,6 +768,53 @@ class MetadataRepositoryTest extends TestCase
         $this->assertSame('FrUserEntity', $this->entityFoundForTable($metadataRepository, 'db_other', '', preferredRepositories: [['FrUser']]));
     }
 
+    /**
+     * A subclass of a repository, or two repositories hydrating the same entity with the same fields: whichever
+     * metadata is chosen, the entity is the same
+     */
+    public function testFindMetadataForTableShouldNotBeAmbiguousForTheSameEntityAndFields(): void
+    {
+        $definitions = [
+            ['UserRepository', 'bouh_world', '', 'User', ['id', 'name']],
+            ['AdminUserRepository', 'bouh_world', '', 'User', ['id', 'name']],
+        ];
+
+        foreach ([$definitions, array_reverse($definitions)] as $registered) {
+            $metadataRepository = $this->metadataRepositoryFor($registered);
+            $found = null;
+            // Read by a third repository (a join) or a query of the QueryFactory: no preference
+            $metadataRepository->findMetadataForTable(
+                'main',
+                'bouh_world',
+                '',
+                'T_CITY_CIT',
+                function (Metadata $metadata) use (&$found): void {
+                    $found = $metadata;
+                },
+                preferredRepositories: [['OrderRepository']]
+            );
+
+            // Whatever the registration order
+            $metadataRepository->findMetadataForRepository(
+                'AdminUserRepository',
+                fn (Metadata $metadata) => $this->assertSame($metadata, $found)
+            );
+        }
+    }
+
+    public function testFindMetadataForTableShouldThrowForTheSameEntityWithOtherFields(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['User', 'bouh_world', '', 'User', ['id', 'name', 'email']],
+            ['UserName', 'bouh_world', '', 'User', ['id', 'name']],
+        ]);
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', '')
+        );
+    }
+
     public function testFindMetadataForTableShouldApplyTheRulesToThePreferredRepositories(): void
     {
         $metadataRepository = $this->metadataRepositoryFor([
