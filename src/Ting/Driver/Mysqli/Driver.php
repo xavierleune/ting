@@ -264,7 +264,7 @@ class Driver implements DriverInterface
      * @param CollectionInterface $collection
      * @throws QueryException
      */
-    public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): bool|CollectionInterface|array
+    public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): bool|CollectionInterface|array|null
     {
         $this->assertNoReconnectionPending();
 
