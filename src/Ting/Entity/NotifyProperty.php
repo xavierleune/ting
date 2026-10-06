@@ -74,7 +74,8 @@ trait NotifyProperty
      * An entity defining __sleep() keeps only the properties it lists, as serialize() does: a bare name stands for a
      * property visible from the class of the entity, a private property of a parent class needs its mangled name
      * ("\0Parent\0name"), an uninitialized typed property is left out, and a property which does not exist is reported
-     * by a warning. The listeners are never kept.
+     * by the warning of serialize(), raised as an E_USER_WARNING (PHP raises an E_WARNING, which userland code cannot
+     * trigger). The listeners are never kept.
      *
      * @return array<string, mixed>
      */
@@ -122,6 +123,8 @@ trait NotifyProperty
             return property_exists($parts[1] === '*' ? $this : $parts[1], $parts[2]);
         }
 
-        return property_exists($this, $name);
+        // As serialize(): against the class of the entity, its own properties and those of its parents but the private
+        // ones (property_exists() would see these from the scope of the class using this trait)
+        return (new \ReflectionClass(static::class))->hasProperty($name);
     }
 }

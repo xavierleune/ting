@@ -944,7 +944,8 @@ Queries, Entities and the Unit of Work
   payloads are compatible both ways: entities serialized by 3.x are read by 4.0, and payloads written by 4.0 are still
   read by 3.13. Only code calling these methods directly and reading the keys must handle the mangled names.
   An entity defining `__sleep()` is honoured again (ignored since 3.12): only the properties it lists are serialized,
-  as with `serialize()` (a private property of a parent class needs its mangled name, `"\0Parent\0name"`).
+  as with `serialize()` (a private property of a parent class needs its mangled name, `"\0Parent\0name"`); a name
+  which does not exist raises the warning of `serialize()` as an `E_USER_WARNING` (PHP raises an `E_WARNING`).
 
 Smaller Changes for Extensions
 ------------------------------
