@@ -320,14 +320,23 @@ class MetadataRepositoryTest extends TestCase
 
     public function testBatchLoadMetadataFromCacheShouldLoad1Repository()
     {
-        $paths = ['tests\fixtures\model\BouhRepository'];
+        // As returned by batchLoadMetadata(): the class initializing the metadata of each repository
+        $paths = ['tests\fixtures\model\BouhRepository' => 'tests\fixtures\model\BouhRepository'];
         $services = new TingServices();
         $metadataRepository = new MetadataRepository(
             $services->serializerFactory()
         );
         $result = $metadataRepository->batchLoadMetadataFromCache($paths);
-        $this->assertIsArray($result);
-        $this->assertCount(1, $result);
+        $this->assertSame(['tests\fixtures\model\BouhRepository'], $result);
+
+        $found = null;
+        $metadataRepository->findMetadataForRepository(
+            BouhRepository::class,
+            function (Metadata $metadata) use (&$found): void {
+                $found = $metadata;
+            }
+        );
+        $this->assertSame('T_BOUH_BOO', $found?->getTable());
     }
 
     public function testBatchLoadMetadataForRepositoryWhichNotImplementMetadataInitializerShouldDoNothing()
