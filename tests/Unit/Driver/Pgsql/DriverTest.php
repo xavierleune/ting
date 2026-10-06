@@ -531,6 +531,26 @@ class DriverTest extends TestCase
         $this->assertSame('"na""me"', $driver->escapeField('na"me'));
     }
 
+    public function testAnEscapedFieldWithAColonShouldNotBeTakenForAParameter()
+    {
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
+        NativeFunctionMock::override('pg_prepare', function ($resource, $statementName, $sql) use (&$outerSql): void {
+            $outerSql = $sql;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        // A colon after a non-word character, as in "x :y", was read as the placeholder :y
+        $this->assertSame('"x \\:y"', $driver->escapeField('x :y'));
+        $driver->prepare('SELECT ' . $driver->escapeField('x :y') . ', ' . $driver->escapeField('a\\:b')
+            . ' FROM t WHERE id = :id');
+
+        $this->assertSame('SELECT "x :y", "a\\:b" FROM t WHERE id = $1', $outerSql);
+    }
+
     public function testStartTransactionShouldExecuteQueryBegin()
     {
         NativeFunctionMock::override('pg_connect', new Pgsql());

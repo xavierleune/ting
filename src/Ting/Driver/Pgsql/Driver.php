@@ -456,8 +456,9 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultVa
      */
     public function escapeField(mixed $field = null): string
     {
-        // An embedded double quote is doubled, as PostgreSQL expects in a quoted identifier
-        return '"' . str_replace('"', '""', (string) $field) . '"';
+        // An embedded double quote is doubled, as PostgreSQL expects in a quoted identifier. A colon is escaped (\:)
+        // as in any SQL given to the driver, which removes the escape: "x :y" is not the placeholder :y
+        return '"' . str_replace(['"', ':'], ['""', '\\:'], (string) $field) . '"';
     }
 
     /**

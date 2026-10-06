@@ -452,8 +452,9 @@ class Driver implements DriverInterface
 
     public function escapeField(mixed $field = null): string
     {
-        // An embedded backtick is doubled, as MySQL expects in a quoted identifier
-        return '`' . str_replace('`', '``', (string) $field) . '`';
+        // An embedded backtick is doubled, as MySQL expects in a quoted identifier. A colon is escaped (\:) as in
+        // any SQL given to the driver, which removes the escape: "x :y" is not the placeholder :y
+        return '`' . str_replace(['`', ':'], ['``', '\\:'], (string) $field) . '`';
     }
 
     /**

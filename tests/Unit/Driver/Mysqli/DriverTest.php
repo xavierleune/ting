@@ -809,6 +809,24 @@ class DriverTest extends TestCase
         $this->assertSame('`na``me`', $driver->escapeField('na`me'));
     }
 
+    public function testAnEscapedFieldWithAColonShouldNotBeTakenForAParameter()
+    {
+        $driverFake = $this->createStub(Mysqli::class);
+        $driverFake->method('query')->willReturnCallback(function ($sql) use (&$outerSql) {
+            $outerSql = $sql;
+
+            return true;
+        });
+        $driver = new Driver($driverFake);
+
+        // A colon after a non-word character, as in "x :y", was read as the placeholder :y
+        $this->assertSame('`x \\:y`', $driver->escapeField('x :y'));
+        $driver->execute('SELECT ' . $driver->escapeField('x :y') . ', ' . $driver->escapeField('a\\:b')
+            . ' FROM t WHERE id = :id', ['id' => 1]);
+
+        $this->assertSame('SELECT `x :y`, `a\\:b` FROM t WHERE id = 1', $outerSql);
+    }
+
     public function testStartTransactionShouldRaiseExceptionIfCalledTwice()
     {
         $mockDriver = $this->createStub(Mysqli::class);

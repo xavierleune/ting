@@ -434,6 +434,16 @@ class GeneratorTest extends TestCase
         $this->assertPlaceholdersMatchParams($sql, $params);
     }
 
+    public function testAColumnWithAColonShouldNotBeTakenForAParameter()
+    {
+        $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', ['x :y', 'a::b']);
+
+        [$sql, $params] = $this->readQuery($generator->update(['x :y' => 1, 'a::b' => 2], ['x :y' => 3]));
+
+        $this->assertSame(['v1_x__y' => 1, 'v2_a__b' => 2, 'w1_x__y' => 3], $params);
+        $this->assertPlaceholdersMatchParams($sql, $params);
+    }
+
     public function testInsertWithoutValueShouldInsertTheDefaultValuesWithMysql()
     {
         $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', ['id']);
