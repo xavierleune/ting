@@ -32,20 +32,25 @@ use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Exceptions\ConnectionException;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 
+/**
+ * @phpstan-import-type ServerConfig from ConnectionPoolInterface
+ * @phpstan-import-type ConnectionConfig from ConnectionPoolInterface
+ * @phpstan-import-type DatabaseOptions from ConnectionPoolInterface
+ */
 class ConnectionPool implements ConnectionPoolInterface, ResetInterface
 {
     /**
-     * @var array
+     * @var array<string, ConnectionConfig> connection name => configuration
      */
     protected array $connectionConfig = [];
 
     /**
-     * @var array
+     * @var array<string, DatabaseOptions> database name => options
      */
     protected array $databaseOptions = [];
 
     /**
-     * @var array
+     * @var array<string, ServerConfig> connection name => replica chosen for the connection
      */
     protected array $connectionReplicas = [];
 
@@ -59,6 +64,7 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     }
 
     /**
+     * @param array<string, ConnectionConfig> $config connection name => configuration
      * @throws ConfigException when a connection still uses the "master" or "slaves" keys removed in Ting 4.0
      */
     public function setConfig(array $config): void
@@ -83,6 +89,9 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
         $this->connectionConfig = $config;
     }
 
+    /**
+     * @param array<string, DatabaseOptions> $options database name => options
+     */
     public function setDatabaseOptions(array $options): void
     {
         $this->databaseOptions = $options;
@@ -152,7 +161,7 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     }
 
     /**
-     * @param array{host: string, port: int, user?: string, password?: string} $config
+     * @param ServerConfig $config
      * @param class-string<DriverInterface> $driverClass
      * @throws Exception
      */

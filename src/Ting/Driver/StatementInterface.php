@@ -32,7 +32,9 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 interface StatementInterface
 {
     /**
-     * @param array $params
+     * @param array<string, mixed> $params parameter name => value
+     * @param CollectionInterface<mixed>|null $collection filled with the result set
+     * @return bool|CollectionInterface<mixed>
      * @throws QueryException
      */
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface;

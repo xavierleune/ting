@@ -29,8 +29,21 @@ namespace CCMBenchmark\Ting;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 
+/**
+ * @phpstan-type ServerConfig array{host: string, port: int, user?: string|null, password?: string|null}
+ * @phpstan-type ConnectionConfig array{
+ *     namespace: string,
+ *     primary: ServerConfig,
+ *     replicas?: list<ServerConfig>,
+ *     charset?: string
+ * }
+ * @phpstan-type DatabaseOptions array{timezone?: string|null}
+ */
 interface ConnectionPoolInterface
 {
+    /**
+     * @param array<string, ConnectionConfig> $config connection name => configuration
+     */
     public function setConfig(array $config): void;
 
     /**
@@ -49,5 +62,8 @@ interface ConnectionPoolInterface
 
     public function closeAll(): void;
 
+    /**
+     * @param array<string, DatabaseOptions> $options database name => options
+     */
     public function setDatabaseOptions(array $options): void;
 }

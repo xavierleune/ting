@@ -39,6 +39,9 @@ use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 
+/**
+ * @phpstan-import-type ConnectionParameters from DriverInterface
+ */
 class Driver implements DriverInterface
 {
     /**
@@ -91,6 +94,8 @@ class Driver implements DriverInterface
     /**
      * A connection is bound to its database. Serialized, the values cannot be mixed up (a separator could appear in
      * any of them), and null stays distinct from ''
+     *
+     * @param ConnectionParameters $connectionConfig
      */
     public static function getConnectionKey(array $connectionConfig, string $database): string
     {
@@ -204,6 +209,12 @@ class Driver implements DriverInterface
 
     /**
      * Execute the given query on the actual connection
+     *
+     * @template T
+     * @param array<string, mixed> $params parameter name => value
+     * @param CollectionInterface<T>|null $collection
+     * @return ($collection is null ? array<int|string, string|null>|false|int : CollectionInterface<T>) without
+     *         collection: the first row, false without row, the status of the result without result set
      * @throws QueryException
      */
     public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): string|int|bool|array|CollectionInterface|null
@@ -256,9 +267,10 @@ class Driver implements DriverInterface
     }
 
     /**
+     * @template T
      * @param string $sql
-     * @param CollectionInterface $collection
-     * @return CollectionInterface
+     * @param CollectionInterface<T> $collection
+     * @return CollectionInterface<T>
      * @throws QueryException
      *
      * @internal
@@ -329,7 +341,8 @@ class Driver implements DriverInterface
     }
 
     /**
-     * @return array
+     * @return array{0: string, 1: array<int|string, int>} the SQL with numbered placeholders, and the position of each
+     *                                                     parameter by name (an integer for a numeric name)
      */
     private function convertParameters(string $sql): array
     {
