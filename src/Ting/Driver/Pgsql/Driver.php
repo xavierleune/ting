@@ -208,6 +208,9 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
             throw new DriverException('Connect Error: ' . $dsn);
         }
         $this->connection = $resource;
+        // A charset or timezone recorded before the connection was dropped (close(), reconnect() failing): the
+        // pool's setCharset() / setTimezone() with the same value would not send it again
+        $this->applySessionSettings($resource);
 
         return $this;
     }
@@ -654,25 +657,8 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
 
         $this->dropConnection();
         try {
+            // The new session gets the recorded charset and timezone
             $this->setDatabase($this->database);
-            if ($this->currentTimezone !== null) {
-                $tz = $this->currentTimezone;
-                $this->currentTimezone = null;
-                try {
-                    $this->setTimezone($tz);
-                } catch (DriverException) {
-                    // As in ping(): the session keeps the server default, the next setTimezone() reports the error
-                }
-            }
-            if ($this->currentCharset !== null) {
-                $charset = $this->currentCharset;
-                $this->currentCharset = null;
-                try {
-                    $this->setCharset($charset);
-                } catch (DriverException) {
-                    // As in ping(): the session keeps the server default, the next setCharset() reports the error
-                }
-            }
         } catch (DriverException) {
             return false;
         }
