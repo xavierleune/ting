@@ -2,7 +2,6 @@
 
 namespace CCMBenchmark\Ting\Util;
 
-use ReflectionClass;
 use ReflectionProperty;
 use PropertyHookType;
 use Psr\Cache\InvalidArgumentException;
@@ -18,8 +17,6 @@ class PropertyAccessor
     private array $reflectionData = [];
     /** @var array<string, ReflectionProperty> by class and property name */
     private array $reflectionProperties = [];
-    /** @var array<string, ?ReflectionProperty> declaring property, by class and property name */
-    private array $declaredProperties = [];
     private const CACHE_PREFIX_WRITE = 'write_property_';
     private readonly PropertyAccessorInterface $propertyAccessor;
     private ?CacheItemPoolInterface $cacheItemPool = null;
@@ -73,6 +70,10 @@ class PropertyAccessor
     }
 
     /**
+     * A custom getter is called: like a conventional getter, it is not readable when it reads a typed property not
+     * initialized yet ("must not be accessed before initialization"), and readable when it handles that case itself
+     * (`return $this->status ?? 'draft';`). Any other error of the getter is rethrown.
+     *
      * @param object|array<mixed> $objectOrArray
      */
     public function isReadable(object|array $objectOrArray, PropertyPathInterface|string $propertyPath, ?string $getter): bool
@@ -81,34 +82,20 @@ class PropertyAccessor
             if (\is_object($objectOrArray) === false || method_exists($objectOrArray, $getter) === false) {
                 return false;
             }
-            // Like a conventional getter, a custom getter can't read a typed property not initialized yet
-            return \is_string($propertyPath) === false
-                || $this->isUninitialized($objectOrArray, $propertyPath) === false;
+
+            try {
+                $objectOrArray->$getter();
+            } catch (\Error $error) {
+                if (str_contains($error->getMessage(), 'must not be accessed before initialization')) {
+                    return false;
+                }
+
+                throw $error;
+            }
+
+            return true;
         }
         return $this->propertyAccessor->isReadable($objectOrArray, $propertyPath);
-    }
-
-    /**
-     * Whether the object has this property, typed and not initialized yet (a private property of a parent class too)
-     */
-    private function isUninitialized(object $object, string $property): bool
-    {
-        $key = $object::class . '..' . $property;
-        if (\array_key_exists($key, $this->declaredProperties) === false) {
-            $this->declaredProperties[$key] = null;
-            for ($class = new ReflectionClass($object); $class !== false; $class = $class->getParentClass()) {
-                if ($class->hasProperty($property)) {
-                    $this->declaredProperties[$key] = $class->getProperty($property);
-                    break;
-                }
-            }
-        }
-
-        $reflectionProperty = $this->declaredProperties[$key];
-
-        return $reflectionProperty !== null
-            && $reflectionProperty->isStatic() === false
-            && $reflectionProperty->isInitialized($object) === false;
     }
 
     /**

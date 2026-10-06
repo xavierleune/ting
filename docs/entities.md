@@ -183,8 +183,10 @@ When your accessors do not follow these conventions, declare them in the metadat
 options (like `isCapitalCity()` / `capitalCityIs()` above): see [field options](repositories.md#field-options).
 
 Typed properties that are not initialized (no default value and never set) are skipped: they are left out of the
-`INSERT`, so the database default applies, and out of the `UPDATE`. This includes a field with a custom `getter`:
-the getter is not called while the property named after the field is not initialized.
+`INSERT`, so the database default applies, and out of the `UPDATE`. This includes a field with a custom `getter`
+that reads a property not initialized: it fails with "must not be accessed before initialization", and the field is
+skipped. A getter that handles that case itself (`return $this->status ?? 'draft';`) is readable: its value is written.
+Since Ting calls a custom getter to know whether it is readable, it must have no side effect.
 
 ## Public properties and property hooks
 

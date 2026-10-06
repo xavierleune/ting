@@ -149,6 +149,30 @@ class PropertyAccessorTest extends TestCase
         $this->assertTrue($accessor->isReadable($entity, 'label', 'label'));
     }
 
+    public function testIsReadableShouldReturnTrueOnUninitializedPropertyWithACustomGetterHandlingIt()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new CustomGetterEntity();
+
+        $this->assertTrue($accessor->isReadable($entity, 'label', 'labelOrDefault'));
+        $this->assertSame('draft', $accessor->getValue($entity, 'label', 'labelOrDefault'));
+    }
+
+    public function testIsReadableShouldRethrowAnotherErrorOfACustomGetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            public function broken(): string
+            {
+                throw new \LogicException('Broken getter');
+            }
+        };
+
+        $this->assertThrows(\LogicException::class, function () use ($accessor, $entity): void {
+            $accessor->isReadable($entity, 'broken', 'broken');
+        }, 'Broken getter');
+    }
+
     public function testIsReadableShouldReturnTrueWithACustomGetterWithoutProperty()
     {
         $accessor = new PropertyAccessor();

@@ -26,7 +26,8 @@
 namespace tests\fixtures\model;
 
 /**
- * A typed property without default value, read through a custom getter
+ * A typed property without default value, read through a custom getter (label()), or through a custom getter that
+ * handles the property not initialized itself (labelOrDefault())
  */
 class CustomGetterEntity
 {
@@ -35,6 +36,11 @@ class CustomGetterEntity
     public function label(): string
     {
         return $this->label;
+    }
+
+    public function labelOrDefault(): string
+    {
+        return $this->label ?? 'draft';
     }
 
     public function setLabel(string $label): void
