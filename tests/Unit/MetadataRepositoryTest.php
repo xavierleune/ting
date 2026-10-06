@@ -286,6 +286,7 @@ class MetadataRepositoryTest extends TestCase
         );
         $this->assertSame(
             [
+                'tests\fixtures\model\AccountRepository'                     => 'tests\fixtures\model\AccountRepository',
                 'tests\fixtures\model\BouhMySchemaRepository'                => 'tests\fixtures\model\BouhMySchemaRepository',
                 'tests\fixtures\model\BouhReadOnlyRepository'                => 'tests\fixtures\model\BouhReadOnlyRepository',
                 'tests\fixtures\model\BouhRepository'                        => 'tests\fixtures\model\BouhRepository',

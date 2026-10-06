@@ -42,6 +42,8 @@ use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\model\Account;
+use tests\fixtures\model\AccountRepository;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
 use tests\fixtures\model\Document;
@@ -1268,6 +1270,33 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testAnInsertShouldKeepTheGeneratedValueOfAMutableAutoincrementKey()
+    {
+        $entity = new Account();
+        $entity->setName('a');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->pushSave($entity)->process();
+
+        $entity->setName('b');
+        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushDelete($entity)->process();
+
+        $this->assertSame(1, $entity->getId()?->value);
+        $this->assertSame(
+            [
+                // A mutable field: written by every save
+                'UPDATE `T_ACCOUNT_ACC` SET `acc_name` = :v1_acc_name, `acc_id` = :v2_acc_id WHERE `acc_id` = :w1_acc_id',
+                'DELETE FROM `T_ACCOUNT_ACC` WHERE `acc_id` = :w1_acc_id',
+            ],
+            \array_slice($queries, 1)
+        );
+        $this->assertSame(
+            [['v1_acc_name' => 'b', 'v2_acc_id' => 1, 'w1_acc_id' => 1], ['w1_acc_id' => 1]],
+            \array_slice($params, 1)
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testDetachShouldForgetTheSourceValueOfAMutablePrimaryKey()
     {
         $entity = $this->createSlot('2026-01-01 00:00:00');
@@ -1505,7 +1534,7 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
-     * Builds a UnitOfWork on Bouh, Event, Document and Slot whose queries are recorded instead of executed.
+     * Builds a UnitOfWork on Bouh, Event, Document, Slot and Account whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query
      * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException, and
@@ -1529,7 +1558,7 @@ class UnitOfWorkTest extends TestCase
             'tests\fixtures\model\BouhRepository',
             BouhRepository::initMetadata($this->services->serializerFactory())
         );
-        foreach ([EventRepository::class, DocumentRepository::class, SlotRepository::class] as $repository) {
+        foreach ([EventRepository::class, DocumentRepository::class, SlotRepository::class, AccountRepository::class] as $repository) {
             $metadataRepository->addMetadata($repository, $repository::initMetadata($this->services->serializerFactory()));
         }
 
