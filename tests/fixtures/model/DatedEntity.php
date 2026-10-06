@@ -25,38 +25,29 @@
 
 namespace tests\fixtures\model;
 
-use CCMBenchmark\Ting\Entity\NotifyProperty;
-use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
-
 /**
- * An entity whose mapped fields are all immutable
+ * Date properties of every kind of declared type, for the "datetime" fields without serializer
  */
-class Event implements NotifyPropertyInterface
+class DatedEntity extends DatedEntityParent
 {
-    use NotifyProperty;
+    public ?\DateTimeImmutable $immutable = null;
+    public ?\DateTimeInterface $interface = null;
+    public ?\DateTime $mutable = null;
+    /** @var mixed */
+    public $untyped;
+    public \DateTimeInterface|string|null $union = null;
+    private ?\DateTime $virtualValue = null;
 
-    protected ?int $id = null;
-    protected ?\DateTimeImmutable $startAt = null;
-
-    public function getId(): ?int
+    /**
+     * A setter without property of the same name
+     */
+    public function setVirtual(?\DateTime $value): void
     {
-        return $this->id;
+        $this->virtualValue = $value;
     }
 
-    public function setId(?int $id): void
+    public function getVirtual(): ?\DateTime
     {
-        $this->propertyChanged('id', $this->id, $id);
-        $this->id = $id;
-    }
-
-    public function getStartAt(): ?\DateTimeImmutable
-    {
-        return $this->startAt;
-    }
-
-    public function setStartAt(?\DateTimeImmutable $startAt): void
-    {
-        $this->propertyChanged('startAt', $this->startAt, $startAt);
-        $this->startAt = $startAt;
+        return $this->virtualValue;
     }
 }

@@ -23,40 +23,35 @@
  *
  **********************************************************************/
 
-namespace tests\fixtures\model;
+namespace tests\fixtures\Serializer;
 
-use CCMBenchmark\Ting\Entity\NotifyProperty;
-use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
+use CCMBenchmark\Ting\Serializer\Json;
 
 /**
- * An entity whose mapped fields are all immutable
+ * Json serializer counting its calls. A serializer of its own: its fields are mutable by default.
  */
-class Event implements NotifyPropertyInterface
+class CountingJson extends Json
 {
-    use NotifyProperty;
+    public static int $serialized = 0;
+    public static int $unserialized = 0;
 
-    protected ?int $id = null;
-    protected ?\DateTimeImmutable $startAt = null;
-
-    public function getId(): ?int
+    public static function resetCounters(): void
     {
-        return $this->id;
+        self::$serialized = 0;
+        self::$unserialized = 0;
     }
 
-    public function setId(?int $id): void
+    public function serialize($toSerialize, array $options = []): ?string
     {
-        $this->propertyChanged('id', $this->id, $id);
-        $this->id = $id;
+        self::$serialized++;
+
+        return parent::serialize($toSerialize, $options);
     }
 
-    public function getStartAt(): ?\DateTimeImmutable
+    public function unserialize($serialized, array $options = []): mixed
     {
-        return $this->startAt;
-    }
+        self::$unserialized++;
 
-    public function setStartAt(?\DateTimeImmutable $startAt): void
-    {
-        $this->propertyChanged('startAt', $this->startAt, $startAt);
-        $this->startAt = $startAt;
+        return parent::unserialize($serialized, $options);
     }
 }

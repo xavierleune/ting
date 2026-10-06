@@ -27,26 +27,27 @@ namespace tests\fixtures\model;
 
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Repository\MetadataInitializer;
+use CCMBenchmark\Ting\Serializer;
 use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
 
-class EventRepository implements MetadataInitializer
+class SlotRepository implements MetadataInitializer
 {
     public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
     {
         $metadata = new Metadata($serializerFactory);
-        $metadata->setEntity(Event::class);
+        $metadata->setEntity(Slot::class);
         $metadata->setConnectionName('main');
         $metadata->setDatabase('bouh_world');
-        $metadata->setTable('T_EVENT_EVT');
+        $metadata->setTable('T_SLOT_SLO');
+        // A \DateTime primary key: mutable
         $metadata->addField([
-            'primary'       => true,
-            'autoincrement' => true,
-            'fieldName'     => 'id',
-            'columnName'    => 'evt_id',
-            'type'          => 'int',
+            'primary'    => true,
+            'fieldName'  => 'day',
+            'columnName' => 'slo_day',
+            'type'       => 'datetime',
+            'serializer' => Serializer\DateTime::class,
         ]);
-        // Event::$startAt is typed \DateTimeImmutable: Serializer\DateTimeImmutable, immutable
-        $metadata->addField(['fieldName' => 'startAt', 'columnName' => 'evt_start_at', 'type' => 'datetime']);
+        $metadata->addField(['fieldName' => 'label', 'columnName' => 'slo_label', 'type' => 'string']);
 
         return $metadata;
     }

@@ -41,15 +41,20 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public const STATE_DELETE  = 3;
     /** @var WeakMap<NotifyPropertyInterface, NotifyPropertyInterface|bool> */
     protected WeakMap $entities;
-    /** @var WeakMap<NotifyPropertyInterface, array<string, true>> properties notified by propertyChanged() since the last write */
+    /**
+     * Changes notified by propertyChanged() since the last write
+     *
+     * @var WeakMap<NotifyPropertyInterface, array<string, array{0: mixed, 1: mixed}>> property => [old value, new value]
+     */
     protected WeakMap $entitiesChanged;
     /**
-     * Database values of the managed entities (serialized by the serializer of their field), as last read from or
-     * written to the database: a notified property changed when its current database value differs.
+     * Database values of the mutable primary keys of the managed entities, as read from or last written to the
+     * database: a key modified in place still targets its row. Nothing else is kept: the other mutable fields are
+     * written on every save, the immutable ones when notified.
      *
      * @var WeakMap<NotifyPropertyInterface, array<string, mixed>> property => database value
      */
-    protected WeakMap $databaseValues;
+    protected WeakMap $mutablePrimaryValues;
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
@@ -66,12 +71,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     ) {
         $this->entities = new WeakMap();
         $this->entitiesChanged = new WeakMap();
-        $this->databaseValues = new WeakMap();
+        $this->mutablePrimaryValues = new WeakMap();
     }
 
     /**
      * Watch changes on provided entity.
-     * Its current values are taken as the values stored in the database: changes are detected against them.
+     * The current values of its mutable primary keys are taken as the values stored in the database.
      *
      * @param NotifyPropertyInterface $entity
      */
@@ -81,19 +86,27 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             $this->entities[$entity] = true;
         }
 
-        if (isset($this->databaseValues[$entity]) === false) {
+        if (isset($this->mutablePrimaryValues[$entity]) === false) {
             $this->metadataRepository->findMetadataForEntity(
                 $entity,
                 function (Metadata $metadata) use ($entity): void {
-                    $this->databaseValues[$entity] = $metadata->getEntityDatabaseValues($entity);
+                    $this->keepMutablePrimaryValues($entity, $metadata);
                 },
                 static function (): void {
-                    // Without metadata, the entity cannot be saved: there is nothing to compare
+                    // Without metadata, the entity cannot be saved: there is nothing to keep
                 }
             );
         }
 
         $entity->addPropertyListener($this);
+    }
+
+    private function keepMutablePrimaryValues(NotifyPropertyInterface $entity, Metadata $metadata): void
+    {
+        $values = $metadata->getEntityMutablePrimaryValues($entity);
+        if ($values !== []) {
+            $this->mutablePrimaryValues[$entity] = $values;
+        }
     }
 
     /**
@@ -145,13 +158,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Record that the property may have changed: whether it did is decided on save, by comparing its database value
-     * with the one read from or last written to the database.
-     * The same object given as old and new value is recorded: it may have been modified in place.
+     * Record the change of a property: it is written on the next save of the entity, unless set back to its old
+     * value. The same value given as old and new value, objects included, is not a change.
      */
     public function propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue, mixed $newValue): void
     {
-        if ($oldValue === $newValue && is_object($newValue) === false) {
+        if ($oldValue === $newValue) {
             return;
         }
 
@@ -159,31 +171,41 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             $this->entitiesChanged[$entity] = [];
         }
 
-        $this->entitiesChanged[$entity][$propertyName] = true;
+        if (isset($this->entitiesChanged[$entity][$propertyName]) === false) {
+            $this->entitiesChanged[$entity][$propertyName] = [$oldValue, null];
+        }
+
+        $this->entitiesChanged[$entity][$propertyName][1] = $newValue;
     }
 
     /**
-     * @return bool true if the property has been notified as changed and its database value differs from the one read
-     *              from or last written to the database (when known)
+     * @return bool true if the property will be written by the next save of the entity: its change has been notified,
+     *              or it is a mutable field of a managed entity (written on every save)
      */
     public function isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName): bool
     {
-        if (isset($this->entitiesChanged[$entity][$propertyName]) === false) {
+        if (isset($this->entitiesChanged[$entity][$propertyName])
+            && $this->entitiesChanged[$entity][$propertyName][0] !== $this->entitiesChanged[$entity][$propertyName][1]
+        ) {
+            return true;
+        }
+
+        if (isset($this->entities[$entity]) === false) {
             return false;
         }
 
-        $changed = true;
+        $mutable = false;
         $this->metadataRepository->findMetadataForEntity(
             $entity,
-            function (Metadata $metadata) use ($entity, $propertyName, &$changed): void {
-                $changed = $this->getChange($entity, $metadata, $propertyName) !== null;
+            function (Metadata $metadata) use ($propertyName, &$mutable): void {
+                $mutable = $metadata->isMutable($propertyName);
             },
             static function (): void {
-                // Without metadata, the notification is all there is
+                // Without metadata, nothing is mutable
             }
         );
 
-        return $changed;
+        return $mutable;
     }
 
     /**
@@ -195,7 +217,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
         $this->entitiesChanged->offsetUnset($entity);
-        $this->databaseValues->offsetUnset($entity);
+        $this->mutablePrimaryValues->offsetUnset($entity);
         $this->entities->offsetUnset($entity);
     }
 
@@ -205,7 +227,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function detachAll(): void
     {
         $this->entitiesChanged = new WeakMap();
-        $this->databaseValues = new WeakMap();
+        $this->mutablePrimaryValues = new WeakMap();
         $this->entitiesShouldBePersisted = [];
         $this->entities = new WeakMap();
     }
@@ -293,7 +315,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Update all applicable entities in database
+     * Update all applicable entities in database: the notified changes, and every mutable field
      *
      * @param NotifyPropertyInterface $entity
      * @throws Exception
@@ -301,15 +323,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected function processManaged(NotifyPropertyInterface $entity): void
     {
-        if (isset($this->entitiesChanged[$entity]) === false) {
-            $this->markSaved($entity);
-            return;
-        }
-
         $this->metadataRepository->findMetadataForEntity(
             $entity,
             function (Metadata $metadata) use ($entity): void {
-                $properties = $this->getChanges($entity, $metadata);
+                $properties = $this->getChanges($entity, $metadata, true);
                 if ($properties === []) {
                     $this->markSaved($entity);
                     return;
@@ -328,12 +345,21 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
 
-                foreach ($properties as $property => [, $value]) {
-                    $this->databaseValues[$entity][$property] = $value;
+                // The row is now stored with the values written
+                foreach (array_keys($this->mutablePrimaryValues[$entity] ?? []) as $property) {
+                    if (isset($properties[$property])) {
+                        $this->mutablePrimaryValues[$entity][$property] = $properties[$property][1];
+                    }
                 }
                 $this->markSaved($entity);
             },
             function () use ($entity): void {
+                if (isset($this->entitiesChanged[$entity]) === false) {
+                    // Nothing to write
+                    $this->markSaved($entity);
+                    return;
+                }
+
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
             }
         );
@@ -349,46 +375,51 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * @return array<string, array{0: mixed, 1: mixed}> changed properties: name => [database value before the change,
-     *                                                  current database value]
+     * Properties to write, with their database values: the notified changes of the immutable fields (a setter may
+     * notify a property that is not mapped: it has no column, it is ignored), then the mutable fields, written
+     * whether they changed or not.
+     * A primary key whose value differs from the one stored in the database (old notified value, or source value of
+     * a mutable key) targets the row with the stored one.
+     *
+     * @param bool $withMutableFields false to leave out the mutable fields that are not primary keys (DELETE)
+     * @return array<string, array{0: mixed, 1: mixed}> property name => [database value stored before the change
+     *                                                  (the current one when not known), current database value]
      */
-    private function getChanges(NotifyPropertyInterface $entity, Metadata $metadata): array
+    private function getChanges(NotifyPropertyInterface $entity, Metadata $metadata, bool $withMutableFields): array
     {
         $changes = [];
-        foreach (array_keys($this->entitiesChanged[$entity] ?? []) as $property) {
-            $change = $this->getChange($entity, $metadata, $property);
-            if ($change !== null) {
-                $changes[$property] = $change;
+        foreach ($this->entitiesChanged[$entity] ?? [] as $property => [$oldValue, $newValue]) {
+            if ($oldValue === $newValue
+                || $metadata->hasProperty($property) === false
+                || $metadata->isMutable($property)
+                // A public typed property not initialized: the column keeps its value
+                || $metadata->isEntityPropertyReadable($entity, $property) === false
+            ) {
+                continue;
             }
+
+            $changes[$property] = [
+                $metadata->getDatabaseValueOfProperty($property, $oldValue),
+                $metadata->getEntityPropertyByFieldName($entity, $property),
+            ];
+        }
+
+        $sourceValues = $this->mutablePrimaryValues[$entity] ?? [];
+        foreach ($metadata->getMutableProperties() as $property) {
+            if (($withMutableFields === false && array_key_exists($property, $sourceValues) === false)
+                || $metadata->isEntityPropertyReadable($entity, $property) === false
+            ) {
+                continue;
+            }
+
+            $value = $metadata->getEntityPropertyByFieldName($entity, $property);
+            $changes[$property] = [
+                array_key_exists($property, $sourceValues) ? $sourceValues[$property] : $value,
+                $value,
+            ];
         }
 
         return $changes;
-    }
-
-    /**
-     * @return array{0: mixed, 1: mixed}|null [database value before the change, current database value], or null when
-     *                                       the property did not change, is not mapped (a setter may notify such a
-     *                                       property: it has no column) or cannot be read
-     */
-    private function getChange(NotifyPropertyInterface $entity, Metadata $metadata, string $property): ?array
-    {
-        if ($metadata->hasProperty($property) === false
-            || $metadata->isEntityPropertyReadable($entity, $property) === false
-        ) {
-            return null;
-        }
-
-        $value = $metadata->getEntityPropertyByFieldName($entity, $property);
-        if (isset($this->databaseValues[$entity]) === false
-            || array_key_exists($property, $this->databaseValues[$entity]) === false
-        ) {
-            // Database value unknown (e.g. a typed property not initialized when the entity became managed)
-            return [$value, $value];
-        }
-
-        $databaseValue = $this->databaseValues[$entity][$property];
-
-        return $databaseValue === $value ? null : [$databaseValue, $value];
     }
 
     /**
@@ -418,7 +449,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->entitiesChanged->offsetUnset($entity);
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
 
-                $this->databaseValues[$entity] = $metadata->getEntityDatabaseValues($entity);
+                $this->mutablePrimaryValues->offsetUnset($entity);
+                $this->keepMutablePrimaryValues($entity, $metadata);
                 $this->manage($entity);
             },
             function () use ($entity): void {
@@ -444,7 +476,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     $connection,
                     $this->queryFactory,
                     // A changed primary key: the row is still stored with the old one
-                    $this->getChanges($entity, $metadata),
+                    $this->getChanges($entity, $metadata, false),
                     $entity
                 );
                 $query->prepareExecute();

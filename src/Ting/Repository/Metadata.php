@@ -41,6 +41,8 @@ use CCMBenchmark\Ting\Query\QueryInterface;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPoolInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
+use CCMBenchmark\Ting\Driver\Mysqli\Serializer\Boolean as MysqliBoolean;
+use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Exceptions\SyntaxException;
@@ -63,7 +65,8 @@ use Closure;
  *     serializer?: class-string<Serializer\SerializerInterface>,
  *     serializer_options?: array{serialize?: array<mixed>, unserialize?: array<mixed>},
  *     setter?: string,
- *     getter?: string
+ *     getter?: string,
+ *     mutable?: bool
  * }
  */
 class Metadata
@@ -91,6 +94,32 @@ class Metadata
         'geometry' => Geometry::class,
         'uuid'     => Uuid::class,
     ];
+    /**
+     * Serializers whose PHP values cannot be modified in place: their fields are immutable by default
+     *
+     * @var list<class-string<SerializerInterface>>
+     */
+    private const IMMUTABLE_SERIALIZERS = [
+        DateTimeImmutable::class,
+        DateTimeZone::class,
+        Uuid::class,
+        Ip::class,
+        Geometry::class,
+        Serializer\BackedEnum::class,
+        MysqliBoolean::class,
+        PgsqlBoolean::class,
+    ];
+    /** Format of the "datetime" type, whatever the class it hydrates */
+    private const DATETIME_FORMAT = 'Y-m-d H:i:s';
+    /** @var array<string, bool> property name => true when the field is mutable (written on every save) */
+    private array $mutableProperties = [];
+    /**
+     * Fields of type "datetime" without serializer, as given to addField(): their serializer depends on the type of
+     * their property, resolved again when the entity is set
+     *
+     * @var array<string, array<string, mixed>> property name => field parameters
+     */
+    private array $dateTimeFieldsToResolve = [];
     public PropertyAccessor $propertyAccessor;
 
     /**
@@ -186,6 +215,11 @@ class Metadata
 
         $this->entity = (string) $className;
 
+        // The serializer of these fields depends on the type of their property in the entity
+        foreach ($this->dateTimeFieldsToResolve as $params) {
+            $this->addField($params);
+        }
+
         return $this;
     }
 
@@ -239,6 +273,8 @@ class Metadata
      *      columnName : string : name of the mysql column
      *      primary : boolean : is this field a primary - optional
      *      autoincrement : boolean : is this field an autoincrement - optional
+     *      mutable : boolean : its PHP value can be modified in place, so it is written on every save of a managed
+     *                          entity - optional, see isMutable() for the default
      * @throws ConfigException
      * @return $this
      */
@@ -256,9 +292,32 @@ class Metadata
             throw new ConfigException('Field configuration must have "type" property');
         }
 
+        if (isset($params['mutable']) && is_bool($params['mutable']) === false) {
+            throw new ConfigException(
+                sprintf('The "mutable" option of field "%s" must be a boolean', $params['fieldName'])
+            );
+        }
+
         // Before the field is stored anywhere: primaries and autoincrement need the serializer too
-        if (isset($params['serializer']) === false && isset($this->defaultSerializers[$params['type']])) {
+        if (isset($params['serializer']) === false && $params['type'] === 'datetime') {
+            $this->dateTimeFieldsToResolve[$params['fieldName']] = $params;
+            $params['serializer'] = $this->getDateTimeSerializer($params['fieldName']);
+            if ($params['serializer'] === DateTimeImmutable::class) {
+                // Serializer\DateTimeImmutable formats as ATOM by default: keep the format of the "datetime" type
+                $params['serializer_options']['serialize']['format'] ??= self::DATETIME_FORMAT;
+                $params['serializer_options']['unserialize']['format'] ??= self::DATETIME_FORMAT;
+            }
+        } elseif (isset($params['serializer']) === false && isset($this->defaultSerializers[$params['type']])) {
+            unset($this->dateTimeFieldsToResolve[$params['fieldName']]);
             $params['serializer'] = $this->defaultSerializers[$params['type']];
+        } else {
+            unset($this->dateTimeFieldsToResolve[$params['fieldName']]);
+        }
+
+        if ($params['mutable'] ?? $this->isMutableByDefault($params)) {
+            $this->mutableProperties[$params['fieldName']] = true;
+        } else {
+            unset($this->mutableProperties[$params['fieldName']]);
         }
 
         if (isset($params['primary']) && $params['primary'] === true) {
@@ -273,6 +332,86 @@ class Metadata
         $this->fields[$params['columnName']] = $params;
 
         return $this;
+    }
+
+    /**
+     * A "datetime" field without serializer hydrates a \DateTimeImmutable when its property is typed
+     * \DateTimeImmutable or \DateTimeInterface (nullable or not), and a \DateTime otherwise: typed \DateTime, not
+     * typed, not found (written through a setter), typed otherwise, or entity not set yet.
+     *
+     * @return class-string<SerializerInterface>
+     */
+    private function getDateTimeSerializer(string $fieldName): string
+    {
+        $type = $this->entity === null ? null : $this->getPropertyType($this->entity, $fieldName);
+
+        return $type === \DateTimeImmutable::class || $type === \DateTimeInterface::class
+            ? DateTimeImmutable::class
+            : DateTime::class;
+    }
+
+    /**
+     * @return string|null the class or type name of the property declared in the class or one of its parents, null
+     *                     when it is not found, not typed or typed with a union or an intersection
+     */
+    private function getPropertyType(string $className, string $propertyName): ?string
+    {
+        if (class_exists($className) === false) {
+            return null;
+        }
+
+        $class = new \ReflectionClass($className);
+
+        do {
+            if ($class->hasProperty($propertyName)) {
+                $type = $class->getProperty($propertyName)->getType();
+
+                return $type instanceof \ReflectionNamedType ? $type->getName() : null;
+            }
+            $class = $class->getParentClass();
+        } while ($class !== false);
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function isMutableByDefault(array $params): bool
+    {
+        if (isset($params['serializer']) === false) {
+            // Scalars
+            return false;
+        }
+
+        if ($params['serializer'] === Json::class) {
+            // Arrays are values, objects (\stdClass) are not
+            return ($params['serializer_options']['unserialize']['assoc'] ?? false) !== true;
+        }
+
+        // Serializer\DateTime, and any serializer of your own
+        return in_array($params['serializer'], self::IMMUTABLE_SERIALIZERS, true) === false;
+    }
+
+    /**
+     * A mutable field holds a PHP value that can be modified in place (a \DateTime, a \stdClass...): such a change is
+     * not notified, so the unit of work writes the field on every save of a managed entity.
+     * Set with the "mutable" option of the field; by default, a field is mutable when its serializer is
+     * Serializer\DateTime, Serializer\Json without the "assoc" unserialize option, or a serializer of your own.
+     */
+    public function isMutable(string $propertyName): bool
+    {
+        return isset($this->mutableProperties[$propertyName]);
+    }
+
+    /**
+     * @return list<string> names of the mutable properties
+     *
+     * @internal
+     */
+    public function getMutableProperties(): array
+    {
+        return array_keys($this->mutableProperties);
     }
 
     /**
@@ -409,6 +548,16 @@ class Metadata
     }
 
     /**
+     * Database value of a property value: serialized by the serializer of its field, if any
+     *
+     * @internal
+     */
+    public function getDatabaseValueOfProperty(string $fieldName, mixed $value): mixed
+    {
+        return $this->serializeFieldValue($this->fieldsByProperty[$fieldName], $value);
+    }
+
+    /**
      * Database value of a field: the value serialized by the serializer of the field, if any
      */
     private function serializeFieldValue(array $field, mixed $value): mixed
@@ -444,24 +593,28 @@ class Metadata
     }
 
     /**
-     * Database values (serialized by the serializer of their field) of the readable mapped properties of the entity
+     * Database values of the mutable primary keys of the entity: once modified in place, the row is still stored with
+     * these values
      *
      * @return array<string, mixed> property name => database value
      *
      * @internal
      */
-    public function getEntityDatabaseValues(object $entity): array
+    public function getEntityMutablePrimaryValues(object $entity): array
     {
         $values = [];
-        foreach ($this->fieldsByProperty as $fieldName => $field) {
-            if ($this->propertyAccessor->isReadable($entity, $fieldName, $field['getter'] ?? null)) {
-                $values[$fieldName] = $this->getEntityProperty($entity, $field);
+        foreach ($this->primaries as $primary) {
+            $fieldName = $primary['fieldName'];
+            if (isset($this->mutableProperties[$fieldName])
+                && $this->propertyAccessor->isReadable($entity, $fieldName, $primary['getter'] ?? null)
+            ) {
+                $values[$fieldName] = $this->getEntityProperty($entity, $primary);
             }
         }
 
         return $values;
     }
-    
+
     /**
      * Return a Query to get one object by it's primaries
      *

@@ -40,6 +40,7 @@ use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\Serializer\CountingJson;
 use tests\fixtures\model\City;
 use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\PrimaryOnMultiField;
@@ -1431,6 +1432,50 @@ class HydratorTest extends TestCase
         );
         $this->assertSame($bouhs[0], $bouhs[3]);
         $this->assertCount(3, array_unique(array_map('spl_object_id', $bouhs)));
+    }
+
+    public function testHydrationShouldUnserializeEachFieldOnceAndSerializeNothing()
+    {
+        CountingJson::resetCounters();
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+        $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        // A serializer of its own: mutable, yet nothing is kept for it at hydration
+        $metadata->addField([
+            'fieldName'          => 'roles',
+            'columnName'         => 'boo_roles',
+            'type'               => 'json',
+            'serializer'         => CountingJson::class,
+            'serializer_options' => ['unserialize' => ['assoc' => true]],
+        ]);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = new MysqliResult([[1, 'Sylvain', '["A"]'], [2, 'Xavier', '["B"]'], [3, 'Bouh', '[]']]);
+        $mockMysqliResult->setFieldsCallback(fn (): array => [
+            $this->field('id', 'boo_id', 'bouh', 'T_BOUH_BOO', MYSQLI_TYPE_LONG),
+            $this->field('name', 'boo_name', 'bouh', 'T_BOUH_BOO'),
+            $this->field('roles', 'boo_roles', 'bouh', 'T_BOUH_BOO'),
+        ]);
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $unitOfWork = $services->unitOfWork();
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($unitOfWork);
+        $bouhs = array_column(iterator_to_array($hydrator->setResult($result)->getIterator()), 'bouh');
+
+        $this->assertSame([['A'], ['B'], []], array_map(fn ($bouh) => $bouh->getRoles(), $bouhs));
+        $this->assertTrue($unitOfWork->isManaged($bouhs[0]));
+        $this->assertSame(3, CountingJson::$unserialized);
+        $this->assertSame(0, CountingJson::$serialized);
     }
 
     private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass

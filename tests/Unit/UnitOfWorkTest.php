@@ -40,8 +40,12 @@ use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
+use tests\fixtures\model\Document;
+use tests\fixtures\model\DocumentRepository;
 use tests\fixtures\model\Event;
 use tests\fixtures\model\EventRepository;
+use tests\fixtures\model\Slot;
+use tests\fixtures\model\SlotRepository;
 
 class UnitOfWorkTest extends TestCase
 {
@@ -614,16 +618,13 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingADateTimeModifiedInPlaceShouldUpdateIt()
+    public function testSavingAnImmutableValueReplacedThroughItsSetterShouldUpdateIt()
     {
         $entity = $this->createEvent(1, '2026-01-01 10:00:00');
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
         $unitOfWork->manage($entity);
 
-        // The old value given to propertyChanged() is the object already modified
-        $startAt = $entity->getStartAt();
-        $startAt->modify('+1 day');
-        $entity->setStartAt($startAt);
+        $entity->setStartAt($entity->getStartAt()->modify('+1 day'));
         $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'startAt'));
         $unitOfWork->pushSave($entity)->process();
 
@@ -633,14 +634,12 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingADateTimeReplacedByAnEqualOneShouldRunNoQuery()
+    public function testSavingAnUnchangedEntityWithoutMutableFieldShouldRunNoQuery()
     {
         $entity = $this->createEvent(1, '2026-01-01 10:00:00');
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
         $unitOfWork->manage($entity);
 
-        $entity->setStartAt(new \DateTime('2026-01-01 10:00:00'));
-        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'startAt'));
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame([], $queries);
@@ -648,43 +647,116 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testAnUpdateShouldRefreshTheDatabaseValuesOfTheEntity()
+    public function testAnImmutableValueReplacedByAnEqualOneShouldBeUpdated()
     {
         $entity = $this->createEvent(1, '2026-01-01 10:00:00');
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
         $unitOfWork->manage($entity);
 
-        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+        // Changes are notified, not compared: another instance is a change, even if equal
+        $entity->setStartAt(new \DateTimeImmutable('2026-01-01 10:00:00'));
         $unitOfWork->pushSave($entity)->process();
-        // Equal to the value written by the UPDATE
-        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+
+        $this->assertSame([['evt_start_at' => '2026-01-01 10:00:00', '#evt_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testPropertyChangedShouldIgnoreTheSameObjectGivenAsOldAndNewValue()
+    {
+        $entity = $this->createEvent(1, '2026-01-01 10:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $startAt = $entity->getStartAt();
+        $unitOfWork->propertyChanged($entity, 'startAt', $startAt, $startAt);
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'startAt'));
         $unitOfWork->pushSave($entity)->process();
-        // Back to the value read at first
-        $entity->getStartAt()->modify('-1 day');
-        $entity->setStartAt($entity->getStartAt());
+
+        $this->assertSame([], $queries);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAJsonObjectModifiedInPlaceShouldUpdateIt()
+    {
+        $entity = $this->createDocument();
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        // No setter called: nothing is notified
+        $entity->getPayload()->tags[] = 'php';
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            [['evt_start_at' => '2026-01-02 10:00:00', '#evt_id' => 1], ['evt_start_at' => '2026-01-01 10:00:00', '#evt_id' => 1]],
+            ['UPDATE `T_DOCUMENT_DOC` SET `doc_payload` = :doc_payload, `doc_published_at` = :doc_published_at WHERE `doc_id` = :#doc_id'],
+            $queries
+        );
+        $this->assertSame(
+            [['doc_payload' => '{"tags":["php"]}', 'doc_published_at' => '2026-01-01 10:00:00', '#doc_id' => 1]],
             $params
         );
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testAnInsertShouldTakeTheDatabaseValuesOfTheEntity()
+    public function testSavingAnEntityWithAMutableFieldShouldUpdateItEvenWithoutChange()
     {
-        $entity = $this->createEvent(null, '2026-01-01 10:00:00');
+        $entity = $this->createDocument();
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
         $unitOfWork->pushSave($entity)->process();
 
-        $entity->setStartAt(new \DateTime('2026-01-01 10:00:00'));
-        $unitOfWork->pushSave($entity)->process();
-        $entity->getStartAt()->modify('+1 hour');
-        $entity->setStartAt($entity->getStartAt());
+        $this->assertSame(
+            [['doc_payload' => '{"tags":[]}', 'doc_published_at' => '2026-01-01 10:00:00', '#doc_id' => 1]],
+            $params
+        );
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAnEntityShouldWriteItsMutableFieldsWithItsNotifiedChanges()
+    {
+        $entity = $this->createDocument();
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        $entity->setTitle('new');
+        $entity->getPublishedAt()->modify('+1 hour');
         $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
-        $this->assertSame(['evt_start_at' => '2026-01-01 11:00:00', '#evt_id' => 1], $params[1]);
+        $this->assertSame(
+            [['doc_title' => 'new', 'doc_payload' => '{"tags":[]}', 'doc_published_at' => '2026-01-01 11:00:00', '#doc_id' => 1]],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testIsPropertyChangedShouldBeTrueForTheMutableFieldsOfAManagedEntity()
+    {
+        $entity = $this->createDocument();
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+
+        $unitOfWork->manage($entity);
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+
+        // Written by each save: still "changed" afterwards
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testInsertingAnEntityWithMutableFieldsShouldRunOnlyTheInsert()
+    {
+        $entity = $this->createDocument();
+        $entity->setId(null);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(1, $entity->getId());
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -714,20 +786,66 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testDetachShouldForgetTheDatabaseValuesOfTheEntity()
+    public function testAMutablePrimaryKeyModifiedInPlaceShouldTargetTheRowByItsSourceValue()
     {
-        $entity = $this->createEvent(1, '2026-01-01 10:00:00');
-        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $entity = $this->createSlot('2026-01-01 00:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        $entity->getDay()->modify('+1 day');
+        $unitOfWork->pushSave($entity)->process();
+        // The UPDATE wrote the new key: it targets the row from now on
+        $entity->setLabel('b');
+        $unitOfWork->pushSave($entity)->process();
+        $entity->getDay()->modify('+1 day');
+        $unitOfWork->pushDelete($entity)->process();
+
+        $this->assertSame(
+            [
+                'UPDATE `T_SLOT_SLO` SET `slo_day` = :slo_day WHERE `slo_day` = :#slo_day',
+                'UPDATE `T_SLOT_SLO` SET `slo_label` = :slo_label, `slo_day` = :slo_day WHERE `slo_day` = :#slo_day',
+                'DELETE FROM `T_SLOT_SLO` WHERE `slo_day` = :#slo_day',
+            ],
+            $queries
+        );
+        $this->assertSame(
+            [
+                ['slo_day' => '2026-01-02 00:00:00', '#slo_day' => '2026-01-01 00:00:00'],
+                ['slo_label' => 'b', 'slo_day' => '2026-01-02 00:00:00', '#slo_day' => '2026-01-02 00:00:00'],
+                ['#slo_day' => '2026-01-02 00:00:00'],
+            ],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnInsertShouldKeepTheSourceValueOfAMutablePrimaryKey()
+    {
+        $entity = $this->createSlot('2026-01-01 00:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->pushSave($entity)->process();
+
+        $entity->getDay()->modify('+1 day');
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['slo_day' => '2026-01-02 00:00:00', '#slo_day' => '2026-01-01 00:00:00'], $params[1]);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testDetachShouldForgetTheSourceValueOfAMutablePrimaryKey()
+    {
+        $entity = $this->createSlot('2026-01-01 00:00:00');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
         $unitOfWork->manage($entity);
         $unitOfWork->detach($entity);
 
         // Read again from the database, as it is now
-        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
+        $entity->getDay()->modify('+1 day');
         $unitOfWork->manage($entity);
-        $entity->setStartAt(new \DateTime('2026-01-02 10:00:00'));
-        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushDelete($entity)->process();
 
-        $this->assertSame([], $queries);
+        $this->assertSame([['#slo_day' => '2026-01-02 00:00:00']], $params);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -756,13 +874,33 @@ class UnitOfWorkTest extends TestCase
     {
         $entity = new Event();
         $entity->setId($id);
-        $entity->setStartAt(new \DateTime($startAt));
+        $entity->setStartAt(new \DateTimeImmutable($startAt));
+
+        return $entity;
+    }
+
+    private function createDocument(): Document
+    {
+        $entity = new Document();
+        $entity->setId(1);
+        $entity->setTitle('title');
+        $entity->setPayload((object) ['tags' => []]);
+        $entity->setPublishedAt(new \DateTime('2026-01-01 10:00:00'));
+
+        return $entity;
+    }
+
+    private function createSlot(string $day): Slot
+    {
+        $entity = new Slot();
+        $entity->setDay(new \DateTime($day));
+        $entity->setLabel('a');
 
         return $entity;
     }
 
     /**
-     * Builds a UnitOfWork on Bouh and Event whose queries are recorded instead of executed.
+     * Builds a UnitOfWork on Bouh, Event, Document and Slot whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query
      * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException
@@ -783,10 +921,9 @@ class UnitOfWorkTest extends TestCase
             'tests\fixtures\model\BouhRepository',
             BouhRepository::initMetadata($this->services->serializerFactory())
         );
-        $metadataRepository->addMetadata(
-            EventRepository::class,
-            EventRepository::initMetadata($this->services->serializerFactory())
-        );
+        foreach ([EventRepository::class, DocumentRepository::class, SlotRepository::class] as $repository) {
+            $metadataRepository->addMetadata($repository, $repository::initMetadata($this->services->serializerFactory()));
+        }
 
         $connectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $driver = $this->getMockBuilder(Driver::class)->onlyMethods(['getInsertedId', 'closeStatement'])->getMock();

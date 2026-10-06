@@ -25,38 +25,17 @@
 
 namespace tests\fixtures\model;
 
-use CCMBenchmark\Ting\Entity\NotifyProperty;
-use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
-
-/**
- * An entity whose mapped fields are all immutable
- */
-class Event implements NotifyPropertyInterface
+class DatedEntityParent
 {
-    use NotifyProperty;
+    private ?\DateTimeImmutable $inherited = null;
 
-    protected ?int $id = null;
-    protected ?\DateTimeImmutable $startAt = null;
-
-    public function getId(): ?int
+    public function setInherited(?\DateTimeImmutable $inherited): void
     {
-        return $this->id;
+        $this->inherited = $inherited;
     }
 
-    public function setId(?int $id): void
+    public function getInherited(): ?\DateTimeImmutable
     {
-        $this->propertyChanged('id', $this->id, $id);
-        $this->id = $id;
-    }
-
-    public function getStartAt(): ?\DateTimeImmutable
-    {
-        return $this->startAt;
-    }
-
-    public function setStartAt(?\DateTimeImmutable $startAt): void
-    {
-        $this->propertyChanged('startAt', $this->startAt, $startAt);
-        $this->startAt = $startAt;
+        return $this->inherited;
     }
 }

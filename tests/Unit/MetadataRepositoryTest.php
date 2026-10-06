@@ -291,8 +291,10 @@ class MetadataRepositoryTest extends TestCase
                 'tests\fixtures\model\CitySecondRepository'                  => 'tests\fixtures\model\CitySecondMetadataRepository',
                 'tests\fixtures\model\CityWithPublicPropertiesRepository'    => 'tests\fixtures\model\CityWithPublicPropertiesRepository',
                 'tests\fixtures\model\CountryWithPublicPropertiesRepository' => 'tests\fixtures\model\CountryWithPublicPropertiesRepository',
+                'tests\fixtures\model\DocumentRepository'                    => 'tests\fixtures\model\DocumentRepository',
                 'tests\fixtures\model\EventRepository'                       => 'tests\fixtures\model\EventRepository',
                 'tests\fixtures\model\ParkRepository'                        => 'tests\fixtures\model\ParkRepository',
+                'tests\fixtures\model\SlotRepository'                        => 'tests\fixtures\model\SlotRepository',
             ],
             $metadataRepository->batchLoadMetadata(
                 'tests\fixtures\model',

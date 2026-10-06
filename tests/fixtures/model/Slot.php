@@ -29,34 +29,34 @@ use CCMBenchmark\Ting\Entity\NotifyProperty;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 
 /**
- * An entity whose mapped fields are all immutable
+ * An entity whose primary key is mutable: a \DateTime
  */
-class Event implements NotifyPropertyInterface
+class Slot implements NotifyPropertyInterface
 {
     use NotifyProperty;
 
-    protected ?int $id = null;
-    protected ?\DateTimeImmutable $startAt = null;
+    protected ?\DateTime $day = null;
+    protected ?string $label = null;
 
-    public function getId(): ?int
+    public function getDay(): ?\DateTime
     {
-        return $this->id;
+        return $this->day;
     }
 
-    public function setId(?int $id): void
+    public function setDay(?\DateTime $day): void
     {
-        $this->propertyChanged('id', $this->id, $id);
-        $this->id = $id;
+        $this->propertyChanged('day', $this->day, $day);
+        $this->day = $day;
     }
 
-    public function getStartAt(): ?\DateTimeImmutable
+    public function getLabel(): ?string
     {
-        return $this->startAt;
+        return $this->label;
     }
 
-    public function setStartAt(?\DateTimeImmutable $startAt): void
+    public function setLabel(?string $label): void
     {
-        $this->propertyChanged('startAt', $this->startAt, $startAt);
-        $this->startAt = $startAt;
+        $this->propertyChanged('label', $this->label, $label);
+        $this->label = $label;
     }
 }
