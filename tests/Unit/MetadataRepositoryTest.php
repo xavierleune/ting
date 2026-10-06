@@ -746,6 +746,23 @@ class MetadataRepositoryTest extends TestCase
         $this->assertNull($found('bouh_world', '', [['User']], 'T_UNKNOWN'));
     }
 
+    public function testFindMetadataForTableShouldPreferTheFirstGroupOfRepositoriesMappingTheTable(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['User', 'bouh_world', ''],
+            ['UserLight', 'bouh_world', ''],
+        ]);
+
+        $found = fn (array $preferred) => $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'T_CITY_CIT', $preferred);
+
+        // A preference given to the hydrator wins over the one of the repository running the query
+        $this->assertSame('UserLightEntity', $found([['UserLight'], ['User']]));
+        $this->assertSame('UserEntity', $found([['User'], ['UserLight']]));
+        // A group mapping none of the candidates is skipped
+        $this->assertSame('UserEntity', $found([['Other'], ['User']]));
+        $this->assertSame('UserEntity', $found([[], ['User']]));
+    }
+
     /**
      * The preference of the repository running the query breaks ties between the metadata of the database and the
      * schema read: it does not override them (a join on the same table of another database or schema)
