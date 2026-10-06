@@ -76,6 +76,8 @@ class MetadataRepository
      * - the only candidate,
      * - without exact match, the only one of the same database, or when none shares it, the only one of the same
      *   schema,
+     * - any of the remaining ones when they all hydrate the same entity with the same fields (the one registered
+     *   under the first class name in alphabetical order).
      * Otherwise, the choice is ambiguous and a HydratorException is thrown: the last registered never wins.
      *
      * @param string   $connectionName
@@ -178,6 +180,13 @@ class MetadataRepository
             }
         }
 
+        // The same entity hydrated the same way (a repository and its subclass): whichever is chosen. Chosen by
+        // name, not by registration order
+        sort($candidates);
+        if ($this->hydrateTheSameWay($candidates)) {
+            return $candidates[0];
+        }
+
         $candidateList = [];
         foreach ($candidates as $repository) {
             $candidateList[] = sprintf(
@@ -199,6 +208,28 @@ class MetadataRepository
             $schema,
             implode(' or ', $candidateList)
         ));
+    }
+
+    /**
+     * @param list<string> $repositories
+     * @return bool true when the metadata of the repositories hydrate the same entity with the same fields
+     */
+    private function hydrateTheSameWay(array $repositories): bool
+    {
+        $first = null;
+        foreach ($repositories as $repository) {
+            $metadata = $this->metadataList[$repository];
+            $first ??= $metadata;
+            // Fields by column: the order in which they are added does not matter
+            if ($metadata->getEntity() !== $first->getEntity()
+                || array_column($metadata->getFields(), null, 'columnName')
+                    != array_column($first->getFields(), null, 'columnName')
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
