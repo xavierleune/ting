@@ -501,6 +501,8 @@ class Driver implements DriverInterface
 
     /**
      * Give the number of affected rows
+     *
+     * @return int<0, max>
      */
     public function getAffectedRows(): int
     {
@@ -508,7 +510,8 @@ class Driver implements DriverInterface
             return 0;
         }
 
-        return pg_affected_rows($this->result);
+        // Never negative (libpq gives the count as a string of digits, possibly empty), but typed as a plain int
+        return max(0, pg_affected_rows($this->result));
     }
 
     /**
