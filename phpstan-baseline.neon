@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Method CCMBenchmark\\Ting\\Driver\\Pgsql\\Driver\:\:getAffectedRows\(\) should return int\<0, max\> but returns int\.$#'
-			identifier: return.type
-			count: 1
-			path: src/Ting/Driver/Pgsql/Driver.php
-
-		-
 			message: '#^Trait CCMBenchmark\\Ting\\Entity\\NotifyProperty is used zero times and is not analysed\.$#'
 			identifier: trait.unused
 			count: 1
