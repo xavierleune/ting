@@ -26,11 +26,18 @@
 
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
+use CCMBenchmark\Ting\Driver\CacheResult;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Driver\Pgsql\Result as PgsqlResult;
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Repository\Hydrator;
+use CCMBenchmark\Ting\Repository\HydratorAggregator;
+use CCMBenchmark\Ting\Repository\HydratorArray;
+use CCMBenchmark\Ting\Repository\HydratorInterface;
+use CCMBenchmark\Ting\Repository\HydratorRelational;
+use CCMBenchmark\Ting\Repository\HydratorSingleObject;
+use CCMBenchmark\Ting\Repository\HydratorValueObject;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Serializer\DateTime;
 use CCMBenchmark\Ting\Serializer\Json;
@@ -637,6 +644,97 @@ class HydratorTest extends TestCase
     {
         $hydrator = new Hydrator();
         $this->assertSame(0, count($hydrator));
+    }
+
+    public static function hydratorsProvider(): array
+    {
+        return [
+            'Hydrator' => [new Hydrator()],
+            'HydratorSingleObject' => [new HydratorSingleObject()],
+            'HydratorAggregator' => [(new HydratorAggregator())->callableIdIs(fn (array $row) => 1)],
+            'HydratorRelational' => [new HydratorRelational()],
+            'HydratorArray' => [new HydratorArray()],
+            'HydratorValueObject' => [new HydratorValueObject(\stdClass::class)],
+        ];
+    }
+
+    #[DataProvider('hydratorsProvider')]
+    public function testIterationWithoutResultShouldBeEmpty(HydratorInterface $hydrator)
+    {
+        $items = null;
+        $errors = $this->collectErrorTypes(function () use ($hydrator, &$items): void {
+            $items = iterator_to_array($hydrator->getIterator());
+        }, $thrown);
+
+        $this->assertNull($thrown);
+        $this->assertSame([], $errors);
+        $this->assertSame([], $items);
+    }
+
+    public function testHydrateARowOfAResultWithoutConnectionShouldRaiseHydratorException()
+    {
+        $services = new TingServices();
+        $result = new CacheResult();
+        $result->setResult(new \ArrayIterator([
+            [['name' => 'name', 'orgName' => 'boo_name', 'table' => 'bouh', 'orgTable' => 'T_BOUH_BOO', 'value' => 'Sylvain']],
+        ]));
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->setResult($result);
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator()),
+            'Cannot hydrate a row of a result without connection name or database: its metadata cannot be found'
+        );
+    }
+
+    public function testHydrateBeforeSetMetadataRepositoryShouldRaiseHydratorException()
+    {
+        $hydrator = new Hydrator();
+        $hydrator->setUnitOfWork((new TingServices())->unitOfWork());
+        $hydrator->setResult($this->bouhResult());
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator()),
+            'Hydrator used before setMetadataRepository(): the metadata of the rows cannot be found'
+        );
+    }
+
+    public function testHydrateAnEntityBeforeSetUnitOfWorkShouldRaiseHydratorException()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setResult($this->bouhResult());
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator()),
+            'Hydrator used before setUnitOfWork(): the entities cannot be managed'
+        );
+    }
+
+    private function bouhResult(): Result
+    {
+        $result = new Result();
+        $result->setResult(
+            (new MysqliResult([['Sylvain']]))->setFields([$this->field('name', 'boo_name', 'bouh', 'T_BOUH_BOO')])
+        );
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        return $result;
     }
 
     public function testHydrateWithMapAliasShouldHydrateToMethodOfObject()

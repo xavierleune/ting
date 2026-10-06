@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -91,20 +92,11 @@ class HydratorAggregator extends Hydrator
         $knownIdentifiers = [];
         $callableForId = $this->callableForId;
         $callableForData = $this->callableForData;
-        $previousId = null;
-        $previousResult = null;
-        $previousKey = null;
-        $currentId = null;
+        // The group in progress: its identifier, then the key and the hydrated first row it is yielded with
+        $group = null;
         $aggregate = [];
 
-        foreach ($this->result as $key => $columns) {
-
-            $result = $this->hydrateColumns(
-                $this->result->getConnectionName(),
-                $this->result->getDatabase(),
-                $columns
-            );
-
+        foreach ($this->hydratedRows() as $key => $result) {
             $currentId = $callableForId($result);
             if ($currentId === null) {
                 // null also marks "no group yet": every row would be lost
@@ -118,41 +110,35 @@ class HydratorAggregator extends Hydrator
                 continue;
             }
 
-            if ($previousId === null) {
-                $previousId = $currentId;
-                $previousResult = $result;
-                $previousKey = $key;
+            if ($group === null) {
+                $group = ['id' => $currentId, 'key' => $key, 'result' => $result];
             }
 
-            if ($previousId === $currentId) {
+            if ($group['id'] === $currentId) {
                 $aggregate[] = $callableForData($result);
             } else {
-                $previousResult = $this->finalizeAggregate($previousResult, $aggregate);
+                $knownIdentifiers[$group['id']] = true;
 
-                $knownIdentifiers[$previousId] = true;
-
-                yield $previousKey => $previousResult;
+                yield $group['key'] => $this->finalizeAggregate($group['result'], $aggregate);
 
                 $aggregate = [$callableForData($result)];
-                $previousId = $currentId;
-                $previousResult = $result;
-                $previousKey = $key;
+                $group = ['id' => $currentId, 'key' => $key, 'result' => $result];
             }
         }
 
         // The pending group, built from its first row like the others (even when the last row was skipped)
-        if ($previousId !== null) {
-            yield $previousKey => $this->finalizeAggregate($previousResult, $aggregate);
+        if ($group !== null) {
+            yield $group['key'] => $this->finalizeAggregate($group['result'], $aggregate);
         }
     }
 
     /**
-     * @param array<int|string, object|null>|null $result the first row of the group
+     * @param array<int|string, object|null> $result the first row of the group
      * @param mixed $aggregate
      *
      * @return mixed
      */
-    private function finalizeAggregate(?array $result, mixed $aggregate): mixed
+    private function finalizeAggregate(array $result, mixed $aggregate): mixed
     {
         if ($this->callableFinalizeAggregate === null) {
             $result['aggregate'] = $aggregate;

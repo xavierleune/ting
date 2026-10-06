@@ -66,6 +66,11 @@ class HydratorArray implements HydratorInterface
      */
     public function getIterator(): Generator
     {
+        // As count(): without result, there is no row
+        if ($this->result === null) {
+            return;
+        }
+
         foreach ($this->result as $key => $row) {
             $data = [];
             foreach ($row as $column) {
