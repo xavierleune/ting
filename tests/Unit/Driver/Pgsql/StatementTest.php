@@ -111,6 +111,26 @@ class StatementTest extends TestCase
         $this->assertSame(['Sylvain', 3, 'A very long description', 32.1, '2014-03-01 14:02:05'], $outerValues);
     }
 
+    /**
+     * pg_execute() sends false as '', which PostgreSQL rejects for a boolean (or an integer)
+     */
+    public function testExecuteShouldSendBooleansAsValuesPostgresqlAccepts()
+    {
+        NativeFunctionMock::override(
+            'pg_execute',
+            function ($connection, $statementName, $values) use (&$outerValues) {
+                $outerValues = $values;
+                return new PgsqlResult();
+            }
+        );
+
+        $statement = new Statement('MyStatementName', ['no' => null, 'yes' => null], 'connectionName', 'database');
+        $statement->setConnection(new Pgsql());
+        $statement->execute(['no' => false, 'yes' => true]);
+
+        $this->assertSame(['0', '1'], $outerValues);
+    }
+
     public function testSetCollectionWithResult()
     {
         $collection = $this->createMock(Collection::class);

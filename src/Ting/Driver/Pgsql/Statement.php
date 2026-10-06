@@ -175,7 +175,7 @@ class Statement implements StatementInterface
             if (!\array_key_exists($key, $params)) {
                 throw QueryException::missingParameter((string) $key);
             }
-            $values[] = $params[$key];
+            $values[] = Driver::parameterValue($params[$key]);
         }
 
         if ($this->logger !== null) {

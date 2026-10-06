@@ -261,7 +261,7 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultVa
             if (!\array_key_exists($key, $params)) {
                 throw QueryException::missingParameter((string) $key);
             }
-            $values[] = $params[$key];
+            $values[] = self::parameterValue($params[$key]);
         }
 
         if ($this->logger !== null) {
@@ -381,6 +381,18 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultVa
         $this->sessionStatements[$statement] = true;
 
         return $statement;
+    }
+
+    /**
+     * Value of a query parameter as sent to PostgreSQL: pg_query_params() and pg_execute() send false as '', which
+     * PostgreSQL rejects for a boolean (or a number); a boolean is sent as '0' or '1', as Mysqli sends 0 or 1, which a
+     * boolean, an integer or a text column accepts
+     *
+     * @internal
+     */
+    public static function parameterValue(mixed $value): mixed
+    {
+        return \is_bool($value) ? ($value ? '1' : '0') : $value;
     }
 
     /**

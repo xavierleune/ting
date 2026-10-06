@@ -545,6 +545,40 @@ class MetadataTest extends TestCase
         $this->assertCalledOnceWith($bouh, 'setEnabled', [true]);
     }
 
+    /**
+     * PostgreSQL returns a boolean column as 't' or 'f': 'f' cast to bool is true
+     */
+    #[DataProvider('postgresqlBooleans')]
+    public function testSetEntityPropertyShouldReadPostgresqlBooleans(string $value, bool $expected)
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity($this->bouhSpyClass());
+        $metadata->addField([
+            'fieldName'  => 'enabled',
+            'columnName' => 'boo_enabled',
+            'type'       => 'bool'
+        ]);
+
+        $bouh = $metadata->createEntity();
+
+        $metadata->setEntityProperty($bouh, 'boo_enabled', $value);
+        $this->assertCalledOnceWith($bouh, 'setEnabled', [$expected]);
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function postgresqlBooleans(): array
+    {
+        return [
+            't' => ['t', true],
+            'f' => ['f', false],
+            '0' => ['0', false],
+            '1' => ['1', true],
+        ];
+    }
+
     public function testSetEntityPropertyShouldUnserializeData()
     {
         $services = new TingServices();

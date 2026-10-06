@@ -597,7 +597,8 @@ class Metadata
                     $value = (float) $value;
                     break;
                 case "bool":
-                    $value = (bool) $value;
+                    // PostgreSQL returns a boolean as 't' or 'f', and (bool) 'f' is true
+                    $value = $value !== 'f' && (bool) $value;
                     break;
             }
         }
