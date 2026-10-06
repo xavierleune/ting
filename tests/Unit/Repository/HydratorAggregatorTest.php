@@ -32,7 +32,9 @@ use CCMBenchmark\Ting\Repository\HydratorAggregator;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
+use Symfony\Component\Uid\Uuid;
 use tests\fixtures\FakeDriver\MysqliResult;
 
 /**
@@ -532,5 +534,116 @@ class HydratorAggregatorTest extends TestCase
         $this->assertInstanceOf(HydratorException::class, $thrown);
         $this->assertStringContainsString('callableIdIs()', $thrown->getMessage());
         $this->assertSame([], $types);
+    }
+
+    /**
+     * @return array<string, array{callable, list<string>}>
+     */
+    public static function nonScalarIdentifierProvider(): array
+    {
+        return [
+            // A new instance for each row: the groups are compared by value, not by identity
+            'uuid object' => [
+                fn ($result) => Uuid::fromString(
+                    $result['bouh']->getId() === 4
+                        ? 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+                        : '9b2c1a3e-0d4f-4e6a-8b7c-1d2e3f4a5b6c'
+                ),
+                ['Leune', 'Robez-Masson'],
+            ],
+            'composite array' => [
+                fn ($result) => [$result['bouh']->getName(), $result['bouh']->getFirstname()],
+                ['Leune', 'Robez-Masson'],
+            ],
+            'float' => [fn ($result) => $result['bouh']->getId() + 0.5, ['Leune', 'Robez-Masson']],
+        ];
+    }
+
+    #[DataProvider('nonScalarIdentifierProvider')]
+    public function testHydrateShouldGroupByNonScalarIdentifiers(callable $callableForId, array $expectedNames)
+    {
+        $hydrator = $this->buildBouhCityHydrator([
+            [4, 'Xavier', 'Leune', 'Boulogne-Billancourt'],
+            [3, 'Sylvain', 'Robez-Masson', 'Palaiseau'],
+            [4, 'Xavier', 'Leune', 'Palaiseau'],
+            [3, 'Sylvain', 'Robez-Masson', 'Montbéliard'],
+        ]);
+        $hydrator->callableIdIs($callableForId);
+
+        $types = $this->collectErrorTypes(function () use ($hydrator, &$groups): void {
+            $groups = iterator_to_array($hydrator->getIterator());
+        }, $thrown);
+
+        $this->assertNull($thrown);
+        $this->assertSame([], $types);
+        $this->assertSame($expectedNames, array_map(fn ($group) => $group['bouh']->getName(), array_values($groups)));
+        $this->assertSame(['Boulogne-Billancourt'], array_map(fn ($city) => $city->getName(), $groups[0]['aggregate']));
+        $this->assertSame(
+            ['Palaiseau', 'Montbéliard'],
+            array_map(fn ($city) => $city->getName(), $groups[1]['aggregate'])
+        );
+    }
+
+    public function testHydrateShouldThrowWhenTheIdentifierCannotBeSerialized()
+    {
+        $hydrator = $this->buildBouhCityHydrator([[4, 'Xavier', 'Leune', 'Boulogne-Billancourt']]);
+        $hydrator->callableIdIs(fn ($result) => fn () => $result);
+
+        $exception = $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->getIterator())
+        );
+        $this->assertStringContainsString('Closure', $exception->getMessage());
+    }
+
+    /**
+     * @param list<array{int, string, string, string}> $rows id, firstname, name, city name
+     */
+    private function buildBouhCityHydrator(array $rows): HydratorAggregator
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+        $metadata->addField(['fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        $metadata->addField(['fieldName' => 'firstname', 'columnName' => 'boo_firstname', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\City');
+        $metadata->setTable('T_CITY_CIT');
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'cit_name', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\CityRepository', $metadata);
+
+        $mockMysqliResult = new MysqliResult($rows);
+        $mockMysqliResult->setFieldsCallback(function () {
+            $fields = [];
+            foreach ([['id', 'boo_id', 'bouh', 'T_BOUH_BOO'], ['fname', 'boo_firstname', 'bouh', 'T_BOUH_BOO'],
+                ['name', 'boo_name', 'bouh', 'T_BOUH_BOO'], ['name', 'cit_name', 'c', 'T_CITY_CIT']] as $column) {
+                $field = new \stdClass();
+                [$field->name, $field->orgname, $field->table, $field->orgtable] = $column;
+                $field->type = MYSQLI_TYPE_VAR_STRING;
+                $fields[] = $field;
+            }
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new HydratorAggregator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->callableDataIs(fn ($result) => $result['c']);
+        $hydrator->setResult($result);
+
+        return $hydrator;
     }
 }

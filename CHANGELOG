@@ -115,6 +115,8 @@
     * Fix a Pgsql prepared query failing in a transaction (since 3.x): the DEALLOCATE sent when its statement was closed (UnitOfWork::process()) was refused by the aborted transaction, the statement outlived the ROLLBACK, and retrying the transaction failed with "prepared statement ... already exists"; the driver deallocates such statements once the transaction ends (commit() or rollback())
     * BC Fix a PreparedQuery / Cached\PreparedQuery kept by the application unusable for good after the driver reconnected or reset its connection (Mysqli "MySQL server has gone away", Pgsql "prepared statement ... is no longer valid"): it prepared again only when the driver object changed; StatementInterface::isStale() (new) reports a statement whose session is gone, and the query prepares it again. Every statement of the session is marked stale, including one closed by name (closeStatement()) but still held
     * Fix Metadata::getRepository() returning null for metadata loaded by MetadataRepository::batchLoadMetadata() / batchLoadMetadataFromCache() without Metadata::setRepository() (since 3.x): it now returns the repository class they are registered under (a class giving metadata for hydration only, not a repository, still gives null)
+    * Fix HydratorAggregator with a group identifier neither int nor string: a Uuid object or an array (composite identifier) threw a TypeError, a float was truncated with a deprecation; such identifiers are compared by their serialized form, and one which cannot be serialized throws a HydratorException
+
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
