@@ -266,5 +266,7 @@ way:
 * `var_dump()` and other debug tools only show the entity's own properties (`__debugInfo()`);
 * `serialize()` leaves the listeners out (`__serialize()`), so an entity can be stored in a session or a cache. Every
   other property is kept, including the private properties of a parent class. An
-  unserialized entity is a new object, not managed by the unit of work: saving it inserts it, unless you
+  unserialized entity is a new object, not managed by the unit of work: saving it updates its row with every column
+  when its `autoincrement` id is set, and inserts it otherwise (see
+  [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)), unless you
   [manage it](unit-of-work.md#managing-an-entity-yourself) first.

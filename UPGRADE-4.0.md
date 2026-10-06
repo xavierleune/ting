@@ -886,6 +886,15 @@ Queries, Entities and the Unit of Work
   longer makes an entity managed: an entity never inserted (queued for its `INSERT`, or not managed and without primary
   key) is only removed from the queue, without query, and an entity not managed but with its primary key is deleted by
   that key and stays not managed. See [the unit of work](docs/unit-of-work.md#saving-and-deleting).
+* **Saving an entity not managed whose `autoincrement` primary key is set updates its row.** In 3.x, such an entity (a
+  clone of a managed entity, a detached entity, one read from a cache or a session, one built with its id) was
+  inserted as a new row: its id was left out of the `INSERT`, then replaced by the generated one. It is now an existing
+  row: it is updated by its primary key with every readable mapped property (its changes are not tracked), then
+  managed, and `isNew()` is `false` for it. To duplicate a row, set the `autoincrement` property of the copy to `null`
+  (or unset it) before saving it. Clone an entity read partially only once read whole: its copy writes the columns not
+  read with their current value (`NULL`). An id missing from the database updates no row, without error. Entities
+  without `autoincrement` key are still inserted, and an entity deleted by `process()` is inserted again by its next
+  save. See [Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed).
 * **Mysqli non-prepared queries turn the escaped colon `\:` into `:`**, as prepared queries and the PostgreSQL driver
   already did. 3.x sent the backslash to MySQL, which dropped it inside a string literal (except under the sql_mode
   `NO_BACKSLASH_ESCAPES`, where the backslash was kept) and received it as is elsewhere. A query that relied on the
