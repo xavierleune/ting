@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Query;
 
 use CCMBenchmark\Ting\Connection;
+use CCMBenchmark\Ting\Driver\DefaultValuesInsertDriverInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
@@ -205,9 +206,17 @@ class Generator
             $params[$this->parameterName('v', ++$i, $column)] = $value;
         }
 
-        $sql = 'INSERT INTO ' . $this->getTarget($driver) . ' ('
-            . implode(', ', $fields) . ') VALUES ('
-            . implode(', ', array_map(fn (string $name): string => ':' . $name, array_keys($params))) . ')';
+        if ($values === []) {
+            // Only default values: an entity with only an autoincrement field, or with no field initialized
+            $clause = $driver instanceof DefaultValuesInsertDriverInterface
+                ? $driver->getDefaultValuesInsertClause()
+                : '() VALUES ()';
+            $sql = 'INSERT INTO ' . $this->getTarget($driver) . ' ' . $clause;
+        } else {
+            $sql = 'INSERT INTO ' . $this->getTarget($driver) . ' ('
+                . implode(', ', $fields) . ') VALUES ('
+                . implode(', ', array_map(fn (string $name): string => ':' . $name, array_keys($params))) . ')';
+        }
 
         $query = $this->queryFactory->getPrepared($sql, $this->connection);
 

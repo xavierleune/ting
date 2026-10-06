@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Driver\Pgsql;
 
 use PgSql\Connection;
+use CCMBenchmark\Ting\Driver\DefaultValuesInsertDriverInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\Exception;
@@ -43,7 +44,7 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 /**
  * @phpstan-import-type ConnectionParameters from DriverInterface
  */
-class Driver implements DriverInterface, SequenceAwareDriverInterface
+class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultValuesInsertDriverInterface
 {
     /**
      * @var string
@@ -557,6 +558,14 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
             throw new DriverException('Could not fetch last inserted id.');
         }
         return (int) $row[0];
+    }
+
+    /**
+     * PostgreSQL follows the SQL standard: INSERT INTO t () VALUES () is MySQL syntax
+     */
+    public function getDefaultValuesInsertClause(): string
+    {
+        return 'DEFAULT VALUES';
     }
 
     /**
