@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use Psr\Cache\InvalidArgumentException;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Contracts\Cache\CacheInterface as SymfonyCacheInterface;
 
 class CacheTest extends TestCase
 {
@@ -120,6 +121,22 @@ class CacheTest extends TestCase
     }
 
     /**
+     * A pool rejecting the key (a reserved character): with Symfony pools the check depends on the version and on
+     * zend.assertions, so the pool throws here whatever the key
+     */
+    private function rejectingPool(): SymfonyCacheInterface
+    {
+        $exception = new class ('Cache key "bou{h}" contains reserved characters') extends \InvalidArgumentException
+            implements InvalidArgumentException {
+        };
+        $pool = $this->createStub(SymfonyCacheInterface::class);
+        $pool->method('get')->willThrowException($exception);
+        $pool->method('delete')->willThrowException($exception);
+
+        return $pool;
+    }
+
+    /**
      * A read failing before its callback (a reserved character in the key) served no cached value: not a hit
      */
     public function testGetShouldLogAMissWhenThePoolThrowsBeforeTheCallback()
@@ -129,7 +146,7 @@ class CacheTest extends TestCase
         $mockLogger->expects($this->once())->method('stopOperation')->with($this->identicalTo(true));
 
         $cache = new Cache();
-        $cache->setCache(new ArrayAdapter());
+        $cache->setCache($this->rejectingPool());
         $cache->setLogger($mockLogger);
 
         $this->assertThrows(InvalidArgumentException::class, function () use ($cache): void {
@@ -144,7 +161,7 @@ class CacheTest extends TestCase
         $mockLogger->expects($this->once())->method('stopOperation');
 
         $cache = new Cache();
-        $cache->setCache(new ArrayAdapter());
+        $cache->setCache($this->rejectingPool());
         $cache->setLogger($mockLogger);
 
         $this->assertThrows(InvalidArgumentException::class, function () use ($cache): void {
