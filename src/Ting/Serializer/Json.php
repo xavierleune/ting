@@ -34,7 +34,7 @@ class Json implements SerializerInterface, ArrayValueInterface
 
     /**
      * @param mixed $toSerialize
-     * @param array $options
+     * @param array{options?: int, depth?: int<1, max>} $options options and depth given to json_encode()
      * @throws RuntimeException
      */
     public function serialize($toSerialize, array $options = []): ?string
@@ -60,7 +60,7 @@ class Json implements SerializerInterface, ArrayValueInterface
 
     /**
      * @param string|null $serialized
-     * @param array $options
+     * @param array{assoc?: bool|null, depth?: int<1, max>, options?: int} $options given to json_decode()
      * @return null|stdClass|array<mixed>
      * @throws RuntimeException
      */

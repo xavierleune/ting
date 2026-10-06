@@ -25,11 +25,14 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+/**
+ * @phpstan-import-type SerializerOptions from SerializeInterface
+ */
 interface UnserializeInterface
 {
     /**
      * @param mixed $serialized the value read from the database: a string, or an int or a float with native types
-     * @param array $options
+     * @param SerializerOptions $options
      */
     public function unserialize(mixed $serialized, array $options = []): mixed;
 }

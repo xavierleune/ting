@@ -4,6 +4,9 @@ namespace CCMBenchmark\Ting\Serializer;
 
 use InvalidArgumentException;
 
+/**
+ * @phpstan-import-type SerializerOptions from SerializeInterface
+ */
 class Uuid implements SerializerInterface
 {
     public function serialize(mixed $toSerialize, array $options = []): ?string
@@ -20,7 +23,7 @@ class Uuid implements SerializerInterface
 
     /**
      * @param string|null $serialized
-     * @param array $options
+     * @param SerializerOptions $options unused
      * @return mixed
      */
     public function unserialize($serialized, array $options = []): mixed

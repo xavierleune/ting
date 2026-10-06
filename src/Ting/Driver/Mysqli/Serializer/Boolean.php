@@ -28,11 +28,14 @@ namespace CCMBenchmark\Ting\Driver\Mysqli\Serializer;
 use CCMBenchmark\Ting\Serializer\ScalarValueInterface;
 use CCMBenchmark\Ting\Serializer\SerializerInterface;
 
+/**
+ * @phpstan-import-type SerializerOptions from \CCMBenchmark\Ting\Serializer\SerializeInterface
+ */
 class Boolean implements SerializerInterface, ScalarValueInterface
 {
     /**
      * @param mixed $toSerialize
-     * @param array $options
+     * @param SerializerOptions $options unused
      * @return int|null
      */
     public function serialize($toSerialize, array $options = []): ?int
@@ -49,7 +52,7 @@ class Boolean implements SerializerInterface, ScalarValueInterface
 
     /**
      * @param int|string $serialized
-     * @param array  $options
+     * @param SerializerOptions $options unused
      * @return bool|null
      */
     public function unserialize($serialized, array $options = []): ?bool
