@@ -255,14 +255,53 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * Flag the entity to be deleted on next process
+     *
+     * An entity never inserted (queued for its INSERT, or not managed and without primary key) has no row: it is
+     * unqueued, no query is run. An entity not managed but with its primary key is deleted by that key.
      */
     public function pushDelete(NotifyPropertyInterface $entity): static
     {
         $hash = spl_object_hash($entity);
+        if ($this->isNew($entity)
+            || (isset($this->entities[$entity]) === false && $this->hasPrimaryKey($entity) === false)
+        ) {
+            unset($this->entitiesShouldBePersisted[$hash]);
+
+            return $this;
+        }
+
         $this->entitiesShouldBePersisted[$hash] = ['state' => self::STATE_DELETE, 'entity' => $entity];
         $this->entities[$entity] = $entity;
 
         return $this;
+    }
+
+    /**
+     * @return bool false when a primary key of the entity is not set (not initialized or null); true without metadata,
+     *              process() then reports the missing repository
+     */
+    private function hasPrimaryKey(NotifyPropertyInterface $entity): bool
+    {
+        $hasPrimaryKey = true;
+        $this->metadataRepository->findMetadataForEntity(
+            $entity,
+            function (Metadata $metadata) use ($entity, &$hasPrimaryKey): void {
+                foreach ($metadata->getPrimaries() as $primary) {
+                    if ($metadata->isEntityPropertyReadable($entity, $primary['fieldName']) === false
+                        || $metadata->getEntityPropertyByFieldName($entity, $primary['fieldName']) === null
+                    ) {
+                        $hasPrimaryKey = false;
+
+                        return;
+                    }
+                }
+            },
+            static function (): void {
+                // Without metadata, process() throws
+            }
+        );
+
+        return $hasPrimaryKey;
     }
 
     /**

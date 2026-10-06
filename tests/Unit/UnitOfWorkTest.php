@@ -288,9 +288,57 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->shouldBeRemoved($mockEntity));
     }
 
+    #[AllowMockObjectsWithoutExpectations]
+    public function testDeletingANeverPersistedEntityShouldRunNoQuery()
+    {
+        $entity = new Bouh();
+        $entity->setName('never saved');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushDelete($entity);
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+        $unitOfWork->process();
+        $this->assertSame([], $queries);
+        $this->assertFalse($unitOfWork->isManaged($entity));
+
+        // Still a new entity: saving it inserts it
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testDeletingANewEntityQueuedForInsertShouldUnqueueItWithoutQuery()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushSave($entity);
+        $unitOfWork->pushDelete($entity);
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+        $unitOfWork->process();
+
+        $this->assertSame([], $queries);
+        $this->assertFalse($unitOfWork->isManaged($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testDeletingAnEntityNotManagedWithItsPrimaryKeyShouldDeleteItsRow()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+
+        $unitOfWork->pushDelete($entity)->process();
+
+        $this->assertSame(['DELETE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(3, $params[0]['#boo_id']);
+    }
+
     public function testRemove()
     {
         $mockEntity = new Bouh();
+        $mockEntity->setId(3);
 
         $unitOfWork = new UnitOfWork(
             $this->services->connectionPool(),

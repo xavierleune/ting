@@ -48,7 +48,9 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
   object...), whether it changed or not. If the entity has no mutable field and nothing changed, no query is sent;
   with a mutable field, an `UPDATE` always runs. An immutable property modified without calling its setter is not
   reported, so it is not updated: see [entities](entities.md#tracking-changes).
-* **deleted entity**: it is deleted by its primary key, then detached.
+* **deleted entity**: it is deleted by its primary key, then detached. An entity that was never inserted (still queued
+  for its `INSERT`, or not managed and without primary key) has no row: `pushDelete()` only removes it from the queue,
+  no query is sent. An entity not managed but whose primary key is set is deleted by that key.
 
 Use `pushSave()` both to insert and to update: the unit of work knows which one applies.
 
