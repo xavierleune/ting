@@ -587,26 +587,36 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
         if ($result === false || pg_get_pid($connection) !== $backendPid) {
             $this->forgetPreparedQueries();
             $this->loseTransaction();
-        }
-
-        if ($result && $this->currentCharset !== null) {
-            if (pg_set_client_encoding($connection, $this->currentCharset) === -1) {
-                // As for the timezone: the session keeps the server default, the next setCharset() with this
-                // charset applies it again and reports the error
-                $this->currentCharset = null;
-            }
-        }
-        if ($result && $this->currentTimezone !== null) {
-            try {
-                $this->applyTimezone($connection, $this->currentTimezone);
-            } catch (DriverException) {
-                // The session keeps the server default: the next setTimezone() with this timezone applies it again
-                // and reports the error
-                $this->currentTimezone = null;
+            // The new session starts with the server defaults. Only then: in an aborted transaction, the server
+            // refuses them (and every command but ROLLBACK / COMMIT), they would be forgotten and sent again by
+            // the next setCharset() / setTimezone(), which would throw before the transaction could be rolled back
+            if ($result === true) {
+                $this->applySessionSettings($connection);
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Apply the recorded charset and timezone to a new session, which starts with the server defaults. A value the
+     * server rejects is forgotten: the session keeps the server default, and the next setCharset() / setTimezone()
+     * with this value applies it again and reports the error
+     *
+     * @param Connection $connection
+     */
+    private function applySessionSettings(object $connection): void
+    {
+        if ($this->currentCharset !== null && pg_set_client_encoding($connection, $this->currentCharset) === -1) {
+            $this->currentCharset = null;
+        }
+        if ($this->currentTimezone !== null) {
+            try {
+                $this->applyTimezone($connection, $this->currentTimezone);
+            } catch (DriverException) {
+                $this->currentTimezone = null;
+            }
+        }
     }
 
     /**
