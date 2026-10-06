@@ -269,6 +269,8 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
   * keys containing a reserved character (`{}()/\@:`, e.g. `user:42`) are rejected with a
     `Psr\Cache\InvalidArgumentException` (a `Symfony\Component\Cache\Exception\InvalidArgumentException`): replace
     these characters, or hash the variable part of the key (`'user_' . md5($id)`).
+* A negative TTL (`setTtl(-1)`) throws a `CCMBenchmark\Ting\Query\QueryException`: 3.x accepted it, and the result
+  was never cached. Use `0` or a positive lifetime.
 * If you extend cached queries: the protected `Query\Cached\Query::checkCache()` has been replaced by
   `queryThroughCache()`.
 * `Query\Cached\Query::setVersion()` has been removed: the version has not been part of the cache key since cache
@@ -320,7 +322,9 @@ Repository and RepositoryFactory Constructors
 The `SerializerFactoryInterface` argument, unused since 3.x, has been removed from both constructors:
 
 * `Repository::__construct()` takes 6 arguments: if your repository overrides the constructor, drop the last
-  `SerializerFactoryInterface $serializerFactory` parameter and don't pass it to `parent::__construct()`.
+  `SerializerFactoryInterface $serializerFactory` parameter and don't pass it to `parent::__construct()`. The
+  constructor is `@internal` to call, not to override: an override must keep its parameters, which
+  `RepositoryFactory` passes (see "Smaller Changes for Extensions").
 * `RepositoryFactory::__construct()` takes 6 arguments: drop the last `$serializerFactory` argument (with Symfony,
   ting_bundle does it for you).
 
@@ -390,6 +394,10 @@ Serializers
   (`2024-01-31T10:00:00+01:00`, with optional fractional seconds). Anything else throws a
   `Serializer\RuntimeException`, as an unparsable value did in 3.x: the PHP date parser is not used as a fallback, it
   would read `now`, `tomorrow` or `+1 day` as dates, and `05/06/2024` as May 6th.
+* `Serializer\Json` honours the `JSON_OBJECT_AS_ARRAY` flag of its unserialize `options`, as `json_decode()` does:
+  such a field now decodes JSON objects to **arrays**. 3.13 forced objects (`\stdClass`) whatever the flag, as its
+  `assoc` option defaulted to `false` instead of `null`. Remove the flag to keep objects, or set `assoc` to `false`
+  explicitly. A field decoded to arrays is not mutable by default (see "UnitOfWork").
 * `unSerializeUseFormat` set to `false` is the explicit opt-in to the permissive mode: it skips the format and reads
   with the PHP date parser (`new \DateTime($value)`), as in 3.x, except that an empty string is now rejected (it was
   read as the current time).
@@ -545,10 +553,21 @@ implements or overrides, not only with the methods listed here.
 
 * **Implementing an interface**: every method must declare a return type compatible with the interface (the same
   type, or a narrower one), otherwise PHP raises a fatal error when loading the class. Its parameters may stay
-  untyped (an untyped parameter is wider), or take the type of the interface.
+  untyped (an untyped parameter is wider), or take the type of the interface, but they must keep the default values
+  the interface declares: a parameter that became optional in 4.0 and is still required by the implementation is a
+  fatal error too. Two interface parameters became optional:
+  * `Logger\DriverLoggerInterface::startStatementExecute(string $statement, array $params = [])`: a 3.x logger
+    declaring `startStatementExecute($statement, $params)` (ting_bundle's `DriverLogger` included) must write
+    `$params = []`;
+  * `Driver\DriverInterface::escapeField(mixed $field = null)`: a 3.x driver declaring `escapeField($field)` must write
+    `$field = null`.
 * **Extending a non-final class** (a repository, a hydrator, a driver, a serializer...): an override must declare a
   compatible return type, with the same fatal error otherwise; a parameter type it declares must be the type of the
-  parent, or a wider one.
+  parent, or a wider one. It must also keep the optional parameters of the parent, and the parameters the parent
+  added: `escapeField(mixed $field = null)` and `setTimezone(?string $timezone = null)` of the Mysqli, Pgsql and
+  SphinxQL drivers (`$timezone` was required in 3.x), `Query\Generator::getByCriteria()` (new optional `$order` and
+  `$limit`, see "Generator") and the protected `Driver\Pgsql\Driver::setCollectionWithResult()` (see "Smaller Changes
+  for Extensions").
 
 Start with your repositories, which every application has:
 
@@ -564,13 +583,13 @@ Start with your repositories, which every application has:
   `public function getAll($forceMaster = false)` (no return type): write
   `public function getAll(bool $forcePrimary = false): CollectionInterface`. The methods of `Repository` in 4.0:
   ```php
-  public function __construct(ConnectionPool $connectionPool, MetadataRepository $metadataRepository, QueryFactory $queryFactory, CollectionFactory $collectionFactory, CacheInterface $cache, UnitOfWork $unitOfWork);
+  public function __construct(ConnectionPool $connectionPool, MetadataRepository $metadataRepository, QueryFactory $queryFactory, CollectionFactory $collectionFactory, \Symfony\Contracts\Cache\CacheInterface $cache, UnitOfWork $unitOfWork);
   public function getCollection(?HydratorInterface $hydrator = null): Collection;
   public function getQuery(string $sql): Query;
   public function getPreparedQuery(string $sql): PreparedQuery;
   public function getCachedQuery(string $sql): Cached\Query;
   public function getCachedPreparedQuery(string $sql): Cached\PreparedQuery;
-  public function getQueryBuilder(string $type): QueryInterface;
+  public function getQueryBuilder(string $type): \Aura\SqlQuery\QueryInterface;
   public function get(mixed $primariesKeyValue, bool $forcePrimary = false): ?object;
   public function getAll(bool $forcePrimary = false): CollectionInterface;
   public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface;
@@ -654,6 +673,9 @@ public function closeStatement(string $statement): void;
 public function ping(): bool;
 public function setTimezone(?string $timezone = null): void;
 
+// Driver\DefaultValuesInsertDriverInterface (new in 4.0, optional for a custom driver)
+public function getDefaultValuesInsertClause(): string;
+
 // Driver\ResultInterface
 public function setConnectionName(string $connectionName): static;
 public function setDatabase(string $database): static;
@@ -662,7 +684,7 @@ public function getConnectionName(): ?string;
 public function getDatabase(): ?string;
 public function getNumRows(): mixed;
 
-// Driver\SequenceAwareDriverInterface
+// Driver\SequenceAwareDriverInterface (new in 4.0, see "Smaller Changes for Extensions")
 public function getInsertedIdForSequence(string $sequenceName): int;
 
 // Driver\StatementInterface
@@ -886,6 +908,11 @@ Queries, Entities and the Unit of Work
   longer makes an entity managed: an entity never inserted (queued for its `INSERT`, or not managed and without primary
   key) is only removed from the queue, without query, and an entity not managed but with its primary key is deleted by
   that key and stays not managed. See [the unit of work](docs/unit-of-work.md#saving-and-deleting).
+* **A change made to an entity while it is detached is lost when it is managed again.** In 3.x, `detach()` left the
+  unit of work listening to the entity: a setter called while detached was recorded, and written by the first save
+  after `manage()`. In 4.0, the unit of work ignores the changes of an entity it does not manage: after `detach()`,
+  `$city->setName('Lyon')`, `manage($city)` then `pushSave($city)`, the `UPDATE` does not include the new name (and
+  nothing runs when it is the only change). Make the change after `manage()`.
 * **Saving an entity not managed whose `autoincrement` primary key is set updates its row.** In 3.x, such an entity (a
   clone of a managed entity, a detached entity, one read from a cache or a session, one built with its id) was
   inserted as a new row: its id was left out of the `INSERT`, then replaced by the generated one. It is now an existing
@@ -919,6 +946,19 @@ Elements marked `@internal` (methods such as `MetadataRepository::findMetadataFo
 [ting_bundle](https://github.com/xavierleune/ting_bundle), which is released along with Ting and may use them. They are
 not covered by the backward compatibility promise for any other code: they may change in a minor version.
 
+Two `@internal` members are nevertheless supported for extension, as in 3.x, and only change in a major version:
+
+* `Repository::__construct()`: it is internal to **call** (repositories are built by `RepositoryFactory`, which passes
+  these 6 arguments), but a repository may **override** it, with the same parameters passed to
+  `parent::__construct()` (see "Repository and RepositoryFactory Constructors");
+* the protected `Hydrator::hydrateColumns()`: a hydrator extending `Hydrator` may call it to hydrate a row, as the
+  built-in hydrators do (see [Writing a hydrator](docs/hydrators.md#writing-a-hydrator)).
+
+Elements that became `@internal` in 4.0:
+
+* `Metadata::getByCriteriaWithOrderAndLimit()`, like the other query methods of `Metadata` (`getByCriteria()`,
+  `getAll()`...) already were in 3.x: call `Repository::getBy($criteria, $forcePrimary, $order, $limit)`.
+
 * A custom driver supporting sequences must implement `CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface`
   (`getInsertedIdForSequence(string $sequenceName): int`): having a method of that name is no longer enough for the
   `sequenceName` option of an autoincrement field.
@@ -929,9 +969,12 @@ not covered by the backward compatibility promise for any other code: they may c
   PostgreSQL driver does (`INSERT INTO t DEFAULT VALUES`). A custom driver for a database refusing the MySQL syntax
   should implement it.
 
-* The Mysqli and Pgsql `escapeField()` escape a colon in the name (`` `x \:y` ``, `"x \:y"`), so that the drivers do not
-  take it for a placeholder; they remove the escape, as in any SQL they are given. Their result is meant for SQL run
-  through a Ting driver, not through mysqli / pgsql directly.
+* The Mysqli and Pgsql `escapeField()` double a backtick (Mysqli) or a double quote (Pgsql) in the name, as the
+  databases expect in a quoted identifier (``a`b`` becomes `` `a``b` ``, `a"b` becomes `"a""b"`): 3.x left it as is,
+  which ended the identifier early. They also escape a colon in the name (`` `x \:y` ``, `"x \:y"`), so that the
+  drivers do not take it for a placeholder; they remove the escape, as in any SQL they are given. Their result is
+  meant for SQL run through a Ting driver, not through mysqli / pgsql directly. Code escaping such a name itself
+  before calling `escapeField()` must stop doing it.
 
 * Built-in serializers now declare native return types on `serialize()` / `unserialize()`: `Serializer\DateTime`,
   `DateTimeImmutable`, `DateTimeZone`, `Json`, `Ip`, `Uuid`, `BackedEnum` (`unserialize()`),
