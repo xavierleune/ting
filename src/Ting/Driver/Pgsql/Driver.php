@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\Exception;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Exceptions\StatementException;
@@ -42,7 +43,7 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 /**
  * @phpstan-import-type ConnectionParameters from DriverInterface
  */
-class Driver implements DriverInterface
+class Driver implements DriverInterface, SequenceAwareDriverInterface
 {
     /**
      * @var string
