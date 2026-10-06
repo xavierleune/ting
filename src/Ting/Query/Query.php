@@ -83,10 +83,11 @@ class Query implements QueryInterface
             $collection = $this->collectionFactory->get();
         }
 
-        if ($this->selectPrimary === true) {
-            return $this->connection->primary()->execute($this->sql, $this->params, $collection);
-        }
-        return $this->connection->replica()->execute($this->sql, $this->params, $collection);
+        $driver = $this->selectPrimary === true ? $this->connection->primary() : $this->connection->replica();
+        // The driver fills the collection: for a statement without result set, Mysqli returns true instead of it
+        $driver->execute($this->sql, $this->params, $collection);
+
+        return $collection;
     }
 
     /**
