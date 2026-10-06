@@ -124,8 +124,10 @@ class PropertyAccessor
             return $this->reflectionData[$key];
         }
 
-        if ($this->cacheItemPool instanceof CacheItemPoolInterface) {
-            $item = $this->cacheItemPool->getItem(self::CACHE_PREFIX_WRITE.rawurlencode($key));
+        $cacheItemPool = $this->cacheItemPool;
+        $item = null;
+        if ($cacheItemPool instanceof CacheItemPoolInterface) {
+            $item = $cacheItemPool->getItem(self::CACHE_PREFIX_WRITE.rawurlencode($key));
             if ($item->isHit()) {
                 return $this->reflectionData[$key] = $item->get();
             }
@@ -143,8 +145,8 @@ class PropertyAccessor
             $data = ['public' => false, 'supportsHook' => \PHP_VERSION_ID >= 80400, 'hasSetHook' => false];
         }
 
-        if (isset($item)) {
-            $this->cacheItemPool->save($item->set($data));
+        if ($cacheItemPool instanceof CacheItemPoolInterface && $item !== null) {
+            $cacheItemPool->save($item->set($data));
         }
         
         return $this->reflectionData[$key] = $data;
