@@ -249,6 +249,10 @@ public function findWithNbBooks(): CollectionInterface
 ]
 ```
 
+When the entity of `$to` is `null` in a row (an alias of a `LEFT JOIN` without match), the column is removed from the
+`stdClass` all the same: its value is lost for that row. Map a column to an alias that is always present (the root
+entity of the query), or leave it unmapped and read it from the `stdClass`.
+
 ### Unserializing a column without metadata
 
 Mapped columns are converted by the serializer of their field. For unmapped columns, `unserializeAliasWith(string
@@ -383,10 +387,14 @@ $hydrator->identityMap(true);
 // Two books by Frank Herbert now share the same Author instance
 ```
 
-The map lives as long as the hydrator. It requires the entity's primary key in the selected columns (every column of
-a composite key): an entity whose key is missing or `null` in the row is not kept. To enable it for
-every query, enable it on the hydrator given to the `CollectionFactory` (see [Getting started](getting-started.md)):
-the factory clones that hydrator for each collection.
+The map lives as long as the hydrator: a hydrator given to several `getCollection()` calls returns the same instance
+across their collections. It requires the entity's primary key in the selected columns (every column of a composite
+key): an entity whose key is missing or `null` in the row is not kept. To enable it by default, enable it on the
+hydrator given to the `CollectionFactory` (see [Getting started](getting-started.md)): it then applies to the
+collections that use that hydrator, those of `getCollection()` without hydrator and of a query run without collection
+(`$query->query()`). `getAll()` and `getBy()` don't use it: they hydrate with a new `HydratorSingleObject`, without
+identity map (one row per entity, so there is nothing to share). The factory clones its hydrator for each collection,
+so each collection has its own map: two queries reading the same row still return two instances.
 
 ## HydratorAggregator
 
