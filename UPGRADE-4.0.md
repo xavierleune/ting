@@ -912,6 +912,12 @@ not covered by the backward compatibility promise for any other code: they may c
   (`getInsertedIdForSequence(string $sequenceName): int`): having a method of that name is no longer enough for the
   `sequenceName` option of an autoincrement field.
 
+* An INSERT without any value (an entity with only an autoincrement field, or with no field initialized) is written
+  `INSERT INTO t () VALUES ()` (MySQL syntax) unless the driver implements
+  `CCMBenchmark\Ting\Driver\DefaultValuesInsertDriverInterface` (`getDefaultValuesInsertClause(): string`), as the
+  PostgreSQL driver does (`INSERT INTO t DEFAULT VALUES`). A custom driver for a database refusing the MySQL syntax
+  should implement it.
+
 * Built-in serializers now declare native return types on `serialize()` / `unserialize()`: `Serializer\DateTime`,
   `DateTimeImmutable`, `DateTimeZone`, `Json`, `Ip`, `Uuid`, `BackedEnum` (`unserialize()`),
   `Driver\Mysqli\Serializer\Boolean` and `Driver\Pgsql\Serializer\Boolean`. A subclass overriding one of these methods

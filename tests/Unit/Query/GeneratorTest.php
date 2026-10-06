@@ -434,6 +434,30 @@ class GeneratorTest extends TestCase
         $this->assertPlaceholdersMatchParams($sql, $params);
     }
 
+    public function testInsertWithoutValueShouldInsertTheDefaultValuesWithMysql()
+    {
+        $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', ['id']);
+
+        [$sql, $params] = $this->readQuery($generator->insert([]));
+
+        // INSERT INTO ... DEFAULT VALUES is not MySQL syntax
+        $this->assertSame('INSERT INTO `table` () VALUES ()', $sql);
+        $this->assertSame([], $params);
+    }
+
+    public function testInsertWithoutValueShouldInsertTheDefaultValuesWithPostgresql()
+    {
+        $connectionClass = $this->mockConnection::class;
+        $connection = new $connectionClass($this->createStub(ConnectionPool::class), 'main', 'db', new PgsqlDriver());
+        $generator = new Generator($connection, $this->mockQueryFactory, 'public', 'table', ['id']);
+
+        [$sql, $params] = $this->readQuery($generator->insert([]));
+
+        // INSERT INTO t () VALUES () is a syntax error in PostgreSQL
+        $this->assertSame('INSERT INTO "public"."table" DEFAULT VALUES', $sql);
+        $this->assertSame([], $params);
+    }
+
     public function testUpdateShouldNameTheParametersOfColumnsWithSpecialCharacters()
     {
         $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', []);
