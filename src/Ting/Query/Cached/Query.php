@@ -57,9 +57,9 @@ class Query extends \CCMBenchmark\Ting\Query\Query
      * @param int $ttl
      * @return $this
      */
-    public function setTtl($ttl): static
+    public function setTtl(int $ttl): static
     {
-        $this->ttl = (int) $ttl;
+        $this->ttl = $ttl;
         return $this;
     }
 
@@ -80,9 +80,9 @@ class Query extends \CCMBenchmark\Ting\Query\Query
      * @param bool $value
      * @return $this
      */
-    public function setForce($value): static
+    public function setForce(bool $value): static
     {
-        $this->force = (bool) $value;
+        $this->force = $value;
         return $this;
     }
 

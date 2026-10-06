@@ -74,7 +74,7 @@ class Generator
      * @param bool $forcePrimary
      * @return DriverInterface
      */
-    protected function getDriver($forcePrimary): DriverInterface
+    protected function getDriver(bool $forcePrimary): DriverInterface
     {
         $driver = $forcePrimary === true ? $this->connection->primary() : $this->connection->replica();
 
@@ -261,7 +261,7 @@ class Generator
     protected function escapeFields(array $fields, DriverInterface $driver): array
     {
         return array_map(
-            fn ($field) => $driver->escapeField($field),
+            fn (string $field) => $driver->escapeField($field),
             $fields
         );
     }
