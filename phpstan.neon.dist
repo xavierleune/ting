@@ -4,11 +4,7 @@ parameters:
     paths:
         - src/
         - phpstan/
-    tips:
-        treatPhpDocTypesAsCertain: false
-    ignoreErrors:
-        - identifier: missingType.iterableValue
-        - identifier: missingType.generics
+    treatPhpDocTypesAsCertain: false
     type_coverage:
         return: 100
         param: 100
