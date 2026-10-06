@@ -507,9 +507,12 @@ See [Queries](queries.md#query-builder).
 
 ## Transactions
 
-`startTransaction()`, `commit()` and `rollback()` act on the primary connection of the repository. Repositories whose
-connection resolves to the same server share that connection, hence the transaction (with PostgreSQL, the database
-must be the same too).
+`startTransaction()`, `commit()` and `rollback()` act on the primary connection of the repository. `ConnectionPool`
+opens one connection per driver class and connection parameters: repositories whose primaries use the same driver
+(`namespace`) and the same `host`, `port`, `user` and `password` share that connection, hence the transaction,
+whatever the name of their connection in the configuration (with PostgreSQL, the database must be the same too).
+Parameters that differ open distinct connections, with distinct transactions, even when they reach the same server
+(a host name and its IP address, two users).
 
 ```php
 $cityRepository->startTransaction();
