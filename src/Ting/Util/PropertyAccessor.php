@@ -2,6 +2,7 @@
 
 namespace CCMBenchmark\Ting\Util;
 
+use ReflectionClass;
 use ReflectionProperty;
 use PropertyHookType;
 use Psr\Cache\InvalidArgumentException;
@@ -15,6 +16,8 @@ class PropertyAccessor
 {
     private array $reflectionData = [];
     private array $reflectionProperties = [];
+    /** @var array<string, ?ReflectionProperty> declaring property, by class and property name */
+    private array $declaredProperties = [];
     private const CACHE_PREFIX_WRITE = 'write_property_';
     private readonly PropertyAccessorInterface $propertyAccessor;
     private ?CacheItemPoolInterface $cacheItemPool = null;
@@ -67,9 +70,38 @@ class PropertyAccessor
     public function isReadable(object|array $objectOrArray, PropertyPathInterface|string $propertyPath, ?string $getter): bool
     {
         if ($getter !== null) {
-            return method_exists($objectOrArray, $getter);
+            if (method_exists($objectOrArray, $getter) === false) {
+                return false;
+            }
+            // Like a conventional getter, a custom getter can't read a typed property not initialized yet
+            return \is_object($objectOrArray) === false
+                || \is_string($propertyPath) === false
+                || $this->isUninitialized($objectOrArray, $propertyPath) === false;
         }
         return $this->propertyAccessor->isReadable($objectOrArray, $propertyPath);
+    }
+
+    /**
+     * Whether the object has this property, typed and not initialized yet (a private property of a parent class too)
+     */
+    private function isUninitialized(object $object, string $property): bool
+    {
+        $key = $object::class . '..' . $property;
+        if (\array_key_exists($key, $this->declaredProperties) === false) {
+            $this->declaredProperties[$key] = null;
+            for ($class = new ReflectionClass($object); $class !== false; $class = $class->getParentClass()) {
+                if ($class->hasProperty($property)) {
+                    $this->declaredProperties[$key] = $class->getProperty($property);
+                    break;
+                }
+            }
+        }
+
+        $reflectionProperty = $this->declaredProperties[$key];
+
+        return $reflectionProperty !== null
+            && $reflectionProperty->isStatic() === false
+            && $reflectionProperty->isInitialized($object) === false;
     }
 
     /**

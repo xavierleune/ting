@@ -31,6 +31,7 @@ use PHPUnit\Framework\Attributes\RequiresPhp;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
+use tests\fixtures\model\CustomGetterEntity;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
 use tests\fixtures\model\TrackedChild;
@@ -123,6 +124,42 @@ class PropertyAccessorTest extends TestCase
         $entity = new PublicPropertiesEntity();
 
         $this->assertFalse($accessor->isReadable($entity, 'propertyWithGetter', 'wrongGetterName'));
+    }
+
+    public function testIsReadableShouldReturnFalseOnUninitializedPropertyWithACustomGetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new CustomGetterEntity();
+
+        $this->assertFalse($accessor->isReadable($entity, 'label', 'label'));
+
+        $entity->setLabel('initialized');
+        $this->assertTrue($accessor->isReadable($entity, 'label', 'label'));
+    }
+
+    public function testIsReadableShouldReturnFalseOnUninitializedPrivatePropertyOfTheParentClassWithACustomGetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () extends CustomGetterEntity {
+        };
+
+        $this->assertFalse($accessor->isReadable($entity, 'label', 'label'));
+
+        $entity->setLabel('initialized');
+        $this->assertTrue($accessor->isReadable($entity, 'label', 'label'));
+    }
+
+    public function testIsReadableShouldReturnTrueWithACustomGetterWithoutProperty()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            public function computed(): string
+            {
+                return 'computed';
+            }
+        };
+
+        $this->assertTrue($accessor->isReadable($entity, 'computed', 'computed'));
     }
 
     public function testIsWritableShouldReturnTrueWhenASetterIsDefined()
