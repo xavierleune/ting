@@ -1532,4 +1532,163 @@ class DriverTest extends TestCase
         $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Mars/Olympus'));
         $this->assertCount(2, $setTimezoneCalls);
     }
+
+    private const TRANSACTION_LOST = 'The transaction was lost with the connection: the server rolled it back';
+
+    /**
+     * A connection recording the transaction commands it receives; once $alive is false, it behaves as a connection
+     * lost by the server (wait_timeout, restart)
+     */
+    private function transactionRecordingConnection(): Mysqli
+    {
+        return new class extends Mysqli {
+            public bool $alive = true;
+
+            /** @var list<string> */
+            public array $commands = [];
+
+            public function real_connect(...$args)
+            {
+                return true;
+            }
+
+            public function query(...$args)
+            {
+                if ($this->alive === false) {
+                    throw new \mysqli_sql_exception('MySQL server has gone away', 2006);
+                }
+
+                return true;
+            }
+
+            public function begin_transaction(...$args)
+            {
+                $this->commands[] = 'BEGIN';
+
+                return $this->alive;
+            }
+
+            public function commit(...$args)
+            {
+                $this->commands[] = 'COMMIT';
+
+                return $this->alive;
+            }
+
+            public function rollback(...$args)
+            {
+                $this->commands[] = 'ROLLBACK';
+
+                return $this->alive;
+            }
+        };
+    }
+
+    /**
+     * @return array{Driver, Mysqli} a driver with a transaction opened on a connection lost since
+     */
+    private function driverWithATransactionOnALostConnection(): array
+    {
+        $lostConnection = $this->transactionRecordingConnection();
+        $driver = new Driver($lostConnection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->startTransaction();
+        $lostConnection->alive = false;
+
+        return [$driver, $lostConnection];
+    }
+
+    public function testCommitAfterAReconnectionShouldRaiseTheLossOfTheTransaction()
+    {
+        [$driver] = $this->driverWithATransactionOnALostConnection();
+        $newConnection = $this->transactionRecordingConnection();
+        NativeFunctionMock::override('mysqli_init', $newConnection);
+        $this->assertTrue($driver->ping());
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+        // Reported once: the transaction is over
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), 'Cannot commit no transaction');
+        $this->assertSame([], $newConnection->commands);
+
+        $driver->startTransaction();
+        $driver->commit();
+        $this->assertSame(['BEGIN', 'COMMIT'], $newConnection->commands);
+    }
+
+    public function testRollbackAfterAReconnectionShouldNotBeSentToTheNewConnection()
+    {
+        [$driver] = $this->driverWithATransactionOnALostConnection();
+        $newConnection = $this->transactionRecordingConnection();
+        NativeFunctionMock::override('mysqli_init', $newConnection);
+        $this->assertTrue($driver->reconnect());
+
+        $driver->rollback();
+        $this->assertSame([], $newConnection->commands);
+        $this->assertThrows(TransactionException::class, fn () => $driver->rollback(), 'Cannot rollback no transaction');
+    }
+
+    public function testStartTransactionAfterAReconnectionShouldStartANewTransaction()
+    {
+        [$driver] = $this->driverWithATransactionOnALostConnection();
+        $newConnection = $this->transactionRecordingConnection();
+        NativeFunctionMock::override('mysqli_init', $newConnection);
+        $this->assertTrue($driver->ping());
+
+        $driver->startTransaction();
+        // The lost transaction is no longer reported: this commit is the one of the new transaction
+        $driver->commit();
+        $this->assertSame(['BEGIN', 'COMMIT'], $newConnection->commands);
+    }
+
+    public function testAFailedReconnectionShouldLoseTheTransaction()
+    {
+        [$driver] = $this->driverWithATransactionOnALostConnection();
+        NativeFunctionMock::override('mysqli_init', $this->unreachableServerConnection());
+        $this->assertFalse($driver->ping());
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+
+        $newConnection = $this->transactionRecordingConnection();
+        NativeFunctionMock::override('mysqli_init', $newConnection);
+        $this->assertTrue($driver->ping());
+        $driver->startTransaction();
+        $this->assertSame(['BEGIN'], $newConnection->commands);
+    }
+
+    public function testRollbackAfterAFailedReconnectionShouldSucceed()
+    {
+        [$driver] = $this->driverWithATransactionOnALostConnection();
+        NativeFunctionMock::override('mysqli_init', $this->unreachableServerConnection());
+        $this->assertFalse($driver->ping());
+
+        // Nothing to roll back: the server did it, and there is no connection to send it to
+        $driver->rollback();
+        $this->assertThrows(TransactionException::class, fn () => $driver->rollback(), 'Cannot rollback no transaction');
+    }
+
+    public function testCloseShouldLoseTheTransaction()
+    {
+        $connection = $this->transactionRecordingConnection();
+        $driver = new Driver($connection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->startTransaction();
+
+        $driver->close();
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+        $this->assertSame(['BEGIN'], $connection->commands);
+    }
+
+    public function testPingWithoutReconnectionShouldKeepTheTransaction()
+    {
+        $connection = $this->transactionRecordingConnection();
+        $driver = new Driver($connection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->startTransaction();
+
+        $this->assertTrue($driver->ping());
+        $driver->commit();
+
+        $this->assertSame(['BEGIN', 'COMMIT'], $connection->commands);
+    }
 }

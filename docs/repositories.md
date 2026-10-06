@@ -505,6 +505,14 @@ failed query, which the server answers with a `ROLLBACK`. A failed `commit()` or
 open: don't call `rollback()` after a failed `commit()` (it would throw "Cannot rollback no transaction"), which is why
 `commit()` is outside the `try` above.
 
+A transaction lives in the database session: when the connection is lost, the server rolls it back. When the driver
+replaces or closes the connection while a transaction is open (`ping()` or `reconnect()` re-establishing a lost
+connection, a failed reconnection, `close()`), the transaction is marked as lost: the next `commit()` throws a
+`TransactionException` ("The transaction was lost with the connection: the server rolled it back") instead of
+committing on the new connection, `rollback()` succeeds without sending anything to the new connection, and
+`startTransaction()` starts a new transaction. Writes run on the new connection before that `commit()` were not part of
+any transaction: each of them was committed on its own.
+
 ## Other methods
 
 * `getMetadata(): Metadata` returns the metadata of the repository.

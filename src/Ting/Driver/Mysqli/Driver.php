@@ -35,6 +35,7 @@ use CCMBenchmark\Ting\Exceptions\ConnectionException;
 use CCMBenchmark\Ting\Exceptions\DatabaseException;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Driver\DriverInterface;
+use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Exceptions\StatementException;
@@ -66,6 +67,8 @@ class Driver implements DriverInterface
     protected ?string $currentTimezone = null;
 
     protected bool $connected = false;
+
+    use LostTransactionTrait;
 
     protected bool $transactionOpened = false;
 
@@ -174,6 +177,7 @@ class Driver implements DriverInterface
             }
             $this->connected = false;
             $this->reconnectionPending = false;
+            $this->loseTransaction();
         }
 
         return $this;
@@ -424,6 +428,7 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === true) {
             throw new TransactionException('Cannot start another transaction');
         }
+        $this->forgetLostTransaction();
         $this->runTransactionCommand('start', fn () => $this->connection->begin_transaction());
         $this->transactionOpened = true;
     }
@@ -433,6 +438,7 @@ class Driver implements DriverInterface
      */
     public function commit(): void
     {
+        $this->assertTransactionNotLost();
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot commit no transaction');
         }
@@ -446,6 +452,9 @@ class Driver implements DriverInterface
      */
     public function rollback(): void
     {
+        if ($this->forgetLostTransaction() === true) {
+            return;
+        }
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot rollback no transaction');
         }
@@ -610,7 +619,8 @@ class Driver implements DriverInterface
      */
     public function reconnect(): bool
     {
-        // The previous connection is dropped whatever happens: its statements cannot be reused
+        // The previous connection is dropped whatever happens: its statements cannot be reused, its transaction is lost
+        $this->loseTransaction();
         $this->oldPreparedQueries = array_replace_recursive($this->oldPreparedQueries, $this->preparedQueries);
         $this->preparedQueries = [];
         $this->reconnectionPending = true;

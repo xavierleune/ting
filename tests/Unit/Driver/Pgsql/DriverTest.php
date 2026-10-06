@@ -1390,4 +1390,110 @@ class DriverTest extends TestCase
         $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Europe/Paris'));
         $this->assertSame(3, $queryCalls);
     }
+
+    private const TRANSACTION_LOST = 'The transaction was lost with the connection: the server rolled it back';
+
+    /**
+     * @param list<int> $backendPids pids returned by pg_get_pid(), the last one repeated
+     * @return array{Driver, \ArrayObject<int, string>} a driver with an opened transaction, and the SQL sent since
+     */
+    private function driverInATransaction(array $backendPids = [42]): array
+    {
+        $sent = new \ArrayObject();
+        NativeFunctionMock::override('pg_connect', fn () => new Pgsql());
+        NativeFunctionMock::override('pg_query', function ($connection, string $sql) use ($sent): bool {
+            $sent[] = $sql;
+
+            return true;
+        });
+        NativeFunctionMock::override('pg_result_status', 'COMMIT');
+        NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_close', true);
+        NativeFunctionMock::override('pg_get_pid', function () use (&$backendPids): int {
+            return \count($backendPids) > 1 ? array_shift($backendPids) : $backendPids[0];
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->startTransaction();
+        $sent->exchangeArray([]);
+
+        return [$driver, $sent];
+    }
+
+    public function testCommitAfterAReconnectionByPingShouldRaiseTheLossOfTheTransaction()
+    {
+        // pg_ping() re-established the lost connection: a new backend, where the transaction does not exist
+        [$driver, $sent] = $this->driverInATransaction([42, 43]);
+        $this->assertTrue($driver->ping());
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+        // Reported once: the transaction is over
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), 'Cannot commit no transaction');
+        $this->assertSame([], $sent->getArrayCopy());
+
+        $driver->startTransaction();
+        $driver->commit();
+        $this->assertSame(['BEGIN', 'COMMIT'], $sent->getArrayCopy());
+    }
+
+    public function testPingFailingShouldLoseTheTransaction()
+    {
+        [$driver, $sent] = $this->driverInATransaction();
+        NativeFunctionMock::override('pg_ping', false);
+        $this->assertFalse($driver->ping());
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+        $this->assertSame([], $sent->getArrayCopy());
+    }
+
+    public function testPingWithoutReconnectionShouldKeepTheTransaction()
+    {
+        [$driver, $sent] = $this->driverInATransaction();
+        $this->assertTrue($driver->ping());
+
+        $driver->commit();
+        $this->assertSame(['COMMIT'], $sent->getArrayCopy());
+    }
+
+    public function testRollbackAfterAReconnectionShouldNotBeSentToTheNewConnection()
+    {
+        [$driver, $sent] = $this->driverInATransaction();
+        $this->assertTrue($driver->reconnect());
+
+        $driver->rollback();
+        $this->assertSame([], $sent->getArrayCopy());
+        $this->assertThrows(TransactionException::class, fn () => $driver->rollback(), 'Cannot rollback no transaction');
+    }
+
+    public function testStartTransactionAfterAReconnectionShouldStartANewTransaction()
+    {
+        [$driver, $sent] = $this->driverInATransaction();
+        $this->assertTrue($driver->reconnect());
+
+        $driver->startTransaction();
+        // The lost transaction is no longer reported: this commit is the one of the new transaction
+        $driver->commit();
+        $this->assertSame(['BEGIN', 'COMMIT'], $sent->getArrayCopy());
+    }
+
+    public function testCommitAfterAReconnectionShouldRaiseTheLossOfTheTransaction()
+    {
+        [$driver, $sent] = $this->driverInATransaction();
+        $this->assertTrue($driver->reconnect());
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+        $this->assertSame([], $sent->getArrayCopy());
+    }
+
+    public function testCloseShouldLoseTheTransaction()
+    {
+        [$driver, $sent] = $this->driverInATransaction();
+        $driver->close();
+        $driver->setDatabase('myDatabase');
+
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
+        $this->assertSame([], $sent->getArrayCopy());
+    }
 }
