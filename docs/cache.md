@@ -98,9 +98,9 @@ $users->isFromCache(); // true
 
 | Method                          | Description                                                                                       |
 |---------------------------------|---------------------------------------------------------------------------------------------------|
-| `setCacheKey(string $cacheKey)` | Required. Key of the result in the cache.                                                          |
-| `setTtl($ttl)`                  | Required. Lifetime in seconds (cast to int). `0` means no expiration (the pool's default lifetime applies).     |
-| `setForce($value)`              | When truthy, always run the query and store its result, even if the key is in the cache.          |
+| `setCacheKey(string $cacheKey)` | Required. Key of the result in the cache.                                                         |
+| `setTtl(int $ttl)`              | Required. Lifetime in seconds. `0` means no expiration (the pool's default lifetime applies).     |
+| `setForce(bool $value)`         | When true, always run the query and store its result, even if the key is in the cache.            |
 
 All of them return the query, so calls can be chained. Calling `query()` without a TTL or without a cache key throws a
 `CCMBenchmark\Ting\Query\QueryException`.
