@@ -147,9 +147,14 @@ class Statement implements StatementInterface
         if ($this->logger !== null) {
             $this->logger->startStatementExecute($this->statementName, $params);
         }
-        $result = pg_execute($this->connection, $this->statementName, $values);
-        if ($this->logger !== null) {
-            $this->logger->stopStatementExecute($this->statementName);
+        // Silenced: a failed execution raises a warning, which an error handler may turn into an exception, before
+        // the QueryException below
+        try {
+            $result = @pg_execute($this->connection, $this->statementName, $values);
+        } finally {
+            if ($this->logger !== null) {
+                $this->logger->stopStatementExecute($this->statementName);
+            }
         }
 
         if ($result === false) {
@@ -195,7 +200,8 @@ class Statement implements StatementInterface
         }
 
         try {
-            pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"');
+            // Silenced: a warning turned into an exception would escape the destructor
+            @pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"');
         } catch (\Error) {
             // The connection is closed (close(), reconnect()): the prepared statement is gone with it
         }

@@ -180,6 +180,50 @@ class StatementTest extends TestCase
         }, 'unknown error');
     }
 
+    /**
+     * With an error handler converting warnings to exceptions (Symfony debug), the warning of pg_execute() must not
+     * escape instead of the QueryException, nor skip the end of the log
+     */
+    public function testAFailedExecuteShouldRaiseQueryExceptionAndStopTheLogEvenWithWarningsConvertedToExceptions()
+    {
+        NativeFunctionMock::override('pg_execute', static function (): bool {
+            trigger_error('pg_execute(): Query failed: ERROR:  division by zero', E_USER_WARNING);
+
+            return false;
+        });
+        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  division by zero');
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startStatementExecute');
+        $mockLogger->expects($this->once())->method('stopStatementExecute');
+
+        $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+        $statement->setLogger($mockLogger);
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $this->withErrorsAsExceptions(fn () => $statement->execute([])),
+            'ERROR:  division by zero'
+        );
+    }
+
+    public function testAFailedDeallocateShouldNotRaiseAWarning()
+    {
+        NativeFunctionMock::override('pg_query', static function (): bool {
+            trigger_error('pg_query(): Query failed: ERROR:  current transaction is aborted', E_USER_WARNING);
+
+            return false;
+        });
+
+        $this->withErrorsAsExceptions(function (): void {
+            $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+            $statement->setConnection('connection');
+            $statement = null; // runs the destructor
+        });
+        $this->addToAssertionCount(1);
+    }
+
     public function testExecuteShouldRaiseExceptionIfValueNotDefined()
     {
         NativeFunctionMock::override('pg_execute', true);
