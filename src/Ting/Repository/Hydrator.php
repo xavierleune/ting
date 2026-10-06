@@ -365,8 +365,8 @@ class Hydrator implements HydratorInterface
 
         foreach ($result as $table => $entity) {
 
-            // All no valid entity is replaced by a null value
-            if (isset($validEntities[$table]) === false) {
+            // All no valid entity is replaced by a null value, unless mapObjectTo() already removed it from the row
+            if (isset($validEntities[$table]) === false && \array_key_exists($table, $result)) {
                 $result[$table] = null;
             }
 
@@ -388,11 +388,13 @@ class Hydrator implements HydratorInterface
 
             if (isset($this->mapObjects[$table])) {
                 foreach ($this->mapObjects[$table] as $fromAndColumn) {
-                    if (isset($result[$fromAndColumn[0]])) {
+                    // A null entity (LEFT JOIN without match) may not be replaced by null yet: it depends on the
+                    // order of the aliases in the row, so check its validity rather than its value
+                    if (isset($validEntities[$fromAndColumn[0]]) && isset($result[$fromAndColumn[0]])) {
                         $this->manageIfYouCan($result[$fromAndColumn[0]]);
                         $entity->{$fromAndColumn[1]}($result[$fromAndColumn[0]]);
-                        unset($result[$fromAndColumn[0]]);
                     }
+                    unset($result[$fromAndColumn[0]]);
                 }
             }
 
