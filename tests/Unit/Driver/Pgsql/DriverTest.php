@@ -1359,6 +1359,130 @@ class DriverTest extends TestCase
         });
     }
 
+    /**
+     * A session whose prepared statements, as PostgreSQL's, survive the end of a transaction, and in which an aborted
+     * transaction refuses every command but ROLLBACK / COMMIT
+     *
+     * @return array{Driver, \ArrayObject<string, mixed>} the driver, and the state of the session: 'aborted' (to set),
+     *                                                     'prepared' (names), 'sent' (SQL sent)
+     */
+    private function driverOnASessionKeepingItsStatements(): array
+    {
+        $session = new \ArrayObject(['aborted' => false, 'prepared' => [], 'sent' => []]);
+        NativeFunctionMock::override('pg_connect', function () use ($session): Pgsql {
+            // A new session
+            $session['aborted'] = false;
+            $session['prepared'] = [];
+
+            return new Pgsql();
+        });
+        NativeFunctionMock::override('pg_close', true);
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  current transaction is aborted');
+        NativeFunctionMock::override('pg_result_status', 'ROLLBACK');
+        NativeFunctionMock::override('pg_prepare', function ($connection, string $name) use ($session): bool {
+            if ($session['aborted'] || isset($session['prepared'][$name])) {
+                return false;
+            }
+            $session['prepared'] += [$name => true];
+
+            return true;
+        });
+        NativeFunctionMock::override('pg_query', function ($connection, string $sql) use ($session): bool {
+            $session['sent'] = [...$session['sent'], $sql];
+            if (\in_array($sql, ['ROLLBACK', 'COMMIT'], true)) {
+                $session['aborted'] = false;
+
+                return true;
+            }
+            if ($session['aborted']) {
+                return false;
+            }
+            if (preg_match('/^DEALLOCATE "(.+)"$/', $sql, $match) === 1) {
+                if (!isset($session['prepared'][$match[1]])) {
+                    return false;
+                }
+                $prepared = $session['prepared'];
+                unset($prepared[$match[1]]);
+                $session['prepared'] = $prepared;
+            }
+
+            return true;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        return [$driver, $session];
+    }
+
+    /**
+     * As UnitOfWork::process() does when a prepared query fails: the statement is closed while the transaction is aborted
+     */
+    private static function closeAStatementInAnAbortedTransaction(Driver $driver, \ArrayObject $session, string $sql): void
+    {
+        $driver->startTransaction();
+        $statement = $driver->prepare($sql);
+        $session['aborted'] = true; // e.g. its execution failed
+        $driver->closeStatement(sha1($sql));
+        unset($statement); // the DEALLOCATE is refused
+    }
+
+    public function testAStatementClosedInAnAbortedTransactionShouldBeDeallocatedAfterTheRollback()
+    {
+        [$driver, $session] = $this->driverOnASessionKeepingItsStatements();
+        $sql = 'INSERT INTO myTable (name) VALUES (:name)';
+
+        self::closeAStatementInAnAbortedTransaction($driver, $session, $sql);
+        $driver->rollback();
+
+        $this->assertSame([], $session['prepared']);
+        // The retry of the transaction prepares it again
+        $driver->startTransaction();
+        $this->assertInstanceOf(Statement::class, $driver->prepare($sql));
+    }
+
+    public function testAStatementClosedInAnAbortedTransactionShouldBeDeallocatedAfterTheCommit()
+    {
+        [$driver, $session] = $this->driverOnASessionKeepingItsStatements();
+        $sql = 'INSERT INTO myTable (name) VALUES (:name)';
+
+        self::closeAStatementInAnAbortedTransaction($driver, $session, $sql);
+        // The COMMIT of an aborted transaction rolls it back
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit());
+
+        $this->assertSame([], $session['prepared']);
+    }
+
+    public function testAStatementClosedInAnAbortedTransactionShouldNotBeDeallocatedInTheNextSession()
+    {
+        [$driver, $session] = $this->driverOnASessionKeepingItsStatements();
+
+        self::closeAStatementInAnAbortedTransaction($driver, $session, 'SELECT 1');
+        $driver->reconnect();
+        $session['sent'] = [];
+        $driver->rollback(); // the transaction was lost with the old session
+        NativeFunctionMock::override('pg_result_status', 'COMMIT');
+        $driver->startTransaction();
+        $driver->commit();
+
+        $this->assertSame(['BEGIN', 'COMMIT'], $session['sent']);
+    }
+
+    public function testADeallocateRefusedOutsideATransactionShouldNotBeSentAgain()
+    {
+        [$driver, $session] = $this->driverOnASessionKeepingItsStatements();
+        $statement = $driver->prepare('SELECT 1');
+        $session['prepared'] = []; // e.g. DEALLOCATE ALL sent by the application
+        $driver->closeStatement(sha1('SELECT 1'));
+        unset($statement);
+
+        $driver->startTransaction();
+        $driver->rollback();
+
+        $this->assertSame(['DEALLOCATE "' . sha1('SELECT 1') . '"', 'BEGIN', 'ROLLBACK'], $session['sent']);
+    }
+
     public function testPingShouldCallRaiseAnExceptionWhenNotConnected()
     {
         $driver = new Driver(new Pgsql());

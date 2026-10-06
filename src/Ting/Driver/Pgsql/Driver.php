@@ -90,6 +90,14 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
      */
     protected array $forgottenPreparedQueries = [];
 
+    /**
+     * Names of the statements whose DEALLOCATE the server refused in the transaction (aborted: every command but
+     * ROLLBACK / COMMIT is refused). A prepared statement outlives the transaction: they are deallocated once it ends,
+     * otherwise preparing the same query again (e.g. retrying the transaction) fails with "already exists"
+     * @var array<string, true>
+     */
+    private array $deallocateAfterTransaction = [];
+
     protected string $dsn = '';
 
     /**
@@ -351,6 +359,13 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
                 if ($driver !== null) {
                     $driver->result = $result;
                 }
+            })
+            ->setDeallocationRefusedHandler(static function (string $statementName) use ($driver): void {
+                // Outside a transaction, a refused DEALLOCATE means the statement or the session is already gone
+                $driver = $driver->get();
+                if ($driver !== null && $driver->transactionOpened === true) {
+                    $driver->deallocateAfterTransaction[$statementName] = true;
+                }
             });
 
         $this->preparedQueries[$statementName] = $statement;
@@ -465,15 +480,19 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
         $connection = $this->validConnection();
         // Even when the COMMIT fails, the transaction is over: rolled back by the server or lost with the connection
         $this->transactionOpened = false;
-        $result = @pg_query($connection, 'COMMIT');
-        if ($result === false) {
-            throw new TransactionException('Cannot commit transaction: ' . pg_last_error($connection));
-        }
-        // The COMMIT of a transaction aborted by a failed statement succeeds, but answers ROLLBACK
-        if (pg_result_status($result, \PGSQL_STATUS_STRING) !== 'COMMIT') {
-            throw new TransactionException(
-                'Cannot commit transaction: the transaction was aborted and has been rolled back'
-            );
+        try {
+            $result = @pg_query($connection, 'COMMIT');
+            if ($result === false) {
+                throw new TransactionException('Cannot commit transaction: ' . pg_last_error($connection));
+            }
+            // The COMMIT of a transaction aborted by a failed statement succeeds, but answers ROLLBACK
+            if (pg_result_status($result, \PGSQL_STATUS_STRING) !== 'COMMIT') {
+                throw new TransactionException(
+                    'Cannot commit transaction: the transaction was aborted and has been rolled back'
+                );
+            }
+        } finally {
+            $this->deallocateStatementsRefusedInTheTransaction($connection);
         }
     }
 
@@ -491,8 +510,26 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
         }
         $connection = $this->validConnection();
         $this->transactionOpened = false;
-        if (@pg_query($connection, 'ROLLBACK') === false) {
-            throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($connection));
+        try {
+            if (@pg_query($connection, 'ROLLBACK') === false) {
+                throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($connection));
+            }
+        } finally {
+            $this->deallocateStatementsRefusedInTheTransaction($connection);
+        }
+    }
+
+    /**
+     * Once the transaction is over (committed or rolled back, even on failure)
+     * @param Connection $connection
+     */
+    private function deallocateStatementsRefusedInTheTransaction(object $connection): void
+    {
+        $statementNames = array_keys($this->deallocateAfterTransaction);
+        $this->deallocateAfterTransaction = [];
+        foreach ($statementNames as $statementName) {
+            // Silenced: outside a transaction, a failure means the statement (or the session) is gone anyway
+            @pg_query($connection, 'DEALLOCATE "' . $statementName . '"');
         }
     }
 
@@ -573,6 +610,7 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
             $this->forgottenPreparedQueries[$statementName] = true;
         }
         $this->preparedQueries = [];
+        $this->deallocateAfterTransaction = [];
     }
 
     /**

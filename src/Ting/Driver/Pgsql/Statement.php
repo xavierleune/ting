@@ -49,6 +49,12 @@ class Statement implements StatementInterface
     protected ?\Closure $resultHandler = null;
 
     /**
+     * Receives the name of the statement when the server refuses its DEALLOCATE
+     * @var (\Closure(string): void)|null
+     */
+    protected ?\Closure $deallocationRefusedHandler = null;
+
+    /**
      * The session holding the prepared statement is gone (connection reset)
      */
     protected bool $detached = false;
@@ -99,6 +105,20 @@ class Statement implements StatementInterface
     public function setResultHandler(\Closure $resultHandler): static
     {
         $this->resultHandler = $resultHandler;
+
+        return $this;
+    }
+
+    /**
+     * Hand the name of the statement over when the server refuses its DEALLOCATE (in an aborted transaction): the
+     * statement stays in the session
+     * @param \Closure(string): void $deallocationRefusedHandler
+     *
+     * @internal
+     */
+    public function setDeallocationRefusedHandler(\Closure $deallocationRefusedHandler): static
+    {
+        $this->deallocationRefusedHandler = $deallocationRefusedHandler;
 
         return $this;
     }
@@ -217,9 +237,14 @@ class Statement implements StatementInterface
 
         try {
             // Silenced: a warning turned into an exception would escape the destructor
-            @pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"');
+            $deallocated = @pg_query($this->connection, 'DEALLOCATE "' . $this->statementName . '"') !== false;
         } catch (\Error) {
             // The connection is closed (close(), reconnect()): the prepared statement is gone with it
+            return;
+        }
+
+        if ($deallocated === false && $this->deallocationRefusedHandler !== null) {
+            ($this->deallocationRefusedHandler)($this->statementName);
         }
     }
 
