@@ -29,5 +29,9 @@ use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
 
 interface MetadataInitializer
 {
+    /**
+     * @param array<string, mixed> $options the options given to MetadataRepository::batchLoadMetadata() for the class
+     * @return Metadata<object>
+     */
     public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata;
 }

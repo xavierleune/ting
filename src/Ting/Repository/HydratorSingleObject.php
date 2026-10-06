@@ -26,19 +26,21 @@
 namespace CCMBenchmark\Ting\Repository;
 
 use Generator;
-use stdClass;
 
 use function reset;
 
 /**
- * @template T
+ * Hydrates each row into its first value: the entity of the first table of the query, null when a LEFT JOIN matched
+ * nothing, the stdClass of the virtual columns when no table has metadata
+ *
+ * @template T type of the items, as documented by the caller (e.g. the entity of the repository)
  *
  * @template-extends Hydrator<T>
  */
 class HydratorSingleObject extends Hydrator
 {
     /**
-     * @return Generator<int, T|stdClass|false>
+     * @return Generator<int, object|false|null> false for a row without value
      */
     public function getIterator(): Generator
     {

@@ -30,10 +30,9 @@ use IteratorAggregate;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\UnitOfWork;
-use stdClass;
 
 /**
- * @template T
+ * @template-covariant T type of the items built from the rows
  *
  * @template-extends IteratorAggregate<int, T>
  */
@@ -48,7 +47,7 @@ interface HydratorInterface extends IteratorAggregate, Countable
     public function count(): int;
 
     /**
-     * @return \Generator<mixed, T|stdClass>
+     * @return \Generator<int, T>
      */
     public function getIterator(): \Generator;
 }

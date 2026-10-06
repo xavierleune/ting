@@ -27,10 +27,10 @@ namespace CCMBenchmark\Ting\Repository;
 
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use Generator;
-use stdClass;
 
 /**
- * @template T
+ * @template T type of the items, as built by the callable given to callableFinalizeAggregate(): the first row of
+ *             each group with the "aggregate" key without one
  *
  * @template-extends Hydrator<T>
  */
@@ -82,7 +82,7 @@ class HydratorAggregator extends Hydrator
     }
 
     /**
-     * @return Generator<int, T|stdClass>
+     * @return Generator<int, mixed> what the callable given to callableFinalizeAggregate() returns
      *
      * @throws HydratorException when the callable given to callableIdIs() returns null
      */
@@ -147,6 +147,7 @@ class HydratorAggregator extends Hydrator
     }
 
     /**
+     * @param array<int|string, object|null>|null $result the first row of the group
      * @param mixed $aggregate
      *
      * @return mixed

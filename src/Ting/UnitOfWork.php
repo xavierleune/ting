@@ -62,6 +62,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * @var WeakMap<NotifyPropertyInterface, true>
      */
     protected WeakMap $listenedEntities;
+    /** @var array<string, array{state: self::STATE_*, entity: NotifyPropertyInterface}> by object hash */
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
@@ -112,6 +113,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         }
     }
 
+    /**
+     * @template E of object
+     * @param Metadata<E> $metadata
+     */
     private function keepMutablePrimaryValues(NotifyPropertyInterface $entity, Metadata $metadata): void
     {
         $values = $metadata->getEntityMutablePrimaryValues($entity);
@@ -432,6 +437,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * A primary key whose value differs from the one stored in the database (old notified value, or source value of
      * a mutable key) targets the row with the stored one.
      *
+     * @template E of object
+     * @param Metadata<E> $metadata
      * @param bool $withMutableFields false to leave out the mutable fields that are not primary keys (DELETE)
      * @return array<string, array{0: mixed, 1: mixed}> property name => [database value stored before the change
      *                                                  (the current one when not known), current database value]

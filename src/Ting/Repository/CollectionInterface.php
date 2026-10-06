@@ -31,7 +31,9 @@ use Iterator;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 
 /**
- * @template T
+ * @template-covariant T type of the items, built from the rows by the hydrator of the collection
+ * @phpstan-import-type Row from ResultInterface
+ * @phpstan-type CachedCollection array{connection: ?string, database: ?string, data: array<int, Row>}
  *
  * @template-extends IteratorAggregate<int, T>
  */
@@ -39,7 +41,7 @@ interface CollectionInterface extends IteratorAggregate, Countable
 {
     /**
      * Fill collection from iterator
-     * @param ResultInterface<T> $result
+     * @param ResultInterface $result
      * @return void
      */
     public function set(ResultInterface $result): void;
@@ -58,10 +60,13 @@ interface CollectionInterface extends IteratorAggregate, Countable
     public function isFromCache(): bool;
 
     /**
-     * @return array{connection: ?string, database: ?string, data: array}
+     * @return CachedCollection
      */
     public function toCache(): array;
 
+    /**
+     * @param CachedCollection $result as returned by toCache()
+     */
     public function fromCache(array $result): void;
 
     /**

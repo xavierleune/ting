@@ -41,18 +41,19 @@ class MetadataRepository
     /**
      * This array matches a repository (class name) and the corresponding metadata object
      *
-     * @var array<string, Metadata>
+     * @var array<string, Metadata<object>>
      */
     protected array $metadataList = [];
 
     /**
      * This array matches an entity name and the corresponding repository name
-     * @var array
+     * @var array<class-string, class-string<Repository<object>>|class-string<MetadataInitializer>>
      */
     protected array $entityToRepository = [];
 
     /**
-     * @var array Fast array access to RepositoryClassName
+     * @var array<string, array<string, string>> Fast array access to RepositoryClassName: "connection#table" =>
+     *      "schema#database" => repository
      */
     private array $tableWithConnectionToMetadata = [];
 
@@ -172,7 +173,8 @@ class MetadataRepository
     }
 
     /**
-     * @param class-string<Repository<T>> $repositoryName
+     * @param class-string<Repository<T>>|class-string<MetadataInitializer> $repositoryName the class the metadata are
+     *        registered under: a repository, or the class initializing metadata used for hydration only
      * @param Closure(Metadata<T>):void $callbackFound Called with applicable Metadata if applicable
      * @param Closure():void $callbackNotFound called if unknown entity - no parameter
      *
@@ -186,7 +188,10 @@ class MetadataRepository
         ?Closure $callbackNotFound = null
     ): void {
         if (isset($this->metadataList[$repositoryName])) {
-            $callbackFound($this->metadataList[$repositoryName]);
+            // A map of the metadata of every entity: addMetadata() registers Metadata<T> under the repository of T
+            /** @var Metadata<T> $metadata */
+            $metadata = $this->metadataList[$repositoryName];
+            $callbackFound($metadata);
         } elseif ($callbackNotFound instanceof Closure) {
             $callbackNotFound();
         }
@@ -212,11 +217,10 @@ class MetadataRepository
             return;
         }
 
-        $this->findMetadataForRepository(
-            $this->entityToRepository[$entity],
-            $callbackFound,
-            $callbackNotFound
-        );
+        // addMetadata() registers the class the metadata of T are registered under
+        /** @var class-string<Repository<T>>|class-string<MetadataInitializer> $repository */
+        $repository = $this->entityToRepository[$entity];
+        $this->findMetadataForRepository($repository, $callbackFound, $callbackNotFound);
     }
 
     /**
@@ -254,7 +258,8 @@ class MetadataRepository
      *
      * @param string $namespace
      * @param string $globPattern
-     * @param array  $options Options you can use to custom initialization of Metadata
+     * @param array<string, array<string, mixed>> $options Options you can use to custom initialization of Metadata:
+     *        by repository class, or "default" for every repository
      * @return array<class-string<Repository<object>>|class-string<MetadataInitializer>, class-string<MetadataInitializer>>
      *         the class initializing the metadata of each repository
      */
@@ -310,7 +315,8 @@ class MetadataRepository
      *
      * @param array<class-string<Repository<object>>|class-string<MetadataInitializer>, class-string<MetadataInitializer>> $paths
      *        as returned by batchLoadMetadata(): the class initializing the metadata of each repository
-     * @param array $options Options you can use to custom initialization of Metadata
+     * @param array<string, array<string, mixed>> $options Options you can use to custom initialization of Metadata:
+     *        by repository class, or "default" for every repository
      * @return list<class-string<Repository<object>>|class-string<MetadataInitializer>>
      */
     public function batchLoadMetadataFromCache(array $paths, array $options = []): array
@@ -332,8 +338,8 @@ class MetadataRepository
 
     /**
      * @param string $repository
-     * @param array  $options
-     * @return array
+     * @param array<string, array<string, mixed>> $options by repository class, or "default" for every repository
+     * @return array<string, mixed> the default options, merged with those of the repository
      */
     protected function getOptionForRepository(string $repository, array $options): array
     {

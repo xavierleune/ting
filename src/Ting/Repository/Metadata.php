@@ -56,14 +56,16 @@ use Closure;
 
 /**
  * @template T of object
+ * @phpstan-import-type SerializerOptions from Serializer\SerializeInterface
  * @phpstan-type Field array{
  *     fieldName: string,
  *     columnName: string,
  *     type: string,
  *     primary?: bool,
  *     autoincrement?: bool,
+ *     sequenceName?: string,
  *     serializer?: class-string<Serializer\SerializerInterface>,
- *     serializer_options?: array{serialize?: array<mixed>, unserialize?: array<mixed>},
+ *     serializer_options?: array{serialize?: SerializerOptions, unserialize?: SerializerOptions},
  *     setter?: string,
  *     getter?: string,
  *     mutable?: bool
@@ -83,8 +85,11 @@ class Metadata
     protected array $fields = [];
     /** @phpstan-var array<string, Field> */
     protected array $fieldsByProperty = [];
+    /** @phpstan-var array<string, Field> column name => field */
     protected array $primaries = [];
+    /** @phpstan-var Field|null */
     protected array|null $autoincrement = null;
+    /** @var array<string, class-string<SerializerInterface>> type => serializer of the fields without one */
     protected array $defaultSerializers = [
         'datetime' => DateTime::class,
         'datetime_immutable' => DateTimeImmutable::class,
@@ -314,6 +319,7 @@ class Metadata
     /**
      * The configuration comes from the application: check it even though it is documented as a Field.
      *
+     * @param array<mixed> $params
      * @throws ConfigException
      */
     private function assertFieldIsValid(array $params): void
@@ -420,7 +426,7 @@ class Metadata
     /**
      * Retrieve all defined primaries.
      *
-     * @return array
+     * @return array<string, Field> column name => field
      */
     public function getPrimaries(): array
     {
@@ -487,6 +493,9 @@ class Metadata
 
     /**
      * Set the provided value to autoincrement if applicable
+     *
+     * @return Metadata<T>|false false without autoincrement
+     *
      * @internal
      */
     public function setEntityPropertyForAutoIncrement(object $entity, DriverInterface $driver): Metadata|false
@@ -540,7 +549,7 @@ class Metadata
 
     /**
      * Retrieve property of entity according to the field (unserialize if needed)
-     * @param array{fieldName: string, getter?: string, serializer?: class-string<SerializerInterface>, serializer_options?: array{serialize?: array, unserialize?: array}} $field
+     * @param Field $field
      */
     protected function getEntityProperty(object $entity, array $field): mixed
     {
@@ -562,6 +571,8 @@ class Metadata
 
     /**
      * Database value of a field: the value serialized by the serializer of the field, if any
+     *
+     * @param Field $field
      */
     private function serializeFieldValue(array $field, mixed $value): mixed
     {
@@ -621,6 +632,10 @@ class Metadata
     /**
      * Return a Query to get one object by it's primaries
      *
+     * @template U
+     * @param CollectionFactoryInterface<U> $collectionFactory
+     * @return QueryInterface<U>
+     *
      * @internal
      */
     public function getByPrimaries(
@@ -648,7 +663,10 @@ class Metadata
     /**
      * Return a Query to get one object by an associative array of criterias
      *
-     * @return QueryInterface<T>
+     * @template U
+     * @param CollectionFactoryInterface<U> $collectionFactory
+     * @param array<string, mixed> $criteria property name => value
+     * @return QueryInterface<U>
      *
      * @internal
      */
@@ -689,6 +707,7 @@ class Metadata
     /**
      * Without criteria, the WHERE clause would be empty (invalid SQL)
      *
+     * @param array<string, mixed> $criteria
      * @throws ValueException
      */
     private function assertCriteriaNotEmpty(array $criteria, string $method): void
@@ -873,9 +892,10 @@ class Metadata
      *
      * @param Connection                 $connection
      * @param QueryFactoryInterface      $queryFactory
-     * @param CollectionFactoryInterface $collectionFactory
+     * @template U
+     * @param CollectionFactoryInterface<U> $collectionFactory
      * @param bool                       $forcePrimary
-     * @return QueryInterface
+     * @return QueryInterface<U>
      *
      * @internal
      */
@@ -899,6 +919,11 @@ class Metadata
 
     /**
      * Retrieve matching lines from the table, according to the criteria
+     *
+     * @template U
+     * @param array<string, mixed> $criteria property name => value
+     * @param CollectionFactoryInterface<U> $collectionFactory
+     * @return QueryInterface<U>
      *
      * @internal
      */
@@ -924,6 +949,17 @@ class Metadata
         return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
     }
 
+    /**
+     * Retrieve matching lines from the table, according to the criteria, ordered and limited
+     *
+     * @template U
+     * @param array<string, mixed> $criteria property name => value
+     * @param array<string, string> $orderBy property name => "ASC" or "DESC"
+     * @param CollectionFactoryInterface<U> $collectionFactory
+     * @return QueryInterface<U>
+     *
+     * @internal
+     */
     public function getByCriteriaWithOrderAndLimit(
         array $criteria,
         array $orderBy,
@@ -979,7 +1015,7 @@ class Metadata
      * @param Connection $connection
      * @param QueryFactoryInterface $queryFactory
      * @param $entity
-     * @return PreparedQuery
+     * @return PreparedQuery<mixed>
      *
      * @internal
      */
@@ -1019,6 +1055,7 @@ class Metadata
      *
      * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
      *                                                            the change, new database value]
+     * @return PreparedQuery<mixed>
      *
      * @internal
      */
@@ -1054,7 +1091,7 @@ class Metadata
      * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
      *                                                            the change, new database value]
      * @param object                $entity
-     * @return PreparedQuery
+     * @return PreparedQuery<mixed>
      *
      * @internal
      */

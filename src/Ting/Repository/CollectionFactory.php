@@ -48,17 +48,18 @@ class CollectionFactory implements CollectionFactoryInterface
     }
 
     /**
-     * @param HydratorInterface<T>|null $hydrator
-     * @return Collection<T>
+     * @template U
+     * @param HydratorInterface<U>|null $hydrator null for a clone of the hydrator of the factory
+     * @return ($hydrator is null ? Collection<T> : Collection<U>)
      */
     public function get(?HydratorInterface $hydrator = null): Collection
     {
         if (!$hydrator instanceof HydratorInterface) {
-            $hydrator = clone $this->hydrator;
-        } else {
-            $hydrator->setMetadataRepository($this->metadataRepository);
-            $hydrator->setUnitOfWork($this->unitOfWork);
+            return new Collection(clone $this->hydrator);
         }
+
+        $hydrator->setMetadataRepository($this->metadataRepository);
+        $hydrator->setUnitOfWork($this->unitOfWork);
 
         return new Collection($hydrator);
     }

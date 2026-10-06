@@ -34,16 +34,20 @@ use CCMBenchmark\Ting\Driver\ResultInterface;
 
 /**
  * @template T
+ * @phpstan-import-type CachedCollection from CollectionInterface
  *
  * @template-implements CollectionInterface<T>
  */
 class Collection implements CollectionInterface, JsonSerializable
 {
-    /**
-     * @var ResultInterface<T>
-     */
     protected ?ResultInterface $result = null;
 
+    /**
+     * Hydrates T when given to the constructor, array<string, mixed> for the default HydratorArray: the type of its
+     * items is unknown to the class
+     *
+     * @var HydratorInterface<mixed>
+     */
     protected HydratorInterface $hydrator;
 
     protected bool $fromCache = false;
@@ -57,7 +61,7 @@ class Collection implements CollectionInterface, JsonSerializable
     private bool $hasFirst = false;
 
     /**
-     * @param HydratorInterface<T>|null $hydrator
+     * @param HydratorInterface<T>|null $hydrator null for a HydratorArray (T is then array<string, mixed>)
      */
     public function __construct(?HydratorInterface $hydrator = null)
     {
@@ -90,7 +94,7 @@ class Collection implements CollectionInterface, JsonSerializable
     }
 
     /**
-     * @return array
+     * @return CachedCollection
      */
     public function toCache(): array
     {
@@ -112,7 +116,7 @@ class Collection implements CollectionInterface, JsonSerializable
     }
 
     /**
-     * @param array $result
+     * @param CachedCollection $result
      * @return void
      */
     public function fromCache(array $result): void
@@ -167,6 +171,9 @@ class Collection implements CollectionInterface, JsonSerializable
         return $this->hydrator->count();
     }
 
+    /**
+     * @return array<int, T>
+     */
     public function jsonSerialize(): array
     {
         return iterator_to_array($this->getIterator());

@@ -38,7 +38,7 @@ class RepositoryFactory
      * @param ConnectionPool $connectionPool
      * @param MetadataRepository $metadataRepository
      * @param QueryFactory $queryFactory
-     * @param CollectionFactory $collectionFactory
+     * @param CollectionFactory<mixed> $collectionFactory
      * @param UnitOfWork $unitOfWork
      * @param CacheInterface $cache
      */

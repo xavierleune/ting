@@ -64,7 +64,7 @@ class MetadataCacheGenerator
      * This method create a cache file containing every given classes.
      * This class names have to be fully qualified and must all extends CCMBenchmark\Ting\Repository\Repository
      *
-     * @param array $repositories
+     * @param array<mixed> $repositories exported to the cache file with var_export()
      * @return string $filename complete path to cache file
      *
      * @internal
