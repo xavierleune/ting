@@ -508,6 +508,10 @@ $connectionPool->setDatabaseOptions([
 ]);
 ```
 
+A time zone the server rejects throws a `CCMBenchmark\Ting\Exceptions\DriverException` on every access to the
+connection (the pool applies the option each time), so every query on that database fails: try the value with
+`SET time_zone = '...'` (MySQL) or `SET timezone = '...'` (PostgreSQL) first.
+
 ### Metadata
 
 `MetadataRepository::batchLoadMetadata($namespace, $globPattern)` reads every file matching the pattern and calls the
