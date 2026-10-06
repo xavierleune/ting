@@ -348,6 +348,24 @@ class ResultTest extends TestCase
                 [0 => 'city', 2 => 'city'],
                 [$id, ['name' => 'd', 'orgName' => 'a IS NOT DISTINCT   FROM b', 'table' => '', 'schema' => ''], $name],
             ],
+            'parenthesized UNION ALL' => [
+                '(SELECT id, name FROM city) UNION ALL (SELECT id, name FROM city)',
+                ['city', 'city'],
+                [$id, $name],
+            ],
+            'doubly parenthesized UNION' => [
+                '((SELECT id, name AS n FROM city WHERE id IN (SELECT 1))) UNION (SELECT id, name FROM city)',
+                ['city', 'city'],
+                [$id, ['name' => 'n', 'orgName' => 'name', 'table' => 'city', 'schema' => '']],
+            ],
+            'parenthesized UNION without FROM' => [
+                '(SELECT 1 AS id, lower(name) AS name) UNION ALL (SELECT 2, 3)',
+                [],
+                [
+                    ['name' => 'id', 'orgName' => '1', 'table' => '', 'schema' => ''],
+                    ['name' => 'name', 'orgName' => 'lower(name)', 'table' => '', 'schema' => ''],
+                ],
+            ],
         ];
     }
 
