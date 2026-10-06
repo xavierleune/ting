@@ -182,6 +182,35 @@ class NotifyPropertyTest extends TestCase
         $this->assertSame(["\0" . SleepingTrackedChild::class . "\0title" => null], $serialized);
     }
 
+    /**
+     * serialize() resolves a bare name against the class of the object: a private property of a parent class is not
+     * visible from it, it needs its mangled name. The trait method runs in the scope of the parent class, which sees it
+     */
+    public function testSerializeShouldWarnAboutABareNameOfAPrivatePropertyOfAParentClass(): void
+    {
+        $entity = new SleepingTrackedChild();
+        $entity->setOwner('owner');
+        $entity->sleep = ['title', 'owner'];
+
+        $messages = [];
+        set_error_handler(static function (int $type, string $message) use (&$messages): bool {
+            $messages[] = [$type, $message];
+
+            return true;
+        });
+        try {
+            $serialized = $entity->__serialize();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(
+            [[E_USER_WARNING, 'serialize(): "owner" returned as member variable from __sleep() but does not exist']],
+            $messages
+        );
+        $this->assertSame(["\0" . SleepingTrackedChild::class . "\0title" => null], $serialized);
+    }
+
     public function testDebugInfoShouldExposeThePrivatePropertiesOfTheParentAndChildClasses()
     {
         $entity = new TrackedChildOfUntracked();
