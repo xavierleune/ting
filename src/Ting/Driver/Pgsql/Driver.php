@@ -86,14 +86,19 @@ class Driver implements DriverInterface
      */
     protected $dsn;
 
+    /**
+     * A connection is bound to its database. Serialized, the values cannot be mixed up (a separator could appear in
+     * any of them), and null stays distinct from ''
+     */
     public static function getConnectionKey(array $connectionConfig, string $database): string
     {
-        return
-            $connectionConfig['host'] . '|' .
-            $connectionConfig['port'] . '|' .
-            $connectionConfig['user'] . '|' .
-            $connectionConfig['password'] . '|' .
-            $database;
+        return serialize([
+            $connectionConfig['host'],
+            (string) $connectionConfig['port'],
+            $connectionConfig['user'],
+            $connectionConfig['password'],
+            $database,
+        ]);
     }
 
     /**

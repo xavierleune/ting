@@ -53,6 +53,30 @@ class DriverTest extends TestCase
         $this->assertSame($driver->getConnectionKey($connectionConfig, 'myDatabase'), $key);
     }
 
+    public function testGetConnectionKeyShouldNotMixUpTheValues()
+    {
+        $server = ['host' => '127.0.0.1', 'port' => 5432];
+
+        $this->assertNotSame(
+            Driver::getConnectionKey($server + ['user' => 'a|b', 'password' => 'c'], 'db'),
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b|c'], 'db')
+        );
+        $this->assertNotSame(
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b|db'], 'c'),
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b'], 'db|c')
+        );
+        // Without user, libpq uses the current user
+        $this->assertNotSame(
+            Driver::getConnectionKey($server + ['user' => null, 'password' => null], 'db'),
+            Driver::getConnectionKey($server + ['user' => '', 'password' => ''], 'db')
+        );
+        // A connection is bound to its database
+        $this->assertNotSame(
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b'], 'db1'),
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b'], 'db2')
+        );
+    }
+
     public function testShouldImplementDriverInterface()
     {
         $this->assertInstanceOf(DriverInterface::class, new Driver());

@@ -71,6 +71,26 @@ class DriverTest extends TestCase
         $this->assertSame($driver->getConnectionKey($connectionConfig, 'myDatabase'), $connectionKey);
     }
 
+    public function testGetConnectionKeyShouldNotMixUpTheValues()
+    {
+        $server = ['host' => '127.0.0.1', 'port' => 3306];
+
+        $this->assertNotSame(
+            Driver::getConnectionKey($server + ['user' => 'a|b', 'password' => 'c'], 'db'),
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b|c'], 'db')
+        );
+        // Without user, libmysqlclient uses the current user
+        $this->assertNotSame(
+            Driver::getConnectionKey($server + ['user' => null, 'password' => null], 'db'),
+            Driver::getConnectionKey($server + ['user' => '', 'password' => ''], 'db')
+        );
+        // One driver serves every database of a server
+        $this->assertSame(
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b'], 'db1'),
+            Driver::getConnectionKey($server + ['user' => 'a', 'password' => 'b'], 'db2')
+        );
+    }
+
     public function testShouldImplementDriverInterface()
     {
         $this->assertInstanceOf(DriverInterface::class, new Driver());

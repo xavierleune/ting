@@ -167,7 +167,8 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
             $config['password'] = null;
         }
 
-        $connectionKey = $driverClass::getConnectionKey($config, $database);
+        // Drivers of different classes never share a connection (e.g. Mysqli and SphinxQL on the same host and port)
+        $connectionKey = ltrim($driverClass, '\\') . "\0" . $driverClass::getConnectionKey($config, $database);
 
         if (isset($this->connections[$connectionKey]) === false) {
             /** @var DriverInterface $driver */
