@@ -111,7 +111,8 @@ $unitOfWork->pushSave($city)->process(); // UPDATE t_city_cit SET cit_name = 'Ly
 ## Detaching entities
 
 `detach()` stops tracking an entity: it is no longer managed, its pending changes are forgotten and it is removed from
-the queue. Pushing it again with `pushSave()` would insert it. `detachAll()` does the same for every entity.
+the queue. The changes made while it is detached are not tracked, even if it is managed again later. Pushing it again
+with `pushSave()` would insert it. `detachAll()` does the same for every entity.
 
 Entities are held weakly, but queued entities are not: an entity passed to `pushSave()` or `pushDelete()` stays in
 memory until it is processed or detached. In a batch handling many entities, call `process()` regularly instead of once

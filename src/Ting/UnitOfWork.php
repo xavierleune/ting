@@ -55,6 +55,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * @var WeakMap<NotifyPropertyInterface, array<string, mixed>> property => database value
      */
     protected WeakMap $mutablePrimaryValues;
+    /**
+     * Entities this unit of work listens to: a listener can't be removed from an entity, so it stays registered once
+     * the entity is detached (its notifications are then ignored), and is not added again when it is managed again
+     *
+     * @var WeakMap<NotifyPropertyInterface, true>
+     */
+    protected WeakMap $listenedEntities;
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
@@ -72,6 +79,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->entities = new WeakMap();
         $this->entitiesChanged = new WeakMap();
         $this->mutablePrimaryValues = new WeakMap();
+        $this->listenedEntities = new WeakMap();
     }
 
     /**
@@ -98,7 +106,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             );
         }
 
-        $entity->addPropertyListener($this);
+        if (isset($this->listenedEntities[$entity]) === false) {
+            $this->listenedEntities[$entity] = true;
+            $entity->addPropertyListener($this);
+        }
     }
 
     private function keepMutablePrimaryValues(NotifyPropertyInterface $entity, Metadata $metadata): void
@@ -159,11 +170,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * Record the change of a property: it is written on the next save of the entity, unless set back to its old
-     * value. The same value given as old and new value, objects included, is not a change.
+     * value. The same value given as old and new value, objects included, is not a change, and neither is the change
+     * of an entity not managed (a new one is inserted whole, a detached one is no longer tracked).
      */
     public function propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue, mixed $newValue): void
     {
-        if ($oldValue === $newValue) {
+        if ($oldValue === $newValue || isset($this->entities[$entity]) === false) {
             return;
         }
 

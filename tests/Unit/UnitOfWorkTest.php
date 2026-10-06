@@ -181,8 +181,50 @@ class UnitOfWorkTest extends TestCase
             $this->services->metadataRepository(),
             $this->services->queryFactory()
         );
+        $unitOfWork->manage($mockEntity);
         $unitOfWork->propertyChanged($mockEntity, 'firstname', 'Sylvain', 'Sylvain 2');
         $this->assertTrue($unitOfWork->isPropertyChanged($mockEntity, 'firstname'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testManageShouldAddItsListenerOnce()
+    {
+        $entity = new Bouh();
+        $entity->setName('Xavier');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->manage($entity);
+        $unitOfWork->manage($entity);
+        for ($i = 0; $i < 3; $i++) {
+            $unitOfWork->pushDelete($entity)->process();
+            $unitOfWork->pushSave($entity)->process();
+        }
+        $unitOfWork->detachAll();
+        $unitOfWork->manage($entity);
+
+        $this->assertCount(1, (fn (): array => $this->listeners)->call($entity));
+    }
+
+    public function testChangesOfAnEntityShouldNotBeRecordedOnceDetached()
+    {
+        $entity = new Bouh();
+        $unitOfWork = new UnitOfWork(
+            $this->services->connectionPool(),
+            $this->services->metadataRepository(),
+            $this->services->queryFactory()
+        );
+        $unitOfWork->manage($entity);
+        $unitOfWork->detach($entity);
+
+        $entity->setName('changed while detached');
+
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        // Managed again: only the changes made from now on are written
+        $unitOfWork->manage($entity);
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+        $entity->setFirstname('changed while managed');
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'firstname'));
     }
 
     public function testDetach()
