@@ -199,12 +199,19 @@ class Generator
         $driver = $this->getDriver(true);
         $fields = $this->escapeFields(array_keys($values), $driver);
 
+        $params = [];
+        $i = 0;
+        foreach ($values as $column => $value) {
+            $params[$this->parameterName('v', ++$i, $column)] = $value;
+        }
+
         $sql = 'INSERT INTO ' . $this->getTarget($driver) . ' ('
-            . implode(', ', $fields) . ') VALUES (:' . implode(', :', array_keys($values)) . ')';
+            . implode(', ', $fields) . ') VALUES ('
+            . implode(', ', array_map(fn (string $name): string => ':' . $name, array_keys($params))) . ')';
 
         $query = $this->queryFactory->getPrepared($sql, $this->connection);
 
-        $query->setParams($values);
+        $query->setParams($params);
 
         return $query;
     }
@@ -224,16 +231,21 @@ class Generator
 
         $sql = 'UPDATE ' . $this->getTarget($driver) . ' SET ';
         $set = [];
-        foreach (array_keys($values) as $column) {
-            $set[] = $driver->escapeField($column) . ' = :' . $column;
+        $params = [];
+        $i = 0;
+        foreach ($values as $column => $value) {
+            $name = $this->parameterName('v', ++$i, $column);
+            $set[] = $driver->escapeField($column) . ' = :' . $name;
+            $params[$name] = $value;
         }
         $sql .= implode(', ', $set);
 
         $primaryFields = $this->escapeFields(array_keys($primariesValue), $driver);
 
-        [$conditions, $params] = $this->generateConditionAndParams($primaryFields, $primariesValue);
+        [$conditions, $conditionParams] = $this->generateConditionAndParams($primaryFields, $primariesValue);
 
-        $params = array_merge($values, $params);
+        // Not array_merge(): it would renumber the integer keys. The names never overlap ("v" and "w" prefixes)
+        $params += $conditionParams;
 
         $sql .= ' WHERE ' . implode(' AND ', $conditions);
 
@@ -292,34 +304,46 @@ class Generator
     protected function generateConditionAndParams(array $fields, array $values): array
     {
         $conditions = [];
+        $params = [];
         $i = 0;
 
-        foreach ($values as $field => $value) {
+        foreach ($values as $column => $value) {
+            $name = $this->parameterName('w', $i + 1, $column);
             if ($value === null) {
                 $conditions[] = $fields[$i] . ' IS NULL';
             } elseif (is_array($value)) {
-                // handle array values...
+                $placeholders = [];
                 $j = 0;
-                $condition = $fields[$i] . ' IN (';
                 foreach ($value as $v) {
                     $j++;
-                    $condition .= ':' . $field . '__' . $j . ',';
-
-                    $values[$field.'__' . $j] = $v;
+                    $placeholders[] = ':' . $name . '__' . $j;
+                    $params[$name . '__' . $j] = $v;
                 }
-                $condition = rtrim($condition, ',');
-                $condition .= ')';
 
-                $conditions[] = $condition;
+                $conditions[] = $fields[$i] . ' IN (' . implode(',', $placeholders) . ')';
             } else {
-                $conditions[] = $fields[$i] . ' = :#' . $field;
-                $values['#' . $field] = $value;
+                $conditions[] = $fields[$i] . ' = :' . $name;
+                $params[$name] = $value;
             }
-            unset($values[$field]);
             $i++;
         }
 
-        return [$conditions, $values];
+        return [$conditions, $params];
+    }
+
+    /**
+     * Name of the parameter of a column, independent of the raw column name.
+     *
+     * A column name may hold characters the drivers do not accept in a parameter name (space, accent, dot…),
+     * be numeric (an integer key in a PHP array), or look like a generated name (a column "a__1" next to an IN
+     * list on "a"). The name is therefore "<role><index>_<column>": the role ("v" for a value written by INSERT
+     * or UPDATE, "w" for a WHERE condition) and the 1-based position of the column in that role make it unique
+     * in the query, since the index ends at the first "_"; the column name, every character but [a-zA-Z0-9_]
+     * replaced by "_", keeps it readable in logs. An IN list suffixes it with "__<n>".
+     */
+    protected function parameterName(string $role, int $index, int|string $column): string
+    {
+        return $role . $index . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $column);
     }
 
     /**

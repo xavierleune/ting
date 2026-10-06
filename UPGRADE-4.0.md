@@ -663,3 +663,17 @@ These changes only matter if you extend Ting classes or rely on their internals.
 * The protected `Metadata::getColumnsFromCriteria()` and `Metadata::getPrimariesKeyValuesAsArray()` now validate the
   keys (property names only, `ValueException` otherwise) and return the converted database values, not the values
   given. An override must do the same, see "Repository reads: property names and entity values".
+* The parameters of the generated queries (`get()`, `getBy()`, `getOneBy()`, and the INSERT, UPDATE and DELETE of the
+  `UnitOfWork`) are no longer named after the raw column name, which could hold characters invalid in a parameter
+  name or collide with another parameter: `:<role><position>_<column>`, the role being `v` for a written value and `w`
+  for a WHERE condition, the position that of the column in its role (from 1), and the column name with every
+  character but `[a-zA-Z0-9_]` replaced by `_`. An IN list suffixes it with `__<n>`.
+
+  | Query                                   | 3.x                                        | 4.0                                                 |
+  |-----------------------------------------|--------------------------------------------|-----------------------------------------------------|
+  | `getBy(['id' => 3, 'name' => ['a']])`   | `id = :#id AND name IN (:name__1)`         | `id = :w1_id AND name IN (:w2_name__1)`             |
+  | INSERT                                  | `VALUES (:id, :name)`                      | `VALUES (:v1_id, :v2_name)`                         |
+  | UPDATE                                  | `SET name = :name WHERE id = :#id`         | `SET name = :v1_name WHERE id = :w1_id`             |
+
+  This is visible in the query logs, and matters to code inspecting the parameters of a generated `Query` /
+  `PreparedQuery` (or of `Query\Generator`, whose protected `generateConditionAndParams()` returns the new names).

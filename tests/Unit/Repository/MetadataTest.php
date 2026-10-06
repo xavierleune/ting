@@ -812,8 +812,8 @@ class MetadataTest extends TestCase
         $this->assertSame(
             [
                 'SELECT boo_id, boo_second_id, boo_name, boo_color, boo_priority, boo_created_at, boo_roles, boo_raw,'
-                . ' boo_ip, boo_active FROM bouh WHERE boo_id = :#boo_id AND boo_second_id = :#boo_second_id LIMIT 1',
-                ['#boo_id' => 3, '#boo_second_id' => 4]
+                . ' boo_ip, boo_active FROM bouh WHERE boo_id = :w1_boo_id AND boo_second_id = :w2_boo_second_id LIMIT 1',
+                ['w1_boo_id' => 3, 'w2_boo_second_id' => 4]
             ],
             $this->readQuery($query)
         );
@@ -830,7 +830,7 @@ class MetadataTest extends TestCase
             ['id' => 3, 'color' => ColorsEnum::RED]
         );
 
-        $this->assertSame(['#boo_id' => 3, '#boo_color' => 'red'], $this->readQuery($query)[1]);
+        $this->assertSame(['w1_boo_id' => 3, 'w2_boo_color' => 'red'], $this->readQuery($query)[1]);
     }
 
     public function testGetByPrimariesShouldRejectAColumnNameAndNameTheProperty()
@@ -860,7 +860,7 @@ class MetadataTest extends TestCase
             '3'
         );
 
-        $this->assertSame(['#boo_id' => '3'], $this->readQuery($query)[1]);
+        $this->assertSame(['w1_boo_id' => '3'], $this->readQuery($query)[1]);
     }
 
     public function testGetByCriteriaWithOrderShouldConvertOrderPropertiesToColumns()
@@ -877,7 +877,7 @@ class MetadataTest extends TestCase
         );
 
         $this->assertStringEndsWith(
-            ' WHERE boo_name = :#boo_name ORDER BY boo_name ASC,boo_id DESC LIMIT 10',
+            ' WHERE boo_name = :w1_boo_name ORDER BY boo_name ASC,boo_id DESC LIMIT 10',
             $this->readQuery($query)[0]
         );
     }
@@ -980,16 +980,16 @@ class MetadataTest extends TestCase
 
         [$sql, $params] = $this->readQuery($query);
         $this->assertStringEndsWith(
-            ' WHERE boo_color = :#boo_color AND boo_priority IN (:boo_priority__1,:boo_priority__2)'
-            . ' AND boo_created_at = :#boo_created_at',
+            ' WHERE boo_color = :w1_boo_color AND boo_priority IN (:w2_boo_priority__1,:w2_boo_priority__2)'
+            . ' AND boo_created_at = :w3_boo_created_at',
             $sql
         );
         $this->assertSame(
             [
-                '#boo_color' => 'green',
-                'boo_priority__1' => '1',
-                'boo_priority__2' => '3',
-                '#boo_created_at' => '2026-10-05 12:34:56',
+                'w1_boo_color' => 'green',
+                'w2_boo_priority__1' => '1',
+                'w2_boo_priority__2' => '3',
+                'w3_boo_created_at' => '2026-10-05 12:34:56',
             ],
             $params
         );
@@ -1007,9 +1007,9 @@ class MetadataTest extends TestCase
         );
 
         [$sql, $params] = $this->readQuery($query);
-        $this->assertStringEndsWith(' WHERE boo_roles = :#boo_roles LIMIT 1', $sql);
+        $this->assertStringEndsWith(' WHERE boo_roles = :w1_boo_roles LIMIT 1', $sql);
         // The serialize options of the field are used (JSON_UNESCAPED_SLASHES)
-        $this->assertSame(['#boo_roles' => '["ROLE_ADMIN","ROLE/USER"]'], $params);
+        $this->assertSame(['w1_boo_roles' => '["ROLE_ADMIN","ROLE/USER"]'], $params);
     }
 
     public function testGetByCriteriaShouldSendScalarsAndNullAsIs()
@@ -1025,12 +1025,12 @@ class MetadataTest extends TestCase
 
         [$sql, $params] = $this->readQuery($query);
         $this->assertStringEndsWith(
-            ' WHERE boo_id IN (:boo_id__1,:boo_id__2) AND boo_name = :#boo_name AND boo_color = :#boo_color'
-            . ' AND boo_created_at IS NULL AND boo_raw = :#boo_raw',
+            ' WHERE boo_id IN (:w1_boo_id__1,:w1_boo_id__2) AND boo_name = :w2_boo_name AND boo_color = :w3_boo_color'
+            . ' AND boo_created_at IS NULL AND boo_raw = :w5_boo_raw',
             $sql
         );
         $this->assertSame(
-            ['boo_id__1' => 1, 'boo_id__2' => '2', '#boo_name' => 'Xavier', '#boo_color' => 'red', '#boo_raw' => true],
+            ['w1_boo_id__1' => 1, 'w1_boo_id__2' => '2', 'w2_boo_name' => 'Xavier', 'w3_boo_color' => 'red', 'w5_boo_raw' => true],
             $params
         );
     }
@@ -1052,7 +1052,7 @@ class MetadataTest extends TestCase
             $services->collectionFactory()
         );
 
-        $this->assertSame(['#boo_raw' => $stringable, 'boo_name__1' => $stringable], $this->readQuery($query)[1]);
+        $this->assertSame(['w1_boo_raw' => $stringable, 'w2_boo_name__1' => $stringable], $this->readQuery($query)[1]);
     }
 
     public function testGetByPrimariesWithASingleObjectShouldSerializeIt()
@@ -1080,7 +1080,7 @@ class MetadataTest extends TestCase
             ColorsEnum::BLUE
         );
 
-        $this->assertSame(['#boo_color' => 'blue'], $this->readQuery($query)[1]);
+        $this->assertSame(['w1_boo_color' => 'blue'], $this->readQuery($query)[1]);
     }
 
     public function testGetByCriteriaShouldRejectAnEmptyArray()
@@ -1165,8 +1165,8 @@ class MetadataTest extends TestCase
         );
 
         [$sql, $params] = $this->readQuery($query);
-        $this->assertStringEndsWith(' WHERE boo_ip = :#boo_ip AND boo_active = :#boo_active', $sql);
-        $this->assertSame(['#boo_ip' => 167772161, '#boo_active' => 'f'], $params);
+        $this->assertStringEndsWith(' WHERE boo_ip = :w1_boo_ip AND boo_active = :w2_boo_active', $sql);
+        $this->assertSame(['w1_boo_ip' => 167772161, 'w2_boo_active' => 'f'], $params);
     }
 
     public function testGetByCriteriaShouldSerializeEachScalarOfAnInListForAScalarValueSerializer()
@@ -1184,10 +1184,10 @@ class MetadataTest extends TestCase
 
         [$sql, $params] = $this->readQuery($query);
         $this->assertStringContainsString(
-            ' WHERE boo_ip IN (:boo_ip__1,:boo_ip__2) AND boo_active IS NULL',
+            ' WHERE boo_ip IN (:w1_boo_ip__1,:w1_boo_ip__2) AND boo_active IS NULL',
             $sql
         );
-        $this->assertSame(['boo_ip__1' => 167772161, 'boo_ip__2' => 167772162], $params);
+        $this->assertSame(['w1_boo_ip__1' => 167772161, 'w1_boo_ip__2' => 167772162], $params);
     }
 
     public function testGetByCriteriaShouldRejectAScalarThatAScalarValueSerializerConvertsToNull()
@@ -1242,8 +1242,8 @@ class MetadataTest extends TestCase
             ['ip' => '10.0.0.1']
         );
 
-        $this->assertSame(['#boo_ip' => 167772161], $this->readQuery($scalarQuery)[1]);
-        $this->assertSame(['#boo_ip' => 167772161], $this->readQuery($arrayQuery)[1]);
+        $this->assertSame(['w1_boo_ip' => 167772161], $this->readQuery($scalarQuery)[1]);
+        $this->assertSame(['w1_boo_ip' => 167772161], $this->readQuery($arrayQuery)[1]);
     }
 
     public function testReadsShouldRejectEmptyCriteria()
@@ -1369,14 +1369,14 @@ class MetadataTest extends TestCase
         $mockDriver
             ->expects($this->once())
             ->method('prepare')
-            ->with('INSERT INTO bouh (boo_id, boo_name) VALUES (:boo_id, :boo_name)')
+            ->with('INSERT INTO bouh (boo_id, boo_name) VALUES (:v1_boo_id, :v2_boo_name)')
             ->willReturn($mockStatement);
         // atoum first returned a FakeDriver, then replaced it with $mockDriver before any call
         $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockStatement
             ->expects($this->once())
             ->method('execute')
-            ->with($this->identicalTo(['boo_id' => null, 'boo_name' => 'Xavier']));
+            ->with($this->identicalTo(['v1_boo_id' => null, 'v2_boo_name' => 'Xavier']));
 
         $entity = new Bouh();
         $entity->setName('Xavier');
@@ -1422,7 +1422,7 @@ class MetadataTest extends TestCase
         ]);
         $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
-        $this->assertSame(json_encode(['USER', 'ADMIN']), $outerParams['boo_roles']);
+        $this->assertSame(json_encode(['USER', 'ADMIN']), $outerParams['v1_boo_roles']);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1464,7 +1464,7 @@ class MetadataTest extends TestCase
         $metadata->setTable('public_properties_entity');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
         $this->assertSame(
-            ['property_with_default_value' => 'default', 'property_with_getter' => 'with getter'],
+            ['v1_property_with_default_value' => 'default', 'v2_property_with_getter' => 'with getter'],
             $outerParams
         );
     }
@@ -1515,7 +1515,7 @@ class MetadataTest extends TestCase
         ]);
         $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
-        $this->assertSame(json_encode(['USER', '"BOUH"'], JSON_HEX_QUOT), $outerParams['boo_roles']);
+        $this->assertSame(json_encode(['USER', '"BOUH"'], JSON_HEX_QUOT), $outerParams['v1_boo_roles']);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1546,7 +1546,7 @@ class MetadataTest extends TestCase
         ]);
         $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
-        $this->assertSame('INSERT INTO bouh (boo_roles) VALUES (:boo_roles)', $outerSql);
+        $this->assertSame('INSERT INTO bouh (boo_roles) VALUES (:v1_boo_roles)', $outerSql);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1558,14 +1558,14 @@ class MetadataTest extends TestCase
         $mockDriver
             ->expects($this->once())
             ->method('prepare')
-            ->with('UPDATE bouh SET firstname = :firstname WHERE boo_id = :#boo_id AND firstname = :#firstname')
+            ->with('UPDATE bouh SET firstname = :v1_firstname WHERE boo_id = :w1_boo_id AND firstname = :w2_firstname')
             ->willReturn($mockStatement);
         $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
         $mockStatement
             ->expects($this->once())
             ->method('execute')
-            ->with(['#boo_id' => 20, '#firstname' => 'Sylvain', 'firstname' => 'Xavier']);
+            ->with(['v1_firstname' => 'Xavier', 'w1_boo_id' => 20, 'w2_firstname' => 'Sylvain']);
 
         $entity = new Bouh();
         $entity->setId(20);
@@ -1607,14 +1607,14 @@ class MetadataTest extends TestCase
         $mockDriver
             ->expects($this->once())
             ->method('prepare')
-            ->with('DELETE FROM bouh WHERE boo_id = :#boo_id')
+            ->with('DELETE FROM bouh WHERE boo_id = :w1_boo_id')
             ->willReturn($mockStatement);
         $mockConnectionPool->method('primary')->willReturn($mockDriver);
         $mockConnection = new Connection($mockConnectionPool, 'main', 'db');
         $mockStatement
             ->expects($this->once())
             ->method('execute')
-            ->with($this->identicalTo(['#boo_id' => 1]));
+            ->with($this->identicalTo(['w1_boo_id' => 1]));
 
         $entity = new Bouh();
         $entity->setName('Xavier');
@@ -1650,7 +1650,7 @@ class MetadataTest extends TestCase
         $mockStatement
             ->expects($this->once())
             ->method('execute')
-            ->with(['#boo_id' => 'id-20', 'firstname' => 'Xavier']);
+            ->with(['v1_firstname' => 'Xavier', 'w1_boo_id' => 'id-20']);
 
         $entity = new class () extends Bouh {
             public function idForStorage(): string
@@ -1688,7 +1688,7 @@ class MetadataTest extends TestCase
 
         $query = $metadata->generateQueryForUpdate($connection, $services->queryFactory(), $entity, ['name' => ['Sylvain', 'Xavier']]);
 
-        $this->assertSame(['name' => 'Xavier', '#color' => 'blue'], $this->readQuery($query)[1]);
+        $this->assertSame(['v1_name' => 'Xavier', 'w1_color' => 'blue'], $this->readQuery($query)[1]);
     }
 
     public function testGenerateQueryForUpdateShouldTargetTheOldDatabaseValueOfAChangedPrimaryKey()
@@ -1703,7 +1703,7 @@ class MetadataTest extends TestCase
             ['color' => ['red', 'blue']]
         );
 
-        $this->assertSame(['color' => 'blue', '#color' => 'red'], $this->readQuery($query)[1]);
+        $this->assertSame(['v1_color' => 'blue', 'w1_color' => 'red'], $this->readQuery($query)[1]);
     }
 
     public function testGenerateQueryForDeleteShouldSerializeThePrimaryKey()
@@ -1712,7 +1712,7 @@ class MetadataTest extends TestCase
 
         $query = $metadata->generateQueryForDelete($connection, $services->queryFactory(), [], $entity);
 
-        $this->assertSame(['#color' => 'blue'], $this->readQuery($query)[1]);
+        $this->assertSame(['w1_color' => 'blue'], $this->readQuery($query)[1]);
     }
 
     public function testAPrimaryKeyShouldUseTheDefaultSerializerOfItsType()
@@ -1738,9 +1738,9 @@ class MetadataTest extends TestCase
         $update = $metadata->generateQueryForUpdate($connection, $services->queryFactory(), $entity, ['label' => ['b', 'a']]);
         $delete = $metadata->generateQueryForDelete($connection, $services->queryFactory(), [], $entity);
 
-        $this->assertSame(['#ev_day' => '2026-01-02 03:04:05'], $this->readQuery($get)[1]);
-        $this->assertSame(['ev_label' => 'a', '#ev_day' => '2026-01-02 03:04:05'], $this->readQuery($update)[1]);
-        $this->assertSame(['#ev_day' => '2026-01-02 03:04:05'], $this->readQuery($delete)[1]);
+        $this->assertSame(['w1_ev_day' => '2026-01-02 03:04:05'], $this->readQuery($get)[1]);
+        $this->assertSame(['v1_ev_label' => 'a', 'w1_ev_day' => '2026-01-02 03:04:05'], $this->readQuery($update)[1]);
+        $this->assertSame(['w1_ev_day' => '2026-01-02 03:04:05'], $this->readQuery($delete)[1]);
     }
 
     /**
@@ -1824,7 +1824,7 @@ class MetadataTest extends TestCase
         ]);
         $metadata->setTable('bouh');
         $query = $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
-        $this->assertSame('Nicolas', $outerParams['boo_name']);
+        $this->assertSame('Nicolas', $outerParams['v1_boo_name']);
     }
 
     #[RequiresPhp('>= 8.4.0')]
