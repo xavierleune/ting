@@ -30,12 +30,16 @@ use Exception;
 
 class DateTimeImmutable implements SerializerInterface
 {
+    use DatabaseDateReader;
+
     /**
      * @var array{format: string, unSerializeUseFormat: bool}
      * format => always used for serialization. Used first for unserialization when unSerializeUseFormat is true
-     * unSerializeUseFormat => true: the value is read with format then, when it does not match, with the PHP
-     *     date parser (new \DateTimeImmutable()), so that values written with another format are still read;
-     *     false: the value is read with the PHP date parser only. An empty string is never a date
+     * unSerializeUseFormat => true: the value is read with format then, when it does not match, with the formats
+     *     databases return (Y-m-d, Y-m-d H:i:s with optional fractional seconds and UTC offset, ATOM / RFC 3339),
+     *     so that values written with another format are still read; anything else is rejected.
+     *     false: the value is read with the PHP date parser (new \DateTimeImmutable()), which accepts anything it can
+     *     parse ("now", "+1 day", "05/06/2024" read as May 6th...). An empty string is never a date
      * @see https://www.php.net/manual/en/datetime.formats.php
      */
     private static array $defaultOptions = ['format' => 'Y-m-d H:i:s', 'unSerializeUseFormat' => true];
@@ -76,10 +80,15 @@ class DateTimeImmutable implements SerializerInterface
 
         $options = array_merge(self::$defaultOptions, $options);
         if ($options['unSerializeUseFormat'] === true) {
-            $value = \DateTimeImmutable::createFromFormat(self::readFormat($options['format']), (string) $serialized);
-            if ($value !== false) {
-                return $value;
+            $value = self::readDate(\DateTimeImmutable::class, (string) $serialized, $options['format']);
+            if ($value === null) {
+                throw new RuntimeException(
+                    'Cannot convert ' . $serialized . ' to DateTimeImmutable: it matches neither the format "'
+                    . $options['format'] . '" nor a database date format.'
+                );
             }
+
+            return $value;
         }
 
         // new \DateTimeImmutable('') would be the current time
@@ -94,14 +103,5 @@ class DateTimeImmutable implements SerializerInterface
                 'Cannot convert ' . $serialized . ' to DateTimeImmutable. Error is : ' . $e->getMessage()
             );
         }
-    }
-
-    /**
-     * Without "!" or "|", createFromFormat() takes the fields missing from the format from the current time: a date
-     * read with 'Y-m-d' would get the current time of day
-     */
-    private static function readFormat(string $format): string
-    {
-        return str_starts_with($format, '!') || str_contains($format, '|') ? $format : '!' . $format;
     }
 }

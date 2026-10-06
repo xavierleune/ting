@@ -349,11 +349,15 @@ Serializers
   read (see below). To keep writing ATOM, set the format:
   `'serializer_options' => ['serialize' => ['format' => \DateTimeInterface::ATOM]]`.
 * `Serializer\DateTime` and `Serializer\DateTimeImmutable` read a value with their `format` first and, when it does
-  not match, with the PHP date parser (`new \DateTime($value)`): ATOM values, PostgreSQL `timestamptz` values
-  (`2024-01-31 10:00:00+01`)... are read whatever the format. A value that neither can parse still throws a
-  `Serializer\RuntimeException`; an empty string is now rejected too (with `unSerializeUseFormat` set to `false`, it
-  was read as the current time). `unSerializeUseFormat` set to `false` still skips the format and only uses the PHP
-  parser.
+  not match, with the formats databases return, whatever the format: `Y-m-d` (a `DATE`, read at midnight),
+  `Y-m-d H:i:s` with optional fractional seconds (`.123456`) and optional UTC offset (`+01`, `+0100`, `+01:00`, `Z`)
+  — a MySQL `DATETIME`, a PostgreSQL `timestamp` or `timestamptz` (`2024-01-31 10:00:00+01`) — and ATOM / RFC 3339
+  (`2024-01-31T10:00:00+01:00`, with optional fractional seconds). Anything else throws a
+  `Serializer\RuntimeException`, as an unparsable value did in 3.x: the PHP date parser is not used as a fallback, it
+  would read `now`, `tomorrow` or `+1 day` as dates, and `05/06/2024` as May 6th.
+* `unSerializeUseFormat` set to `false` is the explicit opt-in to the permissive mode: it skips the format and reads
+  with the PHP date parser (`new \DateTime($value)`), as in 3.x, except that an empty string is now rejected (it was
+  read as the current time).
 
 Query and Driver Methods
 -------------------------
