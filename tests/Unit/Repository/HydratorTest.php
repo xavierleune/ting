@@ -38,6 +38,7 @@ use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\Serializer\CountingJson;
@@ -808,6 +809,59 @@ class HydratorTest extends TestCase
         $data = $iterator->current();
         $city = $data['bouh']->getOriginalCity();
         $this->assertIsObject($city);
+    }
+
+    public static function joinedColumnsFirstProvider(): array
+    {
+        return ['joined entity before' => [true], 'joined entity after' => [false]];
+    }
+
+    #[DataProvider('joinedColumnsFirstProvider')]
+    public function testHydrateWithMapObjectShouldNotCallTheMethodWhenTheJoinedEntityIsNull(bool $joinedFirst)
+    {
+        $services = new TingServices();
+        $services->metadataRepository()
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $field = static function (string $name, string $orgName, string $table, string $orgTable, int $type) {
+            $field = new \stdClass();
+            $field->name     = $name;
+            $field->orgname  = $orgName;
+            $field->table    = $table;
+            $field->orgtable = $orgTable;
+            $field->type     = $type;
+            return $field;
+        };
+        $bouhFields = [
+            $field('fname', 'boo_firstname', 'bouh', 'T_BOUH_BOO', MYSQLI_TYPE_VAR_STRING),
+            $field('name', 'boo_name', 'bouh', 'T_BOUH_BOO', MYSQLI_TYPE_VAR_STRING),
+        ];
+        $cityFields = [
+            $field('cityId', 'cit_id', 'cit', 'T_CITY_CIT', MYSQLI_TYPE_LONG),
+            $field('citname', 'cit_name', 'cit', 'T_CITY_CIT', MYSQLI_TYPE_VAR_STRING),
+        ];
+        // LEFT JOIN without match: every column of the city is null
+        $mockMysqliResult = new MysqliResult([
+            $joinedFirst ? [null, null, 'Sylvain', 'Robez-Masson'] : ['Sylvain', 'Robez-Masson', null, null],
+        ]);
+        $mockMysqliResult->setFieldsCallback(
+            fn () => $joinedFirst ? [...$cityFields, ...$bouhFields] : [...$bouhFields, ...$cityFields]
+        );
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
+        $data = $hydrator->setResult($result)->getIterator()->current();
+
+        $this->assertSame(['bouh'], array_keys($data));
+        $this->assertSame('Sylvain', $data['bouh']->getFirstname());
+        $this->assertNull($data['bouh']->getCity());
     }
 
     public function testHydrateWithUnserializeAlias()
