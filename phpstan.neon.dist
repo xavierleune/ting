@@ -10,10 +10,9 @@ parameters:
         - identifier: missingType.iterableValue
         - identifier: missingType.generics
     type_coverage:
-        return: 97
-        param: 85
-        # enable on PHP 7.4+
-        property: 83
+        return: 100
+        param: 100
+        property: 100
         # typed class constants require PHP 8.3+, the minimum is 8.2
         constant: 0
     type_perfect:
