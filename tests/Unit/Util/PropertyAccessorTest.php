@@ -178,6 +178,14 @@ class PropertyAccessorTest extends TestCase
         $this->assertFalse($accessor->isWritable($entity, 'propertyWithSetter', 'wrongSetterName'));
     }
 
+    public function testAnArrayShouldBeNeitherReadableNorWritableThroughAMethod()
+    {
+        $accessor = new PropertyAccessor();
+
+        $this->assertFalse($accessor->isWritable(['name' => 'Xavier'], '[name]', 'setName'));
+        $this->assertFalse($accessor->isReadable(['name' => 'Xavier'], '[name]', 'getName'));
+    }
+
     public function testPropertyAccessorCanLeverageInternalCache()
     {
         $cache = $this->createArrayAdapterSpy();
