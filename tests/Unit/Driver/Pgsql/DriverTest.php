@@ -125,6 +125,78 @@ class DriverTest extends TestCase
         $this->assertFalse($pgConnectCalled);
     }
 
+    public function testSetDatabaseShouldOpenANewLinkEvenWhenOneIsOpenWithTheSameParameters()
+    {
+        // Without PGSQL_CONNECT_FORCE_NEW, pg_connect() returns the link already open with the same connection
+        // string: two drivers would share one session (transaction, prepared statements, close())
+        $flags = [];
+        NativeFunctionMock::override('pg_connect', function (string $dsn, int $flag = 0) use (&$flags) {
+            $flags[] = $flag;
+
+            return new Pgsql();
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        $this->assertSame([\PGSQL_CONNECT_FORCE_NEW], $flags);
+    }
+
+    public function testReconnectShouldCloseTheLinkAndOpenANewOne()
+    {
+        $opened = [];
+        $closed = [];
+        $flags = [];
+        NativeFunctionMock::override('pg_connect', function (string $dsn, int $flag = 0) use (&$opened, &$flags) {
+            $flags[] = $flag;
+
+            return $opened[] = new Pgsql();
+        });
+        NativeFunctionMock::override('pg_close', function ($connection) use (&$closed): bool {
+            $closed[] = $connection;
+
+            return true;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        $this->assertTrue($driver->reconnect());
+
+        // The old session is ended (the server rolls its transaction back, its statements are gone)
+        $this->assertCount(2, $opened);
+        $this->assertSame([$opened[0]], $closed);
+        $this->assertSame([\PGSQL_CONNECT_FORCE_NEW, \PGSQL_CONNECT_FORCE_NEW], $flags);
+    }
+
+    public function testReconnectShouldCloseTheLinkEvenWhenNoNewOneCanBeOpened()
+    {
+        $closed = 0;
+        $links = [new Pgsql()];
+        NativeFunctionMock::override('pg_connect', function () use (&$links) {
+            return array_shift($links) ?? false;
+        });
+        NativeFunctionMock::override('pg_close', function () use (&$closed): bool {
+            $closed++;
+
+            return true;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        $this->assertFalse($driver->reconnect());
+        $this->assertSame(1, $closed);
+        $called = false;
+        $driver->ifIsNotConnected(function () use (&$called): void {
+            $called = true;
+        });
+        $this->assertTrue($called);
+    }
+
     public function testCloseShouldReturnSelf()
     {
         $driver = new Driver();
@@ -1052,6 +1124,7 @@ class DriverTest extends TestCase
         $prepares = 0;
         $deallocates = 0;
         NativeFunctionMock::override('pg_connect', fn () => new Pgsql());
+        NativeFunctionMock::override('pg_close', true);
         NativeFunctionMock::override('pg_prepare', function () use (&$prepares): bool {
             $prepares++;
 
@@ -1397,6 +1470,7 @@ class DriverTest extends TestCase
         $rejected = false;
         $queryCalls = 0;
         NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_close', true);
         NativeFunctionMock::override('pg_query', function () use (&$rejected, &$queryCalls) {
             $queryCalls++;
 
@@ -1448,6 +1522,7 @@ class DriverTest extends TestCase
         $rejected = false;
         $setCharsetCalls = 0;
         NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_close', true);
         NativeFunctionMock::override('pg_set_client_encoding', function () use (&$rejected, &$setCharsetCalls) {
             $setCharsetCalls++;
 
