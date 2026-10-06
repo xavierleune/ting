@@ -54,6 +54,7 @@ use tests\fixtures\PriorityEnum;
 use tests\fixtures\Serializer\CountingJson;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhCustomGetter;
+use tests\fixtures\model\CustomGetterEntity;
 use tests\fixtures\model\DatedEntity;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
@@ -1466,6 +1467,28 @@ class MetadataTest extends TestCase
             ['property_with_default_value' => 'default', 'property_with_getter' => 'with getter'],
             $outerParams
         );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testGenerateQueryForInsertShouldSkipUnitializedFieldsWithACustomGetter()
+    {
+        $services = new TingServices();
+
+        [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
+
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(CustomGetterEntity::class);
+        $metadata->addField([
+            'fieldName'  => 'label',
+            'columnName' => 'label',
+            'type'       => 'string',
+            'getter'     => 'label',
+        ]);
+        $metadata->setTable('custom_getter_entity');
+
+        $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, new CustomGetterEntity());
+
+        $this->assertSame([], $outerParams);
     }
 
     #[AllowMockObjectsWithoutExpectations]

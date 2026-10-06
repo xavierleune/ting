@@ -175,9 +175,8 @@ When your accessors do not follow these conventions, declare them in the metadat
 options (like `isCapitalCity()` / `capitalCityIs()` above): see [field options](repositories.md#field-options).
 
 Typed properties that are not initialized (no default value and never set) are skipped: they are left out of the
-`INSERT`, so the database default applies, and out of the `UPDATE`. This does not work for a field with a custom
-`getter`: the getter is called anyway and PHP throws an `Error` ("must not be accessed before initialization").
-Initialize the properties read by a custom getter.
+`INSERT`, so the database default applies, and out of the `UPDATE`. This includes a field with a custom `getter`:
+the getter is not called while the property named after the field is not initialized.
 
 ## Public properties and property hooks
 
