@@ -1460,6 +1460,51 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * Two repositories on the same entity (another table, or a lighter projection): the metadata given to pushSave()
+     * and pushDelete() (by Repository::save() and delete()) write the entity, not those of the repository
+     * registered last
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testTheMetadataGivenToPushSaveAndPushDeleteShouldWriteTheEntity()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $bouhMetadata = BouhRepository::initMetadata($this->services->serializerFactory());
+        $archiveMetadata = BouhRepository::initMetadata($this->services->serializerFactory());
+        $archiveMetadata->setTable('T_BOUH_ARCHIVE');
+        $metadataRepository->addMetadata('BouhArchiveRepository', $archiveMetadata);
+        $tables = function () use (&$queries): array {
+            return array_map(
+                fn (string $sql): string => strtok($sql, ' ') . ' ' . (str_contains($sql, 'T_BOUH_ARCHIVE') ? 'archive' : 'main'),
+                $queries
+            );
+        };
+
+        $entity = new Bouh();
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity, $bouhMetadata)->process();
+        $entity->setName('other name');
+        $unitOfWork->pushSave($entity, $bouhMetadata)->process();
+        $unitOfWork->pushDelete($entity, $bouhMetadata)->process();
+        $this->assertSame(['INSERT main', 'UPDATE main', 'DELETE main'], $tables());
+
+        // Not managed, with its id: an existing row of the table of the metadata given
+        $queries = [];
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork->pushSave($entity, $bouhMetadata)->process();
+        $unitOfWork->detach($entity);
+        $unitOfWork->pushDelete($entity, $bouhMetadata)->process();
+        $this->assertSame(['UPDATE main', 'DELETE main'], $tables());
+
+        // Without metadata, those of the entity: the repository registered last
+        $queries = [];
+        $entity = new Bouh();
+        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushDelete($entity)->process();
+        $this->assertSame(['INSERT archive', 'DELETE archive'], $tables());
+    }
+
+    /**
      * Builds a UnitOfWork on Bouh, Event, Document and Slot whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query

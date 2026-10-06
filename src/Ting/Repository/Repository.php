@@ -285,19 +285,29 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * Save an entity in database (update or insert)
+     * Save an entity in database (update or insert), with the metadata of this repository when they map its class
+     * (another repository can map it too: another table, or a lighter projection)
      */
     public function save(NotifyPropertyInterface $entity): void
     {
-        $this->unitOfWork->pushSave($entity)->process();
+        $this->unitOfWork->pushSave($entity, $this->metadataToWrite($entity))->process();
     }
 
     /**
-     * Delete an entity from database
+     * Delete an entity from database, with the metadata of this repository when they map its class
      */
     public function delete(NotifyPropertyInterface $entity): void
     {
-        $this->unitOfWork->pushDelete($entity)->process();
+        $this->unitOfWork->pushDelete($entity, $this->metadataToWrite($entity))->process();
+    }
+
+    /**
+     * @return Metadata<T>|null the metadata of this repository when they map the class of the entity, null to write it
+     *                          with the metadata registered for its class
+     */
+    private function metadataToWrite(NotifyPropertyInterface $entity): ?Metadata
+    {
+        return $this->metadata->getEntity() === $entity::class ? $this->metadata : null;
     }
 
     /**
