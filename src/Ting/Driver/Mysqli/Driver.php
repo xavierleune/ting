@@ -443,7 +443,8 @@ class Driver implements DriverInterface
 
     public function escapeField(mixed $field = null): string
     {
-        return '`' . $field . '`';
+        // An embedded backtick is doubled, as MySQL expects in a quoted identifier
+        return '`' . str_replace('`', '``', (string) $field) . '`';
     }
 
     /**

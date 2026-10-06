@@ -414,7 +414,8 @@ class Driver implements DriverInterface
      */
     public function escapeField(mixed $field = null): string
     {
-        return '"' . $field . '"';
+        // An embedded double quote is doubled, as PostgreSQL expects in a quoted identifier
+        return '"' . str_replace('"', '""', (string) $field) . '"';
     }
 
     /**
