@@ -1546,6 +1546,28 @@ class MetadataTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testGenerateQueryForInsertShouldInsertTheValueOfACustomGetterHandlingAnUninitializedField()
+    {
+        $services = new TingServices();
+
+        [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
+
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(CustomGetterEntity::class);
+        $metadata->addField([
+            'fieldName'  => 'label',
+            'columnName' => 'label',
+            'type'       => 'string',
+            'getter'     => 'labelOrDefault',
+        ]);
+        $metadata->setTable('custom_getter_entity');
+
+        $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, new CustomGetterEntity());
+
+        $this->assertSame(['v1_label' => 'draft'], $outerParams);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldSerializeWithOptions()
     {
         $services = new TingServices();
