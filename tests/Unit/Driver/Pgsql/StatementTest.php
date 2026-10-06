@@ -221,6 +221,29 @@ class StatementTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testARefusedDeallocateShouldBeReportedToTheHandler()
+    {
+        $refused = true;
+        NativeFunctionMock::override('pg_query', function () use (&$refused): bool {
+            return !$refused;
+        });
+        $reported = [];
+        $handler = function (string $statementName) use (&$reported): void {
+            $reported[] = $statementName;
+        };
+
+        $statement = new Statement('Refused', [], 'connectionName', 'database');
+        $statement->setConnection(new Pgsql())->setDeallocationRefusedHandler($handler);
+        $statement = null; // runs the destructor
+
+        $refused = false;
+        $statement = new Statement('Deallocated', [], 'connectionName', 'database');
+        $statement->setConnection(new Pgsql())->setDeallocationRefusedHandler($handler);
+        $statement = null;
+
+        $this->assertSame(['Refused'], $reported);
+    }
+
     public function testExecuteShouldRaiseExceptionIfValueNotDefined()
     {
         NativeFunctionMock::override('pg_execute', new PgsqlResult());
