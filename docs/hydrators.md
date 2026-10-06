@@ -597,7 +597,9 @@ public function getIterator(): \Generator;
 `setResult()` receives the driver result (`CCMBenchmark\Ting\Driver\ResultInterface`). Iterating over it gives, for
 each row, a list of columns, each an array with the keys `name` (alias), `orgName` (column name), `table` (table
 alias), `orgTable` (table name) and `value` (plus `schema` with PostgreSQL). Extending `Hydrator` and calling its
-protected `hydrateColumns()` gives you the default hydration of a row to build on.
+protected `hydrateColumns()` gives you the default hydration of a row to build on, as the built-in hydrators do: it is
+tagged `@internal`, but supported for this use (see "Smaller Changes for Extensions" in
+[UPGRADE-4.0.md](../UPGRADE-4.0.md)).
 
 Pass an instance to `getCollection()` like any other hydrator. Changes to the interface since 3.x are listed in
 [UPGRADE-4.0.md](../UPGRADE-4.0.md).
