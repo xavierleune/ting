@@ -36,7 +36,11 @@ use CCMBenchmark\Ting\Driver\ResultInterface;
 class Result implements ResultInterface
 {
     public const SQL_TABLE_SEPARATOR = 'inner|join|left|right|full|cross|where|group|having|window|union|intersect|except|order|limit|offset|fetch|for|on|using|natural';
-    public const PARSE_RAW_COLUMN = '/^\s*(?:"?(?P<table>[a-z_][a-z0-9_$]*)"?\.)?"?(?P<column>[a-z_][a-z0-9_$]*)"?(?:\s+as\s+(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*))?\s*$/i';
+    /**
+     * A column, table.column, with an optional alias: each part is a quoted identifier (any character, "" for a
+     * double quote) or a name, unquoted
+     */
+    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)\.)?(?P<column>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)(?:\s+as\s+(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*))?\s*$/i';
     public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?\s*$/i';
 
     /**
@@ -139,23 +143,21 @@ class Result implements ResultInterface
             };
         }
 
+        // Schema, table and alias: a quoted identifier (any character, "" for a double quote) or a name
         preg_match_all(
-            '/(?:join|from)\s+(?:"?(?<schema>[a-z_][a-z0-9_$]+)"?.)*?"?(?<table>[a-z_][a-z0-9_$]+)"?\s*(?:as)?\s*"?(?!\b('
-            . self::SQL_TABLE_SEPARATOR . ')\b)(?<alias>[a-z_][a-z0-9_$]*)?"?(\s|$)/is',
+            '/(?:join|from)\s+(?:(?<schema>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]+).)*?(?<table>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]+)'
+            . '\s*(?:as)?\s*(?!"?\b(' . self::SQL_TABLE_SEPARATOR . ')\b)(?<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?(\s|$)/is',
             $tableSearch,
             $matches,
             PREG_SET_ORDER
         );
 
+        // Unquoted identifiers, lowercase: as pg_field_table() names the tables and as the columns name them
         foreach ($matches as $match) {
-            $match['table'] = strtolower($match['table']);
-            if ($match['alias'] !== '') {
-                $tableToAlias[$match['table']] = strtolower($match['alias']);
-                $aliasToSchema[strtolower($match['alias'])] = strtolower($match['schema']);
-            } else {
-                $tableToAlias[$match['table']] = $match['table'];
-                $aliasToSchema[$match['table']] = strtolower($match['schema']);
-            }
+            $table = $this->identifierKey($match['table']);
+            $alias = $match['alias'] !== '' ? $this->identifierKey($match['alias']) : $table;
+            $tableToAlias[$table] = $alias;
+            $aliasToSchema[$alias] = $this->identifierKey($match['schema']);
         }
 
         $startCapture = false;
@@ -290,7 +292,7 @@ class Result implements ResultInterface
             $stdClass->orgtable = $match['complex'] === false ? strtolower((string) $table) : '';
 
             if ($match['table'] !== '') {
-                $stdClass->table = strtolower($match['table']);
+                $stdClass->table = $this->identifierKey($match['table']);
             } elseif ($match['complex'] === false) {
                 // No table for a column from a function, VALUES, a CTE...
                 $stdClass->table = $tableToAlias[$stdClass->orgtable] ?? '';
@@ -298,13 +300,11 @@ class Result implements ResultInterface
                 $stdClass->table = $stdClass->orgtable;
             }
 
-            $stdClass->schema = isset($aliasToSchema[$stdClass->table]) === true ? $aliasToSchema[$stdClass->table] : '';
+            $stdClass->schema = $aliasToSchema[$stdClass->table] ?? '';
 
+            // The table, the schema and orgtable (from pg_field_table()) are unquoted already
             $stdClass->name     = $this->unescapeField($stdClass->name);
             $stdClass->orgname  = $this->unescapeField($stdClass->orgname);
-            $stdClass->table    = $this->unescapeField($stdClass->table);
-            $stdClass->orgtable = $this->unescapeField($stdClass->orgtable);
-            $stdClass->schema   = $this->unescapeField($stdClass->schema);
 
             $fields[] = $stdClass;
         }
@@ -454,11 +454,24 @@ class Result implements ResultInterface
     }
 
     /**
-     * Unescape the given field name according to PGSQL Standards
+     * Unescape the given field name according to PGSQL Standards: a quoted identifier loses its quotes and its
+     * doubled double quotes ("a""b" is a"b); the double quotes around anything else (an expression) are trimmed
      */
     protected function unescapeField(string $field): string
     {
-        return trim( $field, '"');
+        if (preg_match('/^"((?:[^"]|"")*)"$/s', $field, $matches) === 1) {
+            return str_replace('""', '"', $matches[1]);
+        }
+
+        return trim($field, '"');
+    }
+
+    /**
+     * A table, an alias or a schema of the query, unquoted and lowercase, to be compared with another one
+     */
+    private function identifierKey(string $identifier): string
+    {
+        return strtolower($this->unescapeField($identifier));
     }
 
     /**

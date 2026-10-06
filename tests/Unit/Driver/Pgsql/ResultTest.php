@@ -361,6 +361,51 @@ class ResultTest extends TestCase
         $this->assertSame($expected, $this->parseColumns($query, $tables));
     }
 
+    public static function quotedIdentifierProvider(): array
+    {
+        $id = ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => 'public'];
+        $column = fn (string $name, string $table = 'users', string $schema = 'public') => [
+            'name' => $name,
+            'orgName' => $name,
+            'table' => $table,
+            'schema' => $schema,
+        ];
+
+        return [
+            'a colon' => ['SELECT "id", "a:b" FROM "public"."users"', [$id, $column('a:b')]],
+            'a space' => ['SELECT "id", "first name" FROM "public"."users"', [$id, $column('first name')]],
+            'an accent' => ['SELECT "id", "prénom" FROM "public"."users"', [$id, $column('prénom')]],
+            'a dash' => ['SELECT "id", "e-mail" FROM "public"."users"', [$id, $column('e-mail')]],
+            'an escaped double quote' => ['SELECT "id", "a""b" FROM "public"."users"', [$id, $column('a"b')]],
+            'a quoted table prefix' => [
+                'SELECT "u:x"."id", "u:x"."a b" FROM "public"."users" AS "u:x"',
+                [$column('id', 'u:x'), $column('a b', 'u:x')],
+            ],
+            'a table and a schema with a colon' => [
+                'SELECT "id", "a :b" FROM "my schema"."ta:ble" WHERE "id" = $1',
+                [$column('id', 'ta:ble', 'my schema'), $column('a :b', 'ta:ble', 'my schema')],
+            ],
+            'an alias with an escaped double quote' => [
+                'SELECT "id" AS "the ""id""" FROM "public"."users"',
+                [['name' => 'the "id"', 'orgName' => 'id', 'table' => 'users', 'schema' => 'public']],
+            ],
+        ];
+    }
+
+    /**
+     * Quoted identifiers may hold any character: Ting generates them for every mapped column (getAll, getBy...)
+     *
+     * @param list<array<string, string>> $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('quotedIdentifierProvider')]
+    public function testSetQueryShouldParseQuotedIdentifiers(string $query, array $expected)
+    {
+        // pg_field_table() gives the name of the table, unquoted
+        $table = str_contains($query, 'ta:ble') ? 'ta:ble' : 'users';
+
+        $this->assertSame($expected, $this->parseColumns($query, array_fill(0, \count($expected), $table)));
+    }
+
     public function testIterator()
     {
         NativeFunctionMock::override('pg_result_seek', true);
