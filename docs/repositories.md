@@ -174,7 +174,7 @@ Values read from the database are cast according to `type`:
 | `datetimezone`       | `\DateTimeZone`, serializer `DateTimeZone` by default                                        |
 | `json`               | decoded JSON, serializer `Json` by default                                                   |
 | `uuid`               | `Symfony\Component\Uid\Uuid`, serializer `Uuid` by default (requires `symfony/uid`)          |
-| `ip`                 | IPv4 address as a string, stored as an integer, serializer `Ip` by default                   |
+| `ip`                 | IPv4 address as a string, stored as an integer, serializer `Ip` by default (IPv4 only)       |
 | `geometry`           | `Brick\Geo\Geometry`, serializer `Geometry` by default (MySQL / MariaDB, requires `brick/geo`) |
 
 `NULL` is never cast: it stays `null`.
@@ -196,7 +196,7 @@ Types listed above with a default serializer use it unless the field declares an
 | `Serializer\Json`                    | `array`, `\stdClass`...       | `options` and `depth` of `json_encode()` / `json_decode()`, `assoc` on unserialize (default `false`: objects) |
 | `Serializer\BackedEnum`              | backed enum                   | `enum` on unserialize (required): the enum class                                                             |
 | `Serializer\Uuid`                    | `Symfony\Component\Uid\Uuid`  | None                                                                                                         |
-| `Serializer\Ip`                      | IPv4 as a string              | None                                                                                                         |
+| `Serializer\Ip`                      | IPv4 as a string              | None. IPv4 only: an IPv6 address throws a `Serializer\RuntimeException` (store it as a `string`)             |
 | `Serializer\Geometry`                | `Brick\Geo\Geometry`          | None                                                                                                         |
 | `Driver\Mysqli\Serializer\Boolean`   | `bool`                        | None                                                                                                         |
 | `Driver\Pgsql\Serializer\Boolean`    | `bool`                        | None                                                                                                         |
