@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit;
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Repository\Metadata;
+use CCMBenchmark\Ting\Repository\Repository;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\model\Bouh;
@@ -302,6 +303,77 @@ class MetadataRepositoryTest extends TestCase
                 __DIR__ . '/../fixtures/model/*Repository.php'
             )
         );
+    }
+
+    public function testBatchLoadMetadataShouldGiveTheMetadataTheRepositoryTheyAreRegisteredUnder(): void
+    {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+        $loaded = $metadataRepository->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../fixtures/model/*Repository.php'
+        );
+
+        foreach (array_keys($loaded) as $class) {
+            // A class giving metadata for hydration only is not a repository
+            $expected = is_subclass_of($class, Repository::class) ? $class : null;
+            $metadataRepository->findMetadataForRepository(
+                $class,
+                function (Metadata $metadata) use ($expected): void {
+                    $this->assertSame($expected, $metadata->getRepository());
+                }
+            );
+        }
+        $this->assertSame(
+            BouhRepository::class,
+            $this->repositoryOf($metadataRepository, BouhRepository::class)
+        );
+        $this->assertNull(
+            $this->repositoryOf($metadataRepository, \tests\fixtures\model\CityWithPublicPropertiesRepository::class)
+        );
+    }
+
+    private function repositoryOf(MetadataRepository $metadataRepository, string $class): ?string
+    {
+        $repository = 'not found';
+        $metadataRepository->findMetadataForRepository(
+            $class,
+            function (Metadata $metadata) use (&$repository): void {
+                $repository = $metadata->getRepository();
+            }
+        );
+
+        return $repository;
+    }
+
+    public function testBatchLoadMetadataFromCacheShouldGiveTheMetadataTheirRepository(): void
+    {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+        $metadataRepository->batchLoadMetadataFromCache([BouhRepository::class => BouhRepository::class]);
+
+        $repository = null;
+        $metadataRepository->findMetadataForEntity(
+            Bouh::class,
+            function (Metadata $metadata) use (&$repository): void {
+                $repository = $metadata->getRepository();
+            }
+        );
+        $this->assertSame(BouhRepository::class, $repository);
+    }
+
+    public function testAddMetadataUnderAClassThatIsNotARepositoryShouldNotSetTheRepository(): void
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setTable('T_BOUH_BOO');
+
+        (new MetadataRepository($services->serializerFactory()))->addMetadata(Bouh::class, $metadata);
+
+        $this->assertNull($metadata->getRepository());
     }
 
     public function testBatchLoadMetadataWithInvalidPathShouldReturnEmptyArray()
