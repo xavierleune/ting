@@ -1071,7 +1071,6 @@ class DriverTest extends TestCase
     {
         NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
-        NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override(
             'pg_set_client_encoding',
             function ($connection, $charset) use (&$outerCharset, &$called): void {
@@ -1087,6 +1086,11 @@ class DriverTest extends TestCase
         $driver->setDatabase('myDatabase');
         $driver->setCharset('UTF8');
 
+        // pg_ping() re-established the lost connection: a new backend, with the server defaults
+        $pids = [42, 43];
+        NativeFunctionMock::override('pg_get_pid', function () use (&$pids): int {
+            return array_shift($pids) ?? 43;
+        });
         $this->assertTrue($driver->ping());
         $this->assertSame(2, $called);
     }
@@ -1097,7 +1101,6 @@ class DriverTest extends TestCase
         $outerArgs = [];
         NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
-        NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override('pg_query', function () use (&$called, &$outerArgs) {
             $outerArgs[] = func_get_args();
             $called++;
@@ -1111,9 +1114,81 @@ class DriverTest extends TestCase
         $driver->setDatabase('myDatabase');
         $driver->setTimezone('timezone');
 
+        // pg_ping() re-established the lost connection: a new backend, with the server defaults
+        $pids = [42, 43];
+        NativeFunctionMock::override('pg_get_pid', function () use (&$pids): int {
+            return array_shift($pids) ?? 43;
+        });
         $this->assertTrue($driver->ping());
         $this->assertSame(2, $called);
         $this->assertSame(array_fill(0, 2, 'SET timezone = "timezone";'), array_column($outerArgs, 1));
+    }
+
+    public function testPingShouldNotSendTheCharsetNorTheTimezoneAgainWhenTheSessionWasNotReset()
+    {
+        $sent = [];
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
+        NativeFunctionMock::override('pg_set_client_encoding', function ($connection, string $charset) use (&$sent): int {
+            $sent[] = $charset;
+
+            return 0;
+        });
+        NativeFunctionMock::override('pg_query', function ($connection, string $sql) use (&$sent): bool {
+            $sent[] = $sql;
+
+            return true;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setCharset('UTF8');
+        $driver->setTimezone('UTC');
+        $sent = [];
+
+        // Same backend: the session still has them
+        $this->assertTrue($driver->ping());
+        $this->assertSame([], $sent);
+    }
+
+    public function testPingInAnAbortedTransactionShouldNotPreventTheRollback()
+    {
+        // In an aborted transaction, the server refuses every command but ROLLBACK / COMMIT: a charset or timezone
+        // sent again by ping() would be refused, then forgotten, and sent again (and refused) by every later access
+        // to the connection (the pool applies them on each primary()), before the ROLLBACK could be sent
+        $aborted = false;
+        $sent = [];
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  current transaction is aborted');
+        NativeFunctionMock::override('pg_set_client_encoding', function () use (&$aborted): int {
+            return $aborted ? -1 : 0;
+        });
+        NativeFunctionMock::override('pg_query', function ($connection, string $sql) use (&$aborted, &$sent): bool {
+            $sent[] = $sql;
+
+            return !$aborted || $sql === 'ROLLBACK';
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setCharset('UTF8');
+        $driver->setTimezone('UTC');
+        $driver->startTransaction();
+        $aborted = true;
+        $sent = [];
+
+        $this->assertTrue($driver->ping());
+        // As ConnectionPool::primary() does before Connection::rollback()
+        $driver->setCharset('UTF8');
+        $driver->setTimezone('UTC');
+        $driver->rollback();
+
+        $this->assertSame(['ROLLBACK'], $sent);
     }
 
     /**
@@ -1326,7 +1401,6 @@ class DriverTest extends TestCase
         $queryCalls = 0;
         NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
-        NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override('pg_query', function () use (&$rejected, &$queryCalls) {
             $queryCalls++;
 
@@ -1341,6 +1415,10 @@ class DriverTest extends TestCase
 
         // e.g. the connection was re-established on a server without this timezone
         $rejected = true;
+        $pids = [42, 43];
+        NativeFunctionMock::override('pg_get_pid', function () use (&$pids): int {
+            return array_shift($pids) ?? 43;
+        });
         $this->assertTrue($driver->ping());
         // The session kept the server default: setting the timezone again tries it, and reports the error
         $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Europe/Paris'));
@@ -1496,7 +1574,6 @@ class DriverTest extends TestCase
         $setCharsetCalls = 0;
         NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
-        NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override('pg_set_client_encoding', function () use (&$rejected, &$setCharsetCalls) {
             $setCharsetCalls++;
 
@@ -1511,6 +1588,10 @@ class DriverTest extends TestCase
 
         // e.g. the connection was re-established on a server rejecting this encoding
         $rejected = true;
+        $pids = [42, 43];
+        NativeFunctionMock::override('pg_get_pid', function () use (&$pids): int {
+            return array_shift($pids) ?? 43;
+        });
         $this->assertTrue($driver->ping());
         // The session kept the server default: setting the charset again tries it, and reports the error
         $this->assertThrows(DriverException::class, fn () => $driver->setCharset('LATIN9'));
