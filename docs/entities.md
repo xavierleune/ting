@@ -120,18 +120,49 @@ A few rules:
 
 * The first argument of `propertyChanged()` is the **property name** (the `fieldName` of the metadata), not the column
   name.
-* `propertyChanged()` tells the unit of work that the property **may** have changed. On save, the property is compared
-  with the value read from the database (or last written to it), both converted to their database value by the
-  serializer of the field: a `DateTime` modified in place then given to its setter is updated, a `DateTime` replaced by
-  an equal one is not, and a property set back to its original value is not updated either.
-* A change made without calling the setter (e.g. `$city->getCreatedAt()->modify('+1 day')` alone) is not notified,
-  so it is never `UPDATE`d. Prefer immutable objects (`DateTimeImmutable`, enums...) and replace them through the
-  setter.
+* Values are compared with `===`: setting the same value again is not a change. Objects are compared by identity: the
+  same object given as old and new value is not a change, even if modified in place. A property set back to its
+  original value before the save is not updated.
 * A property that never calls `propertyChanged()` is still written on `INSERT`, but its changes are never `UPDATE`d.
 * A property notified by `propertyChanged()` but not mapped in the metadata is ignored by the unit of work.
 * Hydration goes through the same setters (unless the metadata says otherwise). A setter must accept every value the
   column can hold: if the column is nullable, type the parameter as nullable (`?\DateTimeImmutable` above), or
   hydration fails with a `TypeError`.
+
+### Mutable values
+
+A notification only happens when a setter is called. A value that can be modified **in place** escapes it:
+`$event->getStartAt()->modify('+1 day')` on a `\DateTime`, or `$document->getPayload()->tags[] = 'php'` on a JSON
+object (`\stdClass`), changes the entity without calling any setter.
+
+So Ting splits the fields in two:
+
+* **immutable** fields (scalars, `\DateTimeImmutable`, `\DateTimeZone`, enums, UUIDs, IPs, geometries, JSON decoded to
+  arrays): their value can only change through the setter, they are updated **when notified**;
+* **mutable** fields (`\DateTime`, JSON decoded to objects, values of a serializer of your own): Ting cannot know
+  whether they changed, so it writes them, with their current value, in the `UPDATE` of **every save** of a managed
+  entity, together with the notified changes. No copy of their value is kept: hydration costs nothing more.
+
+The default comes from the serializer of the field: `Serializer\DateTime`, `Serializer\Json` without the `assoc`
+unserialize option and any serializer of your own are mutable; the serializers shipped with Ting for immutable values
+are not. A field of type `datetime` without serializer follows its property: typed `\DateTimeImmutable` or
+`\DateTimeInterface` (nullable or not), it hydrates a `\DateTimeImmutable` (immutable); typed `\DateTime`, not typed or
+only reachable through a setter, it hydrates a `\DateTime` (mutable). Override the default with the `mutable` option of
+the field, see [field options](repositories.md#field-options) — `'mutable' => false` on a field you only ever replace
+through its setter (a readonly value object serialized by your own serializer, for instance).
+
+Writing the mutable fields on every save has costs:
+
+* saving a managed entity with a mutable field **always runs an `UPDATE`**, even when nothing changed (on MySQL a round
+  trip, a row lock and the `BEFORE UPDATE` triggers; on PostgreSQL a new row version, written to the WAL, to vacuum
+  later);
+* a concurrent write to such a column between your read and your save is **overwritten** with the value you read;
+* `UnitOfWork::isPropertyChanged()` is always `true` for a mutable field of a managed entity.
+
+Prefer immutable values: type your dates `\DateTimeImmutable`, decode JSON to arrays
+(`'serializer_options' => ['unserialize' => ['assoc' => true]]`), make your value objects `readonly`, and replace them
+through the setter. A mutable primary key (a `\DateTime` key, say) modified in place still targets its row: its
+database value is kept when the entity becomes managed, and refreshed by each `UPDATE`.
 
 ## How Ting reads and writes properties
 

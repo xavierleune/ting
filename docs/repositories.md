@@ -146,6 +146,7 @@ Each column is declared with `Metadata::addField(array $params)`, which returns 
 | `sequenceName`       |          | PostgreSQL only: sequence used to read the generated value (`currval()`). Without it, `lastval()` is used.     |
 | `serializer`         |          | Class of the serializer converting the value, see [Serializers](#serializers).                                 |
 | `serializer_options` |          | Options of the serializer: `['serialize' => [...], 'unserialize' => [...]]`.                                   |
+| `mutable`            |          | `true` if the PHP value can be modified in place (a `\DateTime`, a JSON object...): the field is then written by every save of a managed entity. Defaults to `true` for `Serializer\DateTime`, `Serializer\Json` without `assoc` and serializers of your own, `false` otherwise. See [mutable values](entities.md#mutable-values). |
 | `getter`             |          | Method used to read the property, instead of the `getX()` / `isX()` / `hasX()` convention.                      |
 | `setter`             |          | Method used to write the property, instead of the `setX()` convention.                                         |
 
@@ -172,7 +173,7 @@ Values read from the database are cast according to `type`:
 | `double`             | `float`                                                                                      |
 | `bool`               | `bool`, see the note below                                                                   |
 | `string`             | `string`, no conversion                                                                      |
-| `datetime`           | `\DateTime`, serializer `DateTime` by default                                                |
+| `datetime`           | `\DateTimeImmutable` if the property is typed `\DateTimeImmutable` or `\DateTimeInterface` (serializer `DateTimeImmutable`, format `Y-m-d H:i:s`), `\DateTime` otherwise (serializer `DateTime`) |
 | `datetime_immutable` | `\DateTimeImmutable`, serializer `DateTimeImmutable` by default                              |
 | `datetimezone`       | `\DateTimeZone`, serializer `DateTimeZone` by default                                        |
 | `json`               | decoded JSON, serializer `Json` by default                                                   |
