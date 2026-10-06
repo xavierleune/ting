@@ -587,6 +587,19 @@ class DriverTest extends TestCase
         $this->assertTrue($driver->execute('UPDATE Bouh SET id = 3'));
     }
 
+    public function testExecuteWithoutCollectionShouldReturnNullWithoutRow()
+    {
+        // mysqli_result::fetch_assoc() returns null when the result set has no row
+        $mysqliResult = $this->createStub(MysqliResult::class);
+        $mysqliResult->method('fetch_assoc')->willReturn(null);
+        $driverFake = $this->createStub(Mysqli::class);
+        $driverFake->method('query')->willReturn($mysqliResult);
+
+        $driver = new Driver($driverFake);
+
+        $this->assertNull($driver->execute('SELECT id FROM Bouh WHERE 1 = 0'));
+    }
+
     public function testPrepareShouldNotTransformEscapedColon()
     {
         $mockDriver = $this->createStub(Mysqli::class);
