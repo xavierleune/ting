@@ -138,13 +138,24 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
     public function close(): static
     {
         if ($this->connection !== null) {
-            pg_close($this->connection);
-            $this->connection = null;
-            $this->forgetPreparedQueries();
-            $this->loseTransaction();
+            $this->dropConnection();
         }
 
         return $this;
+    }
+
+    /**
+     * Ends the session: the server rolls its transaction back and drops its prepared statements
+     */
+    private function dropConnection(): void
+    {
+        if ($this->connection !== null) {
+            // Silenced: closing a broken link may warn, the link is gone anyway
+            @pg_close($this->connection);
+            $this->connection = null;
+        }
+        $this->forgetPreparedQueries();
+        $this->loseTransaction();
     }
 
     /**
@@ -186,7 +197,9 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
         }
 
         $dsn = $this->dsn . ' dbname=' . self::quoteDsnValue($database);
-        $resource = @pg_connect($dsn);
+        // Always a new link: without PGSQL_CONNECT_FORCE_NEW, PHP returns the link already open with the same
+        // connection string (another driver's, or the one reconnect() is replacing), and its session with it
+        $resource = @pg_connect($dsn, \PGSQL_CONNECT_FORCE_NEW);
         $this->database = $database;
 
         if ($resource === false) {
@@ -629,9 +642,7 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
             throw new NeverConnectedException('Please connect to your database before trying to reconnect.');
         }
 
-        $this->connection = null;
-        $this->forgetPreparedQueries();
-        $this->loseTransaction();
+        $this->dropConnection();
         try {
             $this->setDatabase($this->database);
             if ($this->currentTimezone !== null) {
