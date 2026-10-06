@@ -622,4 +622,20 @@ class MetadataRepositoryTest extends TestCase
             fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', 'MYSCHEMA')
         );
     }
+
+    public function testFindMetadataForAnUnknownEntityWithoutCallbackNotFoundShouldDoNothing()
+    {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+
+        $errors = $this->collectErrorTypes(function () use ($metadataRepository): void {
+            $metadataRepository->findMetadataForEntity(
+                new \stdClass(),
+                fn () => $this->fail('No metadata should be found')
+            );
+        }, $thrown);
+
+        $this->assertNull($thrown);
+        $this->assertSame([], $errors);
+    }
 }

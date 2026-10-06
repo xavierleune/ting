@@ -44,6 +44,14 @@ class Connection
     }
 
     /**
+     * The name of the connection in the configuration of the connection pool
+     */
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    /**
      * Return the primary connection
      * @throws Exception
      * @return Driver\DriverInterface

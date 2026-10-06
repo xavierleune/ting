@@ -137,12 +137,37 @@ class Metadata
      * Return applicable connection
      * @param ConnectionPoolInterface $connectionPool
      * @return Connection
+     * @throws ConfigException when the connection name or the database is not set
      *
      * @internal
      */
     public function getConnection(ConnectionPoolInterface $connectionPool): Connection
     {
+        if ($this->connectionName === null || $this->databaseName === null) {
+            throw new ConfigException(
+                $this->describe() . ' used before setConnectionName() and setDatabase(): no connection to query'
+            );
+        }
+
         return new Connection($connectionPool, $this->connectionName, $this->databaseName);
+    }
+
+    /**
+     * @param list<string> $fields
+     * @throws ConfigException when the table is not set
+     */
+    private function queryGenerator(Connection $connection, QueryFactoryInterface $queryFactory, array $fields): Generator
+    {
+        if ($this->table === null) {
+            throw new ConfigException($this->describe() . ' used before setTable(): no table to query');
+        }
+
+        return new Generator($connection, $queryFactory, $this->schemaName, $this->table, $fields);
+    }
+
+    private function describe(): string
+    {
+        return 'Metadata of ' . ($this->entity ?? 'an unknown entity');
     }
 
     /**
@@ -646,13 +671,7 @@ class Metadata
         bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            $fields
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
 
         $primariesKeyValue = $this->getPrimariesKeyValuesAsArray($primariesKeyValue);
 
@@ -678,13 +697,7 @@ class Metadata
         bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            $fields
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
 
         $this->assertCriteriaNotEmpty($criteria, 'Repository::getOneBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getOneBy()');
@@ -906,13 +919,7 @@ class Metadata
         bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            $fields
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
 
         return $queryGenerator->getAll($collectionFactory, $forcePrimary);
     }
@@ -935,13 +942,7 @@ class Metadata
         bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            $fields
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
 
         $this->assertCriteriaNotEmpty($criteria, 'Repository::getBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
@@ -970,13 +971,7 @@ class Metadata
         bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            $fields
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
         $this->assertCriteriaNotEmpty($criteria, 'Repository::getBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
         $orderColumn = $this->getColumnsFromOrder($orderBy);
@@ -1039,13 +1034,7 @@ class Metadata
         }
 
         $fields = array_keys($this->fields);
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            $fields
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
 
         return $queryGenerator->insert($values);
     }
@@ -1065,13 +1054,7 @@ class Metadata
         object $entity,
         array $properties
     ): PreparedQuery {
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            array_keys($properties)
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, array_keys($properties));
 
         $values = [];
         foreach ($properties as $name => [, $value]) {
@@ -1101,13 +1084,7 @@ class Metadata
         array $properties,
         object $entity
     ): PreparedQuery {
-        $queryGenerator = new Generator(
-            $connection,
-            $queryFactory,
-            $this->schemaName,
-            $this->table,
-            array_keys($properties)
-        );
+        $queryGenerator = $this->queryGenerator($connection, $queryFactory, array_keys($properties));
 
         $primariesKeyValue = $this->getPrimariesKeyValuesByProperties($properties, $entity);
 
