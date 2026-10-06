@@ -44,10 +44,33 @@ class BackedEnum implements SerializerInterface
             throw new RuntimeException('Invalid enum class given to BackedEnumSerializer');
         }
         $enum = $options['enum'];
+        if ((string) (new \ReflectionEnum($enum))->getBackingType() === 'int') {
+            $serialized = $this->toInt($serialized);
+        }
         try {
             return $enum::from($serialized);
-        } catch (\ValueError) {
+        } catch (\ValueError | \TypeError) {
             throw new RuntimeException('Invalid enum value given to BackedEnumSerializer');
         }
+    }
+
+    /**
+     * from() would cast '1.5' to 1 (with a deprecation) and throw a TypeError on 'abc': only an integer, or a
+     * string holding one, is a value of an int-backed enum
+     */
+    private function toInt(mixed $serialized): int
+    {
+        if (is_int($serialized)) {
+            return $serialized;
+        }
+        if (is_string($serialized) && preg_match('/^([+-]?)0*(\d+)$/', $serialized, $matches) === 1) {
+            // false beyond PHP_INT_MAX / PHP_INT_MIN
+            $value = filter_var(($matches[1] === '-' ? '-' : '') . $matches[2], FILTER_VALIDATE_INT);
+            if ($value !== false) {
+                return $value;
+            }
+        }
+
+        throw new RuntimeException('Invalid enum value given to BackedEnumSerializer');
     }
 }

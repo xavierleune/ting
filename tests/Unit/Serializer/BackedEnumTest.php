@@ -65,6 +65,33 @@ class BackedEnumTest extends TestCase
         });
     }
 
+    public function testUnserializeAnIntBackedEnumShouldAcceptIntegers()
+    {
+        $serializer = new BackedEnum();
+
+        $this->assertSame(PriorityEnum::HIGH, $serializer->unserialize(3, ['enum' => PriorityEnum::class]));
+        $this->assertSame(PriorityEnum::HIGH, $serializer->unserialize('+3', ['enum' => PriorityEnum::class]));
+        $this->assertSame(PriorityEnum::HIGH, $serializer->unserialize('003', ['enum' => PriorityEnum::class]));
+    }
+
+    public function testUnserializeAnIntBackedEnumShouldRejectWhatIsNotAnInteger()
+    {
+        $serializer = new BackedEnum();
+
+        foreach (['abc', '', '1.5', ' 3', '3 ', '-', '1e0', '9223372036854775808', 1.0, true] as $value) {
+            $types = $this->collectErrorTypes(
+                static fn () => $serializer->unserialize($value, ['enum' => PriorityEnum::class]),
+                $thrown
+            );
+
+            $this->assertInstanceOf(RuntimeException::class, $thrown, var_export($value, true));
+            $this->assertSame([], $types, var_export($value, true));
+        }
+        $this->assertThrows(RuntimeException::class, function () use ($serializer): void {
+            $serializer->unserialize('-1', ['enum' => PriorityEnum::class]);
+        });
+    }
+
     public function testSerializeInvalidValueShouldRaiseException()
     {
         $serializer = new BackedEnum();
