@@ -505,10 +505,61 @@ The extension points you are the most likely to implement:
   trait must not redeclare `$listeners` without this type.
 * Repositories: `Repository::getCollection(?HydratorInterface $hydrator = null): Collection`; an override must return
   `Collection` (or a subclass), not `CollectionInterface`.
-* `SerializeInterface` and `UnserializeInterface` keep their 3.x signatures (no native return type), so a serializer
-  implementing them directly needs no change. The built-in serializers, however, now declare native return types: a
+* Serializers: `SerializeInterface::serialize(mixed $toSerialize, array $options = []): mixed` and
+  `UnserializeInterface::unserialize(mixed $serialized, array $options = []): mixed`. A serializer implementing them
+  directly **must now declare a return type** (`mixed`, or any narrower type such as `?string`), or PHP raises a fatal
+  error when loading it; its parameters may stay untyped. The built-in serializers declare native return types too: a
   class **extending** one of them must declare a compatible return type on the methods it overrides (see
   "Smaller changes for extensions").
+
+### Native types everywhere
+
+Every parameter, return value and property of Ting now has a native type (PHPStan enforces it). The handles of the
+native extensions (`mysqli`, `mysqli_stmt`, `mysqli_result`, `PgSql\Connection`, `PgSql\Result`) are typed `object`,
+with the precise class in the PHPDoc: the `PgSql` classes are final and only built by a server, and the `mysqli`
+properties cannot be read on a stand-in, so tests keep passing fakes.
+
+What breaks depends on the kind of type added:
+
+* **Return types on interfaces**: an implementation without a return type is a fatal error at load time.
+  - `Serializer\SerializeInterface::serialize(): mixed`, `Serializer\UnserializeInterface::unserialize(): mixed`
+  - `Repository\CollectionFactoryInterface::get(): Collection`
+  - `Repository\CollectionInterface::first(): mixed`
+* **Parameter types on interfaces**: implementations with an untyped parameter keep working (an untyped parameter is
+  wider); only callers passing another type are affected.
+  - `Driver\ResultInterface::setResult(mixed $result)`
+  - `Query\QueryFactoryInterface::get()`, `getPrepared()`, `getCached()`, `getCachedPrepared()`: `string $sql`
+  - `Repository\CollectionInterface::setFromCache(bool $value)`
+* **Return types on non-final classes**: a subclass overriding the method without a compatible return type is a fatal
+  error at load time.
+  - `Repository\Repository::get()` and `getOneBy()`: `?object`
+  - `Repository\Metadata::getRepository(): ?string` and `createEntity(): object`
+
+  The entity template of `Repository` and `Metadata` is bound to `object` (`@template T of object`).
+* **Property types on non-final classes**: a subclass redeclaring the property must use the same type (see
+  "Smaller Changes for Extensions" for the list).
+* **Parameter types on classes**: an override without type keeps working. Values that were cast before are no longer:
+  in non-strict mode PHP still coerces scalars (`setTtl('10')`), but `null` or an object is a `TypeError`.
+  - `Query\Cached\Query::setTtl(int $ttl)` and `setForce(bool $value)`
+  - `Repository\Collection::setFromCache(bool $value)`
+  - `Repository\Hydrator::identityMap(bool $enable)`, `unserializeAliasWith(string $alias, ...)`,
+    `mapAliasTo(string $from, string $to, string $column)`, `mapObjectTo(string $from, string $to, string $column)`,
+    `objectDatabaseIs(string $object, string $database)`, `objectSchemaIs(string $object, string $schema)`, and the
+    protected `hydrateColumns(string $connectionName, string $database, array $columns)`
+  - `Repository\Repository::getAll(bool $forcePrimary = false)`
+  - `Repository\Metadata::getAll(..., bool $forcePrimary = false)`
+  - `Repository\MetadataCacheGenerator::__construct(string $cacheDir, ?string $filename = null)`
+  - `MetadataRepository::findMetadataForEntity(object|string $entity, ...)` and
+    `addMetadata(string $repositoryClass, ...)`
+  - `Query\QueryFactory` (as its interface) and `Query\Query::__construct(string $sql, ...)`
+  - `Query\Generator::getDriver(bool $forcePrimary)` (protected)
+  - `Driver\Mysqli\Driver::__construct(?object $connection = null, ?mysqli_driver $driver = null)`: the second
+    argument must be a `mysqli_driver`
+  - `Driver\Mysqli\Driver::setCollectionWithResult(object $resultData, ...)` (protected),
+    `Driver\Mysqli\Statement::__construct(object $driverStatement, ...)` and `setCollectionWithResult(object $resultData,
+    ...)`, `Driver\Pgsql\Driver::setCollectionWithResult(string $sql, ...)` (protected),
+    `Driver\Pgsql\Statement::__construct(string $statementName, ...)`, `setConnection(object $connection)` and
+    `setCollectionWithResult(object $resultResource, ...)` (all internal)
 
 Example of updated method signatures:
 ```php
@@ -569,7 +620,23 @@ These changes only matter if you extend Ting classes or rely on their internals.
   | `Query\Cached\Query`           | `$version`                           | removed (see `setVersion()` above)        |
   | `Driver\Pgsql\Statement`       | `$queryType`                         | removed                                   |
 
-  Most remaining properties are now typed: a subclass redeclaring one must use the same type.
+  Every remaining property is now typed: a subclass redeclaring one must use the same type. The properties typed last
+  (untyped until 4.0.0-rc.1 included):
+
+  | Class                          | Properties                                                                          |
+  |--------------------------------|-------------------------------------------------------------------------------------|
+  | `ConnectionPool`               | `array $connectionConfig`, `$databaseOptions`, `$connectionReplicas`, `$connections` |
+  | `MetadataRepository`           | `array $metadataList`, `array $entityToRepository`                                   |
+  | `Driver\Mysqli\Driver`         | `mysqli_driver $driver`, `?object $connection`                                       |
+  | `Driver\Mysqli\Result`         | `?object $result`, `?array $iteratorCurrent`                                         |
+  | `Driver\Mysqli\Statement`      | `object $driverStatement`                                                            |
+  | `Driver\Pgsql\Driver`          | `?object $connection`, `?object $result`, `string $dsn` (`''` until `connect()`)      |
+  | `Driver\Pgsql\Result`          | `?object $result`, `?array $iteratorCurrent`                                         |
+  | `Driver\Pgsql\Statement`       | `?object $connection`, `string $statementName`                                       |
+  | `Query\Query`                  | `string $sql`                                                                        |
+  | `Repository\Metadata`          | `?string $repository`                                                                |
+  | `Repository\MetadataCacheGenerator` | `string $cacheDir`                                                              |
+  | `Repository\Repository`        | `Metadata $metadata`, `Connection $connection` (no longer `null` before the constructor sets them) |
 * `Connection::__construct()` (internal, called by the repositories) types `$name` and `$database` as `string` and
   throws a `RuntimeException` when one of them is empty (3.x only rejected `null`).
 * The protected `Metadata::getColumnsFromCriteria()` and `Metadata::getPrimariesKeyValuesAsArray()` now validate the
