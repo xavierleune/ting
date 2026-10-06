@@ -220,7 +220,8 @@ class MetadataRepository
     }
 
     /**
-     * @param class-string<Repository<T>> $repositoryClass
+     * @param class-string<Repository<T>>|class-string<MetadataInitializer> $repositoryClass a repository, or the class
+     *        initializing metadata used for hydration only, without repository
      * @param Metadata<T> $metadata
      *
      * @template T of object
@@ -254,7 +255,8 @@ class MetadataRepository
      * @param string $namespace
      * @param string $globPattern
      * @param array  $options Options you can use to custom initialization of Metadata
-     * @return array
+     * @return array<class-string<Repository<object>>|class-string<MetadataInitializer>, class-string<MetadataInitializer>>
+     *         the class initializing the metadata of each repository
      */
     public function batchLoadMetadata(string $namespace, string $globPattern, array $options = []): array
     {
@@ -283,12 +285,14 @@ class MetadataRepository
                 continue;
             }
 
-            /** @var Metadata $metadata */
+            /** @var Metadata<object> $metadata */
             $metadata = $metadataClass::initMetadata(
                 $this->serializerFactory,
                 $this->getOptionForRepository($metadataClass, $options)
             );
 
+            // Without Metadata::setRepository(), the metadata are registered under the class initializing them:
+            // a repository, or a class giving metadata for hydration only
             $repository = $metadata->getRepository() ?? $metadataClass;
 
             $this->addMetadata($repository, $metadata);
@@ -304,9 +308,10 @@ class MetadataRepository
      * This method is far more efficient than batchLoadMetadata : with opcache enabled, files
      * are not read from disk anymore.
      *
-     * @param array $paths
+     * @param array<class-string<Repository<object>>|class-string<MetadataInitializer>, class-string<MetadataInitializer>> $paths
+     *        as returned by batchLoadMetadata(): the class initializing the metadata of each repository
      * @param array $options Options you can use to custom initialization of Metadata
-     * @return array
+     * @return list<class-string<Repository<object>>|class-string<MetadataInitializer>>
      */
     public function batchLoadMetadataFromCache(array $paths, array $options = []): array
     {

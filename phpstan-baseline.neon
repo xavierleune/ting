@@ -1,18 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Parameter \#1 \$repositoryClass of method CCMBenchmark\\Ting\\MetadataRepository\:\:addMetadata\(\) expects class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<object\>\>, \(int\|string\) given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Ting/MetadataRepository.php
-
-		-
-			message: '#^Parameter \#1 \$repositoryClass of method CCMBenchmark\\Ting\\MetadataRepository\:\:addMetadata\(\) expects class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<object\>\>, class\-string\<CCMBenchmark\\Ting\\Repository\\MetadataInitializer\>\|class\-string\<CCMBenchmark\\Ting\\Repository\\Repository\<mixed\>\> given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Ting/MetadataRepository.php
-
-		-
 			message: '#^Generator expects value type stdClass\|T, array\<int, stdClass\|T\> given\.$#'
 			identifier: generator.valueType
 			count: 1
