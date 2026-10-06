@@ -884,10 +884,19 @@ Hydrators and Transactions
   projection, e.g. `UserRepository` / `User` and `UserLightRepository` / `UserLight`): in 3.x, the last repository
   built (or the last metadata registered) hydrated the table for every read, so `UserRepository::get(1)` could return
   a `UserLight`. The reads of a repository (`get()`, `getBy()`, `getOneBy()`, `getAll()`, its `getQuery()`... and
-  `getCollection()`) now hydrate the tables it maps with its own metadata. A hydrator used outside a repository
-  throws a `HydratorException` naming the candidates instead of taking the last one: call
-  `Hydrator::preferRepository(UserRepository::class)`, see
-  [Several repositories on the same table](docs/hydrators.md#several-repositories-on-the-same-table).
+  `getCollection()`) now hydrate the tables it maps with its own metadata, among the metadata of the database and the
+  schema of the table (a join on the same table of another database or schema keeps the metadata of that one). A
+  hydrator used outside a repository throws a `HydratorException` naming the candidates instead of taking the last
+  one: call `Hydrator::preferRepository(UserRepository::class)`, see
+  [Several repositories on the same table](docs/hydrators.md#several-repositories-on-the-same-table). Metadata
+  hydrating the same entity with the same fields (a repository and its subclass) are not ambiguous.
+* **Two repositories mapping the same entity class** (another table, or a lighter projection): in 3.x, writes used the
+  metadata of the last repository built, whatever the repository saving (`UserRepository::save()` could leave out
+  the columns `UserNameRepository` does not map, `MainArtRepository::save()` could write into the archive table).
+  `Repository::save()` and `delete()` now write with the metadata of the repository called when they map the class of
+  the entity. `UnitOfWork::pushSave()` / `pushDelete()` called directly still use the metadata registered for the
+  class of the entity. A subclass of `UnitOfWork` overriding `pushSave()` or `pushDelete()` must accept their new
+  optional parameter `?Metadata $metadata = null`, see [Writing](docs/repositories.md#writing).
 * The array given to a `RelationMany` method is still indexed by an internal reference, but its format changed
   (`'book-1-'` in 3.x): use `array_values()` rather than relying on these keys.
 * `startTransaction()`, `commit()` and `rollback()` throw a `CCMBenchmark\Ting\Exceptions\TransactionException` when

@@ -340,16 +340,19 @@ $hydrator->objectSchemaIs('b', 'my_schema');
 It takes precedence over the schema written in the query.
 
 These settings matter when several metadata share a table on the connection (one per database or schema). The
-hydrator takes the only metadata of the same database and schema as the table read; without one, it takes:
+hydrator takes the metadata of the same database and schema as the table read (named by `objectDatabaseIs()` and
+`objectSchemaIs()`, or read from the result). Schemas are compared case-insensitively when none has the same case, as
+PostgreSQL results report lowercased schemas (`mySchema` is read `myschema`). Without such metadata, it takes:
 
 1. the only metadata registered for the table, whatever its database or schema (a cross-database MySQL read: the
    result doesn't tell the database of each table, the hydrator only knows the one of the connection);
 2. else the only metadata of the same database, or when none shares the database, the only one of the same schema.
 
+Several metadata left that hydrate the same entity with the same fields (a repository and its subclass, such as
+`AdminUserRepository extends UserRepository`) are not ambiguous: the hydrator takes any of them, always the same.
 Otherwise it can't choose and throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming the table and the
 candidate repositories: set `objectDatabaseIs()` or `objectSchemaIs()` on the alias, or `preferRepository()` (see
-below). Schemas are compared case-insensitively when no exact match, as PostgreSQL results report lowercased schemas
-(`mySchema` is read `myschema`).
+below).
 
 ### Several repositories on the same table
 
@@ -358,6 +361,11 @@ Two repositories can map the same table of the same database and schema: a full 
 repository hydrate the tables it maps with its own metadata: `get()`, `getBy()`, `getOneBy()`, `getAll()`, the
 queries of `getQuery()`, `getPreparedQuery()`, `getCachedQuery()`, `getCachedPreparedQuery()` and the collections of
 `getCollection()`, whatever the hydrator, as long as it extends `Hydrator`.
+
+This preference only chooses among the metadata of the database and the schema of the table, or among every metadata
+of the table when none of them matches: a query of `FrUserRepository` (database `db_fr`) joining `db_en.T_USER`,
+with `objectDatabaseIs('en', 'db_en')`, hydrates the alias `en` with the metadata of `db_en` (`EnUser`), and so does a
+PostgreSQL query of `UserRepository` (schema `public`) joining `audit.users`.
 
 A hydrator used elsewhere (a query built from the `QueryFactory`, a `CollectionFactory` of your own) has no
 repository to prefer: the database and the schema of the table do not tell the candidates apart, so it throws the
@@ -369,9 +377,17 @@ $hydrator = new HydratorSingleObject();
 $hydrator->preferRepository(UserLightRepository::class);
 ```
 
-It applies to every alias of a table the repository maps, whatever the database and the schema read; among several
-preferred repositories mapping the table, the rules above choose. A table no preferred repository maps is looked up
-as usual.
+It applies to every alias of a table the repository maps, with the same limit: among the metadata of the database and
+the schema read when there are some. Among several preferred repositories, the rules above choose. A table no
+preferred repository maps is looked up as usual. A repository given to `preferRepository()` wins over the one
+running the query: `$userRepository->getCollection($hydrator)` with the hydrator above hydrates `UserLight`.
+
+A hydrator kept and given to the collections of several repositories (a service property) prefers the repository
+of the collection it was given to last, not every one of them, and looks the metadata of each alias up again for each
+result.
+
+Writes follow the same idea: `save()` and `delete()` of a repository write with its own metadata, see
+[Writing](repositories.md#writing).
 
 ### Identity map
 
