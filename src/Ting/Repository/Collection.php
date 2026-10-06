@@ -76,9 +76,9 @@ class Collection implements CollectionInterface, JsonSerializable
      * @param bool $value
      * @return void
      */
-    public function setFromCache($value): void
+    public function setFromCache(bool $value): void
     {
-        $this->fromCache = (bool) $value;
+        $this->fromCache = $value;
     }
 
     /**

@@ -48,7 +48,7 @@ use CCMBenchmark\Ting\UnitOfWork;
 use Symfony\Contracts\Cache\CacheInterface;
 
 /**
- * @template T entity type (not necessarily a NotifyPropertyInterface: read-only entities can use public properties)
+ * @template T of object entity type (not necessarily a NotifyPropertyInterface: read-only entities can use public properties)
  */
 abstract class Repository implements ResetInterface
 {
@@ -60,12 +60,9 @@ abstract class Repository implements ResetInterface
     /**
      * @var Metadata
      */
-    protected $metadata = null;
+    protected Metadata $metadata;
 
-    /**
-     * @var Connection
-     */
-    protected $connection;
+    protected Connection $connection;
 
     /**
      * @param ConnectionPool $connectionPool
@@ -185,7 +182,7 @@ abstract class Repository implements ResetInterface
      * @return T|null
      * @throws ValueException on an unknown property (or a column name) or an invalid value
      */
-    public function get(mixed $primariesKeyValue, bool $forcePrimary = false)
+    public function get(mixed $primariesKeyValue, bool $forcePrimary = false): ?object
     {
         $query = $this->metadata->getByPrimaries(
             $this->connection,
@@ -208,7 +205,7 @@ abstract class Repository implements ResetInterface
      * @param bool $forcePrimary
      * @return CollectionInterface<T>
      */
-    public function getAll($forcePrimary = false): CollectionInterface
+    public function getAll(bool $forcePrimary = false): CollectionInterface
     {
         $query = $this->metadata->getAll(
             $this->connection,
@@ -249,7 +246,7 @@ abstract class Repository implements ResetInterface
      * @return T|null
      * @throws ValueException on an unknown property (or a column name) or an invalid value
      */
-    public function getOneBy(array $criteria, bool $forcePrimary = false)
+    public function getOneBy(array $criteria, bool $forcePrimary = false): ?object
     {
         $query = $this->metadata->getOneByCriteria(
             $this->connection,

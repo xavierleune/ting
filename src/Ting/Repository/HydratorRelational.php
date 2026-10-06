@@ -269,7 +269,7 @@ final class HydratorRelational extends Hydrator
      *
      * @return string
      */
-    private function getIdentifiers($table, $entity): string
+    private function getIdentifiers(string $table, object $entity): string
     {
         $values = [];
         foreach ($this->metadataList[$table]->getPrimaries() as $primary) {

@@ -76,9 +76,9 @@ class Hydrator implements HydratorInterface
      * @param bool $enable
      * @return void
      */
-    public function identityMap($enable): void
+    public function identityMap(bool $enable): void
     {
-        $this->identityMap = (bool) $enable;
+        $this->identityMap = $enable;
     }
 
     /**
@@ -138,7 +138,7 @@ class Hydrator implements HydratorInterface
      * @param array $options
      * @return $this
      */
-    public function unserializeAliasWith($alias, UnserializeInterface $unserialize, array $options = []): static
+    public function unserializeAliasWith(string $alias, UnserializeInterface $unserialize, array $options = []): static
     {
         if (isset($this->unserializeAliases[$alias]) === false) {
             $this->unserializeAliases[$alias] = [];
@@ -156,7 +156,7 @@ class Hydrator implements HydratorInterface
      *
      * @return $this
      */
-    public function mapAliasTo($from, $to, $column): static
+    public function mapAliasTo(string $from, string $to, string $column): static
     {
         if (isset($this->mapAliases[$to]) === false) {
             $this->mapAliases[$to] = [];
@@ -173,7 +173,7 @@ class Hydrator implements HydratorInterface
      *
      * @return $this
      */
-    public function mapObjectTo($from, $to, $column): static
+    public function mapObjectTo(string $from, string $to, string $column): static
     {
         if (isset($this->mapObjects[$to]) === false) {
             $this->mapObjects[$to] = [];
@@ -189,9 +189,9 @@ class Hydrator implements HydratorInterface
      *
      * @return $this
      */
-    public function objectDatabaseIs($object, $database): static
+    public function objectDatabaseIs(string $object, string $database): static
     {
-        $this->objectDatabase[$object] = (string) $database;
+        $this->objectDatabase[$object] = $database;
 
         return $this;
     }
@@ -202,9 +202,9 @@ class Hydrator implements HydratorInterface
      *
      * @return $this
      */
-    public function objectSchemaIs($object, $schema): static
+    public function objectSchemaIs(string $object, string $schema): static
     {
-        $this->objectSchema[$object] = (string) $schema;
+        $this->objectSchema[$object] = $schema;
 
         return $this;
     }
@@ -259,7 +259,7 @@ class Hydrator implements HydratorInterface
      *
      * @return array<int|string, T|stdClass|null>
      */
-    protected function hydrateColumns(string $connectionName, $database, array $columns): array
+    protected function hydrateColumns(string $connectionName, string $database, array $columns): array
     {
         $result        = [];
         $tmpEntities   = []; // Temporary entity when all properties are null for the moment (LEFT/RIGHT JOIN)
@@ -447,7 +447,7 @@ class Hydrator implements HydratorInterface
     /**
      * @param mixed $entity
      */
-    private function manageIfYouCan($entity): void
+    private function manageIfYouCan(mixed $entity): void
     {
         if ($entity instanceof NotifyPropertyInterface && $this->alreadyManaged->offsetExists($entity) === false) {
             $this->unitOfWork->manage($entity);

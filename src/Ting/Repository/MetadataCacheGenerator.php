@@ -46,7 +46,7 @@ class MetadataCacheGenerator
      *
      * @internal
      */
-    public function __construct(protected $cacheDir, $filename = null)
+    public function __construct(protected string $cacheDir, ?string $filename = null)
     {
         if ($filename !== null) {
             $this->filename = $filename;

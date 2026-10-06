@@ -151,7 +151,7 @@ class HydratorAggregator extends Hydrator
      *
      * @return mixed
      */
-    private function finalizeAggregate(?array $result, $aggregate): mixed
+    private function finalizeAggregate(?array $result, mixed $aggregate): mixed
     {
         if ($this->callableFinalizeAggregate === null) {
             $result['aggregate'] = $aggregate;

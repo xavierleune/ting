@@ -43,13 +43,13 @@ class MetadataRepository
      *
      * @var array<string, Metadata>
      */
-    protected $metadataList = [];
+    protected array $metadataList = [];
 
     /**
      * This array matches an entity name and the corresponding repository name
      * @var array
      */
-    protected $entityToRepository = [];
+    protected array $entityToRepository = [];
 
     /**
      * @var array Fast array access to RepositoryClassName
@@ -201,7 +201,7 @@ class MetadataRepository
      *
      * @internal
      */
-    public function findMetadataForEntity($entity, Closure $callbackFound, ?Closure $callbackNotFound = null): void
+    public function findMetadataForEntity(object|string $entity, Closure $callbackFound, ?Closure $callbackNotFound = null): void
     {
         if (is_object($entity)) {
             $entity = $entity::class;
@@ -228,7 +228,7 @@ class MetadataRepository
      *
      * @internal
      */
-    public function addMetadata($repositoryClass, Metadata $metadata): void
+    public function addMetadata(string $repositoryClass, Metadata $metadata): void
     {
         $metadata->propertyAccessor->setCacheItemPool($this->cacheItemPool);
         $this->metadataList[$repositoryClass] = $metadata;
