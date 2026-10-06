@@ -27,8 +27,12 @@
 namespace CCMBenchmark\Ting\Tests\Unit;
 
 use CCMBenchmark\Ting\ConnectionPool;
+use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
+use CCMBenchmark\Ting\Driver\SphinxQL\Driver as SphinxQLDriver;
 use CCMBenchmark\Ting\Exceptions\ConfigException;
+use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use tests\fixtures\Fake\Mysqli;
 use tests\fixtures\FakeLogger\FakeDriverLogger;
 
 class ConnectionPoolTest extends TestCase
@@ -309,6 +313,32 @@ class ConnectionPoolTest extends TestCase
         $this->assertSame('connection1', $driver->getName());
         $driver2 = $connectionPool->primary('connection2', 'databaseOnConnection1');
         $this->assertSame('connection2', $driver2->getName());
+    }
+
+    public function testConnectionsOfDifferentDriversWithTheSameParametersShouldNotShareTheirDriver()
+    {
+        $connection = $this->createStub(Mysqli::class);
+        $connection->method('real_connect')->willReturn(true);
+        $connection->error = '';
+        NativeFunctionMock::override('mysqli_init', fn () => clone $connection);
+
+        $server = ['host' => '127.0.0.1', 'user' => 'test', 'password' => 'test', 'port' => 9306];
+        $connectionPool = new ConnectionPool();
+        $connectionPool->setConfig([
+            'mysql' => ['namespace' => '\CCMBenchmark\Ting\Driver\Mysqli', 'primary' => $server],
+            'sphinx' => ['namespace' => 'CCMBenchmark\Ting\Driver\SphinxQL', 'primary' => $server],
+        ]);
+
+        $this->assertInstanceOf(SphinxQLDriver::class, $connectionPool->primary('sphinx', 'db'));
+        $mysql = $connectionPool->primary('mysql', 'db');
+        $this->assertNotInstanceOf(SphinxQLDriver::class, $mysql);
+        $this->assertInstanceOf(MysqliDriver::class, $mysql);
+        // The leading backslash of the namespace does not make another connection
+        $connectionPool->setConfig([
+            'mysql' => ['namespace' => '\CCMBenchmark\Ting\Driver\Mysqli', 'primary' => $server],
+            'mysql2' => ['namespace' => 'CCMBenchmark\Ting\Driver\Mysqli', 'primary' => $server],
+        ]);
+        $this->assertSame($mysql, $connectionPool->primary('mysql2', 'db'));
     }
 
     public function testConnectionShouldRetrunDriverWhenTimezoneSetted()

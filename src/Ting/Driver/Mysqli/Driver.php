@@ -125,13 +125,18 @@ class Driver implements DriverInterface
         $this->driver = $driver ?? new mysqli_driver();
     }
 
+    /**
+     * One driver serves every database of a server: the database is not part of the key. Serialized, the values
+     * cannot be mixed up (a separator could appear in any of them), and null stays distinct from ''
+     */
     public static function getConnectionKey(array $connectionConfig, string $database): string
     {
-        return
-            $connectionConfig['host'] . '|' .
-            $connectionConfig['port'] . '|' .
-            $connectionConfig['user'] . '|' .
-            $connectionConfig['password'];
+        return serialize([
+            $connectionConfig['host'],
+            (string) $connectionConfig['port'],
+            $connectionConfig['user'],
+            $connectionConfig['password'],
+        ]);
     }
 
     /**
