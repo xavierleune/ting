@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\HydratorAggregator;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
@@ -488,5 +489,48 @@ class HydratorAggregatorTest extends TestCase
             ['Palaiseau', 'Montbéliard', 'Luxiol'],
             array_map(fn ($city) => $city->getName(), $groups[1]['aggregate'])
         );
+    }
+
+    public function testHydrateShouldThrowWhenTheIdentifierIsNull()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('connectionName');
+        $metadata->setDatabase('database');
+        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setTable('T_BOUH_BOO');
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'boo_name', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata('tests\fixtures\model\BouhRepository', $metadata);
+
+        $mockMysqliResult = new MysqliResult([['Leune'], ['Robez-Masson']]);
+        $mockMysqliResult->setFieldsCallback(function () {
+            $field = new \stdClass();
+            $field->name     = 'name';
+            $field->orgname  = 'boo_name';
+            $field->table    = 'bouh';
+            $field->orgtable = 'T_BOUH_BOO';
+            $field->type     = MYSQLI_TYPE_VAR_STRING;
+            return [$field];
+        });
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new HydratorAggregator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->callableDataIs(fn ($result) => $result['bouh']->getName());
+        $hydrator->callableIdIs(fn ($result) => null);
+        $hydrator->setResult($result);
+
+        $types = $this->collectErrorTypes(function () use ($hydrator): void {
+            iterator_to_array($hydrator->getIterator());
+        }, $thrown);
+
+        $this->assertInstanceOf(HydratorException::class, $thrown);
+        $this->assertStringContainsString('callableIdIs()', $thrown->getMessage());
+        $this->assertSame([], $types);
     }
 }

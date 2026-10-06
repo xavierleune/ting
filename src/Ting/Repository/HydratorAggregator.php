@@ -25,6 +25,7 @@
 
 namespace CCMBenchmark\Ting\Repository;
 
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use Generator;
 use stdClass;
 
@@ -51,7 +52,7 @@ class HydratorAggregator extends Hydrator
     protected $callableFinalizeAggregate;
 
     /**
-     * @param callable $callableForId
+     * @param callable $callableForId returns the group identifier of a row, never null
      * @return $this
      */
     public function callableIdIs(callable $callableForId): static
@@ -82,6 +83,8 @@ class HydratorAggregator extends Hydrator
 
     /**
      * @return Generator<int, T|stdClass>
+     *
+     * @throws HydratorException when the callable given to callableIdIs() returns null
      */
     public function getIterator(): Generator
     {
@@ -103,6 +106,13 @@ class HydratorAggregator extends Hydrator
             );
 
             $currentId = $callableForId($result);
+            if ($currentId === null) {
+                // null also marks "no group yet": every row would be lost
+                throw new HydratorException(
+                    'The callable given to HydratorAggregator::callableIdIs() returned null for row ' . $key
+                    . ': a group identifier is required for each row'
+                );
+            }
 
             if (isset($knownIdentifiers[$currentId])) {
                 continue;
