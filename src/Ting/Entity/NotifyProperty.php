@@ -28,6 +28,7 @@ namespace CCMBenchmark\Ting\Entity;
 
 trait NotifyProperty
 {
+    /** @var list<PropertyListenerInterface> */
     protected array $listeners = [];
 
     /**
@@ -56,6 +57,8 @@ trait NotifyProperty
     /**
      * Every property but the listeners. Names are mangled, so that the private properties of the parent classes are
      * kept, and told apart from a property of the same name in a child class.
+     *
+     * @return array<string, mixed>
      */
     public function __debugInfo(): ?array
     {
@@ -68,6 +71,8 @@ trait NotifyProperty
     /**
      * Every property but the listeners, with mangled names, as serialize() writes them without __serialize():
      * unserialize() restores them all, private properties of the parent classes included.
+     *
+     * @return array<string, mixed>
      */
     public function __serialize(): array
     {
