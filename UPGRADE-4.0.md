@@ -558,8 +558,8 @@ implements or overrides, not only with the methods listed here.
   the interface declares: a parameter that became optional in 4.0 and is still required by the implementation is a
   fatal error too. Two interface parameters became optional:
   * `Logger\DriverLoggerInterface::startStatementExecute(string $statement, array $params = [])`: a 3.x logger
-    declaring `startStatementExecute($statement, $params)` (ting_bundle's `DriverLogger` included) must write
-    `$params = []`;
+    declaring `startStatementExecute($statement, $params)` (as the `DriverLogger` of ting_bundle 3.x did; ting_bundle
+    4.0 is already compatible) must write `$params = []`;
   * `Driver\DriverInterface::escapeField(mixed $field = null)`: a 3.x driver declaring `escapeField($field)` must write
     `$field = null`.
 * **Extending a non-final class** (a repository, a hydrator, a driver, a serializer...): an override must declare a
