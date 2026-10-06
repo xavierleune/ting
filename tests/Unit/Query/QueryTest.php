@@ -91,6 +91,20 @@ class QueryTest extends TestCase
         $query->query();
     }
 
+    public function testQueryShouldReturnTheCollectionForAStatementWithoutResultSet()
+    {
+        // Mysqli\Driver::execute() returns true instead of the collection for a statement without result set
+        $driver = $this->createStub(Driver::class);
+        $driver->method('execute')->willReturn(true);
+        $connection = $this->createStub(Connection::class);
+        $connection->method('replica')->willReturn($driver);
+        $collection = new Collection();
+
+        $query = new Query('UPDATE Bouh SET id = 3', $connection);
+
+        $this->assertSame($collection, $query->query($collection));
+    }
+
     public function testGetInsertIdShouldCallPrimaryDriver()
     {
         $mockDriver = $this->createMock(Driver::class);
