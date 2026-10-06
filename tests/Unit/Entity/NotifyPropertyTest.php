@@ -28,6 +28,8 @@ namespace CCMBenchmark\Ting\Tests\Unit\Entity;
 
 use CCMBenchmark\Ting\Entity\PropertyListenerInterface;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use tests\fixtures\model\SleepingTrackedChild;
+use tests\fixtures\model\TrackedBase;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\TrackedChild;
 use tests\fixtures\model\TrackedChildOfUntracked;
@@ -133,6 +135,51 @@ class NotifyPropertyTest extends TestCase
 
         $this->assertSame(20, $copy->getId());
         $this->assertSame('Xavier', $copy->getName());
+    }
+
+    public function testSerializeShouldHonourSleep(): void
+    {
+        $entity = new SleepingTrackedChild();
+        $entity->setOwner('owner');
+        $entity->setTitle('title');
+        $entity->setCache('cache');
+        $entity->addPropertyListener($this->createStub(PropertyListenerInterface::class));
+
+        // Bare names resolved as serialize() does, mangled names kept, an uninitialized typed property skipped
+        $this->assertSame(
+            ["\0" . SleepingTrackedChild::class . "\0title" => 'title', "\0" . TrackedBase::class . "\0owner" => 'owner'],
+            $entity->__serialize()
+        );
+
+        SleepingTrackedChild::$wakeups = 0;
+        $copy = unserialize(serialize($entity));
+
+        $this->assertSame('title', $copy->getTitle());
+        $this->assertSame('owner', $copy->getOwner());
+        $this->assertNull($copy->getCache());
+        $this->assertSame(1, SleepingTrackedChild::$wakeups);
+    }
+
+    public function testSerializeShouldNeverKeepTheListenersListedBySleep(): void
+    {
+        $entity = new SleepingTrackedChild();
+        $entity->sleep = ['title', 'listeners'];
+        $entity->addPropertyListener($this->createStub(PropertyListenerInterface::class));
+
+        $this->assertSame(["\0" . SleepingTrackedChild::class . "\0title" => null], $entity->__serialize());
+    }
+
+    public function testSerializeShouldWarnAboutAPropertyListedBySleepWhichDoesNotExist(): void
+    {
+        $entity = new SleepingTrackedChild();
+        $entity->sleep = ['title', 'missing'];
+
+        $types = $this->collectErrorTypes(function () use ($entity, &$serialized): void {
+            $serialized = $entity->__serialize();
+        });
+
+        $this->assertSame([E_USER_WARNING], $types);
+        $this->assertSame(["\0" . SleepingTrackedChild::class . "\0title" => null], $serialized);
     }
 
     public function testDebugInfoShouldExposeThePrivatePropertiesOfTheParentAndChildClasses()

@@ -30,9 +30,10 @@ use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 
 /**
  * Uses the NotifyProperty trait, so that PHPStan analyses it: the library itself never uses it, only the entities of
- * the applications do. Not part of the library.
+ * the applications do. Not part of the library. Not final, as those entities: they may define methods the trait looks
+ * for, such as __sleep().
  */
-final class NotifyPropertyEntity implements NotifyPropertyInterface
+class NotifyPropertyEntity implements NotifyPropertyInterface
 {
     use NotifyProperty;
 }

@@ -71,6 +71,10 @@ trait NotifyProperty
     /**
      * Every property but the listeners, with mangled names, as serialize() writes them without __serialize():
      * unserialize() restores them all, private properties of the parent classes included.
+     * An entity defining __sleep() keeps only the properties it lists, as serialize() does: a bare name stands for a
+     * property visible from the class of the entity, a private property of a parent class needs its mangled name
+     * ("\0Parent\0name"), an uninitialized typed property is left out, and a property which does not exist is reported
+     * by a warning. The listeners are never kept.
      *
      * @return array<string, mixed>
      */
@@ -79,6 +83,45 @@ trait NotifyProperty
         $properties = get_mangled_object_vars($this);
         unset($properties["\0*\0listeners"]);
 
-        return $properties;
+        // A magic method, not declared by any interface: method_exists() is the way PHP itself looks for it
+        if (method_exists($this, '__sleep') === false) {
+            return $properties;
+        }
+
+        $kept = [];
+        foreach ($this->__sleep() as $name) {
+            foreach ([$name, "\0" . static::class . "\0" . $name, "\0*\0" . $name] as $key) {
+                if (array_key_exists($key, $properties)) {
+                    $kept[$key] = $properties[$key];
+                    continue 2;
+                }
+            }
+
+            if ($name !== 'listeners' && $this->sleepPropertyExists($name) === false) {
+                trigger_error(
+                    'serialize(): "' . $name . '" returned as member variable from __sleep() but does not exist',
+                    E_USER_WARNING
+                );
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
+     * @param string $name a name returned by __sleep(): bare, or mangled ("\0Class\0name", "\0*\0name")
+     */
+    private function sleepPropertyExists(string $name): bool
+    {
+        if (str_starts_with($name, "\0")) {
+            $parts = explode("\0", $name);
+            if (count($parts) !== 3) {
+                return false;
+            }
+
+            return property_exists($parts[1] === '*' ? $this : $parts[1], $parts[2]);
+        }
+
+        return property_exists($this, $name);
     }
 }
