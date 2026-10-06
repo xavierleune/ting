@@ -28,6 +28,12 @@ namespace CCMBenchmark\Ting\Repository;
 
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use Generator;
+use Throwable;
+
+use function get_debug_type;
+use function is_int;
+use function is_string;
+use function serialize;
 
 /**
  * @template T type of the items, as built by the callable given to callableFinalizeAggregate(): the first row of
@@ -53,7 +59,9 @@ class HydratorAggregator extends Hydrator
     protected $callableFinalizeAggregate;
 
     /**
-     * @param callable $callableForId returns the group identifier of a row, never null
+     * @param callable $callableForId returns the group identifier of a row, never null: an int or a string, or any
+     *                                serializable value (a Uuid object, an array for a composite identifier, a
+     *                                float…), compared by value
      * @return $this
      */
     public function callableIdIs(callable $callableForId): static
@@ -85,7 +93,8 @@ class HydratorAggregator extends Hydrator
     /**
      * @return Generator<int, mixed> what the callable given to callableFinalizeAggregate() returns
      *
-     * @throws HydratorException when the callable given to callableIdIs() returns null
+     * @throws HydratorException when the callable given to callableIdIs() returns null or a value which cannot be
+     *                            serialized
      */
     public function getIterator(): Generator
     {
@@ -105,6 +114,8 @@ class HydratorAggregator extends Hydrator
                     . ': a group identifier is required for each row'
                 );
             }
+
+            $currentId = $this->groupKey($currentId, $key);
 
             if (isset($knownIdentifiers[$currentId])) {
                 continue;
@@ -129,6 +140,32 @@ class HydratorAggregator extends Hydrator
         // The pending group, built from its first row like the others (even when the last row was skipped)
         if ($group !== null) {
             yield $group['key'] => $this->finalizeAggregate($group['result'], $aggregate);
+        }
+    }
+
+    /**
+     * Returns the key of the group of $identifier: the identifier itself for an int or a string, its serialized form
+     * otherwise, so that an object (a Uuid) or an array (a composite identifier) is compared by value and a float is
+     * not truncated. A serialized form is prefixed with a NUL byte to set it apart from the string identifiers.
+     *
+     * @throws HydratorException when $identifier cannot be serialized
+     */
+    private function groupKey(mixed $identifier, int|string $rowKey): int|string
+    {
+        if (is_int($identifier) || is_string($identifier)) {
+            return $identifier;
+        }
+
+        try {
+            return "\0" . serialize($identifier);
+        } catch (Throwable $exception) {
+            throw new HydratorException(
+                'The callable given to HydratorAggregator::callableIdIs() returned a ' . get_debug_type($identifier)
+                . ' for row ' . $rowKey . ', which cannot be serialized: return an int, a string or a serializable'
+                . ' value',
+                0,
+                $exception
+            );
         }
     }
 
