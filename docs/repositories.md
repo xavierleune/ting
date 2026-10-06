@@ -144,7 +144,7 @@ Each column is declared with `Metadata::addField(array $params)`, which returns 
 | `sequenceName`       |          | PostgreSQL (any driver implementing `Driver\SequenceAwareDriverInterface`): sequence used to read the generated value (`currval()`). Without it, or with another driver, the driver's inserted id is used (`lastval()` in PostgreSQL). |
 | `serializer`         |          | Class of the serializer converting the value, see [Serializers](#serializers).                                 |
 | `serializer_options` |          | Options of the serializer: `['serialize' => [...], 'unserialize' => [...]]`.                                   |
-| `mutable`            |          | `true` if the PHP value can be modified in place (a `\DateTime`, a JSON object...): the field is then written by every save of a managed entity. Defaults to `true` for `Serializer\DateTime`, `Serializer\Json` decoding objects (without `assoc` nor the `JSON_OBJECT_AS_ARRAY` flag) and serializers of your own, `false` otherwise. See [mutable values](entities.md#mutable-values). |
+| `mutable`            |          | `true` if the PHP value can be modified in place (a `\DateTime`, a JSON object...): the unit of work then keeps its database value, and writes the field when that value changes. Defaults to `true` for `Serializer\DateTime`, `Serializer\Json` decoding objects (without `assoc` nor the `JSON_OBJECT_AS_ARRAY` flag) and serializers of your own, `false` otherwise. See [mutable values](entities.md#mutable-values). |
 | `getter`             |          | Method used to read the property, instead of the `getX()` / `isX()` / `hasX()` convention.                      |
 | `setter`             |          | Method used to write the property, instead of the `setX()` convention.                                         |
 
@@ -289,7 +289,8 @@ Two choices in this example depend on the PHP value of the serializer:
   `Serializer\ScalarValueInterface`.
 * A PHP array cannot be modified in place, behind the entity's back: changing it means calling the setter, which
   notifies the change. `'mutable' => false` says so; without it, the field of a serializer of your own is
-  [mutable](entities.md#mutable-values) by default, and written by every save of a managed entity. Keep the default
+  [mutable](entities.md#mutable-values) by default: its database value is kept by the unit of work, and compared on
+  each save of a managed entity. Keep the default
   (`true`) for a serializer whose PHP value is an object that can be modified in place.
 
 ## Reading

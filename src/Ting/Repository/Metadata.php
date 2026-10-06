@@ -115,7 +115,7 @@ class Metadata
         MysqliBoolean::class,
         PgsqlBoolean::class,
     ];
-    /** @var array<string, bool> property name => true when the field is mutable (written on every save) */
+    /** @var array<string, bool> property name => true when the field is mutable (compared on every save) */
     private array $mutableProperties = [];
     /**
      * Fields of type "datetime" without serializer, as given to addField(): their serializer depends on the type of
@@ -304,8 +304,8 @@ class Metadata
      *      columnName : string : name of the mysql column
      *      primary : boolean : is this field a primary - optional
      *      autoincrement : boolean : is this field an autoincrement - optional
-     *      mutable : boolean : its PHP value can be modified in place, so it is written on every save of a managed
-     *                          entity - optional, see isMutable() for the default
+     *      mutable : boolean : its PHP value can be modified in place, so its database value is compared on every
+     *                          save of a managed entity - optional, see isMutable() for the default
      * @throws ConfigException
      * @return $this
      */
@@ -436,7 +436,8 @@ class Metadata
 
     /**
      * A mutable field holds a PHP value that can be modified in place (a \DateTime, a \stdClass...): such a change is
-     * not notified, so the unit of work writes the field on every save of a managed entity.
+     * not notified, so the unit of work keeps the database value of the field, and writes the field on a save of a
+     * managed entity when that value changed.
      * Set with the "mutable" option of the field; by default, a field is mutable when its serializer is
      * Serializer\DateTime, Serializer\Json decoding objects (neither the "assoc" unserialize option nor, without it, the
      * JSON_OBJECT_AS_ARRAY flag in the "options" unserialize option), or a serializer of your own.
@@ -668,22 +669,44 @@ class Metadata
     }
 
     /**
-     * Database values of the mutable primary keys of the entity: once modified in place, the row is still stored with
-     * these values
+     * getEntityPropertyByFieldName() of a field that isEntityPropertyReadable(), reading the property once
      *
+     * @return array{0: bool, 1: mixed} [false, null] when the property is not readable, [true, its database value]
+     *                                  otherwise
+     *
+     * @internal
+     */
+    public function getEntityPropertyIfReadable(object $entity, string $fieldName): array
+    {
+        $field = $this->fieldsByProperty[$fieldName];
+        [$readable, $value] = $this->propertyAccessor->getValueIfReadable(
+            $entity,
+            $fieldName,
+            $field['getter'] ?? null
+        );
+
+        return $readable ? [true, $this->serializeFieldValue($field, $value)] : [false, null];
+    }
+
+    /**
+     * Database values of the readable mutable fields of the entity: the values Ting would write
+     *
+     * @param array<string, true> $propertiesNotRead property name => true, for the properties to leave out
      * @return array<string, mixed> property name => database value
      *
      * @internal
      */
-    public function getEntityMutablePrimaryValues(object $entity): array
+    public function getEntityMutableValues(object $entity, array $propertiesNotRead = []): array
     {
         $values = [];
-        foreach ($this->primaries as $primary) {
-            $fieldName = $primary['fieldName'];
-            if (isset($this->mutableProperties[$fieldName])
-                && $this->propertyAccessor->isReadable($entity, $fieldName, $primary['getter'] ?? null)
-            ) {
-                $values[$fieldName] = $this->getEntityProperty($entity, $primary);
+        foreach ($this->mutableProperties as $fieldName => $mutable) {
+            if (isset($propertiesNotRead[$fieldName])) {
+                continue;
+            }
+
+            [$readable, $value] = $this->getEntityPropertyIfReadable($entity, $fieldName);
+            if ($readable) {
+                $values[$fieldName] = $value;
             }
         }
 
