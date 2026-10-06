@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -25,18 +26,19 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
-use DateTimeInterface;
 use Exception;
 
 class DateTimeImmutable implements SerializerInterface
 {
     /**
      * @var array
-     * format => Always used for serialization. Used for unserialization only if unSerializeUseFormat is true
-     * unSerializeUseFormat => if false, any valid datetime format is automatically used
-     * @see http://php.net/manual/en/datetime.formats.compound.php
+     * format => always used for serialization. Used first for unserialization when unSerializeUseFormat is true
+     * unSerializeUseFormat => true: the value is read with format then, when it does not match, with the PHP
+     *     date parser (new \DateTimeImmutable()), so that values written with another format are still read;
+     *     false: the value is read with the PHP date parser only. An empty string is never a date
+     * @see https://www.php.net/manual/en/datetime.formats.php
      */
-    private static array $defaultOptions = ['format' => DateTimeInterface::ATOM, 'unSerializeUseFormat' => true];
+    private static array $defaultOptions = ['format' => 'Y-m-d H:i:s', 'unSerializeUseFormat' => true];
 
     /**
      * @param mixed $toSerialize
@@ -74,20 +76,23 @@ class DateTimeImmutable implements SerializerInterface
 
         $options = array_merge(self::$defaultOptions, $options);
         if ($options['unSerializeUseFormat'] === true) {
-            $value = \DateTimeImmutable::createFromFormat($options['format'], $serialized);
-            if ($value === false) {
-                throw new RuntimeException('Cannot convert ' . $serialized . ' to DateTimeImmutable.');
-            }
-        } else {
-            try {
-                $value = new \DateTimeImmutable($serialized);
-            } catch (Exception $e) {
-                throw new RuntimeException(
-                    'Cannot convert ' . $serialized . ' to DateTimeImmutable. Error is : ' . $e->getMessage()
-                );
+            $value = \DateTimeImmutable::createFromFormat($options['format'], (string) $serialized);
+            if ($value !== false) {
+                return $value;
             }
         }
 
-        return $value;
+        // new \DateTimeImmutable('') would be the current time
+        if (trim((string) $serialized) === '') {
+            throw new RuntimeException('Cannot convert an empty string to DateTimeImmutable.');
+        }
+
+        try {
+            return new \DateTimeImmutable((string) $serialized);
+        } catch (Exception $e) {
+            throw new RuntimeException(
+                'Cannot convert ' . $serialized . ' to DateTimeImmutable. Error is : ' . $e->getMessage()
+            );
+        }
     }
 }

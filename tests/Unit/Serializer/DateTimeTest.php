@@ -64,6 +64,30 @@ class DateTimeTest extends TestCase
         $this->assertIsObject($serializer->unserialize('2008-08-04', ['unSerializeUseFormat' => false]));
     }
 
+    public function testUnserializeShouldFallBackToPhpParsingWhenTheFormatDoesNotMatch()
+    {
+        $serializer = new DateTime();
+
+        $this->assertSame(
+            '2024-01-31T10:00:00+01:00',
+            $serializer->unserialize('2024-01-31T10:00:00+01:00')->format(\DateTimeInterface::ATOM)
+        );
+        // PostgreSQL timestamptz
+        $this->assertSame(
+            '2024-01-31T10:00:00+01:00',
+            $serializer->unserialize('2024-01-31 10:00:00+01')->format(\DateTimeInterface::ATOM)
+        );
+    }
+
+    public function testUnserializeAnEmptyStringShouldRaiseException()
+    {
+        $serializer = new DateTime();
+
+        $this->assertThrows(RuntimeException::class, function () use ($serializer): void {
+            $serializer->unserialize('');
+        });
+    }
+
     public function testSerializeInvalidValueShouldRaiseException()
     {
         $serializer = new DateTime();

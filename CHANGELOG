@@ -67,6 +67,7 @@
     * Fix Hydrator::objectDatabaseIs() leaking to the other aliases (since 3.x): every table first read after the alias in a row was looked up in its database
     * Fix composite primary keys in the identity map of Hydrator and HydratorRelational (since 3.x): the values were joined with "-", so ("Jean-Pierre", "Paul") and ("Jean", "Pierre-Paul") shared an entity, and Hydrator looked entities up by one primary value only (a row could get another entity, a repeated composite key never got the same one); the key now holds every primary value, without collision
     * Fix Collection::first() and count() disturbing a foreach over the same collection (the result has a single cursor): first() inside the loop restarted it forever, count() on a cached collection ended it; first() returns the first item of the last iteration, CacheResult::getNumRows() counts without moving the cursor
+    * BC Serializer\DateTimeImmutable (datetime_immutable fields) writes Y-m-d H:i:s by default instead of ATOM, and could not read a MySQL DATETIME / PostgreSQL timestamp without a format option; Serializer\DateTime and Serializer\DateTimeImmutable now read a value that does not match their format with the PHP date parser (ATOM values written by the old default, PostgreSQL timestamptz...), and reject an empty string instead of reading it as the current time with unSerializeUseFormat false
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

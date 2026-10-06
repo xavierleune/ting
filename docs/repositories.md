@@ -77,13 +77,9 @@ class CityRepository extends Repository implements MetadataInitializer
                 'serializer_options' => ['unserialize' => ['assoc' => true]],
             ])
             ->addField([
-                'fieldName'          => 'createdAt',
-                'columnName'         => 'cit_created_at',
-                'type'               => 'datetime_immutable',
-                'serializer_options' => [
-                    'serialize'   => ['format' => 'Y-m-d H:i:s'],
-                    'unserialize' => ['format' => 'Y-m-d H:i:s'],
-                ],
+                'fieldName'  => 'createdAt',
+                'columnName' => 'cit_created_at',
+                'type'       => 'datetime_immutable',
             ]);
 
         return $metadata;
@@ -173,7 +169,7 @@ Values read from the database are cast according to `type`:
 | `double`             | `float`                                                                                      |
 | `bool`               | `bool`, see the note below                                                                   |
 | `string`             | `string`, no conversion                                                                      |
-| `datetime`           | `\DateTimeImmutable` if the property is typed `\DateTimeImmutable` or `\DateTimeInterface` (serializer `DateTimeImmutable`, format `Y-m-d H:i:s`), `\DateTime` otherwise (serializer `DateTime`) |
+| `datetime`           | `\DateTimeImmutable` if the property is typed `\DateTimeImmutable` or `\DateTimeInterface` (serializer `DateTimeImmutable`), `\DateTime` otherwise (serializer `DateTime`) |
 | `datetime_immutable` | `\DateTimeImmutable`, serializer `DateTimeImmutable` by default                              |
 | `datetimezone`       | `\DateTimeZone`, serializer `DateTimeZone` by default                                        |
 | `json`               | decoded JSON, serializer `Json` by default                                                   |
@@ -194,8 +190,8 @@ Types listed above with a default serializer use it unless the field declares an
 
 | Serializer (`CCMBenchmark\Ting\...`) | PHP value                     | Options                                                                                                      |
 |--------------------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------|
-| `Serializer\DateTime`                | `\DateTime`                   | `format` (default `Y-m-d H:i:s`); `unSerializeUseFormat` (default `true`, `false` accepts any format `new \DateTime()` understands) |
-| `Serializer\DateTimeImmutable`       | `\DateTimeImmutable`          | Same, but `format` defaults to `\DateTimeInterface::ATOM`: set `Y-m-d H:i:s` for a MySQL `DATETIME`         |
+| `Serializer\DateTime`                | `\DateTime`                   | `format` (default `Y-m-d H:i:s`, a MySQL `DATETIME` / PostgreSQL `timestamp`); `unSerializeUseFormat` (default `true`: read with `format`, then with `new \DateTime()` when it does not match; `false`: with `new \DateTime()` only) |
+| `Serializer\DateTimeImmutable`       | `\DateTimeImmutable`          | Same                                                                                                         |
 | `Serializer\DateTimeZone`            | `\DateTimeZone`               | None                                                                                                         |
 | `Serializer\Json`                    | `array`, `\stdClass`...       | `options` and `depth` of `json_encode()` / `json_decode()`, `assoc` on unserialize (default `false`: objects) |
 | `Serializer\BackedEnum`              | backed enum                   | `enum` on unserialize (required): the enum class                                                             |
