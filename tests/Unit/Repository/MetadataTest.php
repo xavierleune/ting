@@ -1959,4 +1959,48 @@ class MetadataTest extends TestCase
             sprintf('Failed asserting that %s() was called once with the expected arguments.', $method)
         );
     }
+
+    public function testGetConnectionWithoutConnectionNameShouldRaiseConfigException()
+    {
+        $metadata = new Metadata((new TingServices())->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->setDatabase('myDatabase');
+
+        $this->assertThrows(
+            ConfigException::class,
+            fn () => $metadata->getConnection($this->createStub(ConnectionPool::class)),
+            'Metadata of tests\\fixtures\\model\\Bouh used before setConnectionName() and setDatabase(): '
+            . 'no connection to query'
+        );
+    }
+
+    public function testGetConnectionWithoutDatabaseShouldRaiseConfigException()
+    {
+        $metadata = new Metadata((new TingServices())->serializerFactory());
+        $metadata->setConnectionName('myConnection');
+
+        $this->assertThrows(
+            ConfigException::class,
+            fn () => $metadata->getConnection($this->createStub(ConnectionPool::class)),
+            'Metadata of an unknown entity used before setConnectionName() and setDatabase(): no connection to query'
+        );
+    }
+
+    public function testGenerateAQueryWithoutTableShouldRaiseConfigException()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(Bouh::class);
+        $metadata->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+
+        $this->assertThrows(
+            ConfigException::class,
+            fn () => $metadata->getAll(
+                new Connection($this->createStub(ConnectionPool::class), 'main', 'db'),
+                $services->queryFactory(),
+                $services->collectionFactory()
+            ),
+            'Metadata of tests\\fixtures\\model\\Bouh used before setTable(): no table to query'
+        );
+    }
 }

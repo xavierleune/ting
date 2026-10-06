@@ -86,4 +86,11 @@ class ConnectionTest extends TestCase
         $connection = new Connection($mockConnectionPool, 'main', 'db');
         $connection->commit();
     }
+
+    public function testGetNameShouldReturnTheNameOfTheConnection()
+    {
+        $connection = new Connection($this->createStub(ConnectionPool::class), 'main', 'db');
+
+        $this->assertSame('main', $connection->getName());
+    }
 }

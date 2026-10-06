@@ -163,7 +163,7 @@ abstract class Repository implements ResetInterface
      */
     public function getQueryBuilder(string $type): QueryInterface
     {
-        $driver = $this->connectionPool->getDriverClass($this->metadata->getConnectionName());
+        $driver = $this->connectionPool->getDriverClass($this->connection->getName());
         $driver = ltrim($driver, '\\');
 
         switch ($driver) {

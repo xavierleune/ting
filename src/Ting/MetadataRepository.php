@@ -200,7 +200,7 @@ class MetadataRepository
     /**
      * @param T|class-string<T> $entity an instance or the class string of the entity
      * @param Closure(Metadata<T>):void $callbackFound Called with applicable Metadata if applicable
-     * @param Closure():void $callbackNotFound called if unknown entity - no parameter
+     * @param (Closure():void)|null $callbackNotFound called if unknown entity - no parameter
      *
      * @template T of object
      *
@@ -213,7 +213,9 @@ class MetadataRepository
         }
 
         if (isset($this->entityToRepository[$entity]) === false) {
-            $callbackNotFound();
+            if ($callbackNotFound instanceof Closure) {
+                $callbackNotFound();
+            }
             return;
         }
 
