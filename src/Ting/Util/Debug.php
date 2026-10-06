@@ -28,6 +28,8 @@ namespace CCMBenchmark\Ting\Util;
 
 use DateTimeInterface;
 use Generator;
+use NoRewindIterator;
+use OuterIterator;
 use ReflectionClass;
 use ReflectionObject;
 use ReflectionProperty;
@@ -46,7 +48,10 @@ class Debug
      * Export Ting object
      *
      * Objects are exported as arrays with a __CLASS__ key, down to $maxDepth levels: deeper, an object is replaced
-     * by its class and an array by its size. Generators are not iterated, that would consume them.
+     * by its class and an array by its size. Generators are not iterated, that would consume them, nor the iterators
+     * over a generator (IteratorIterator...) and the NoRewindIterator. An iterable with a key which is neither an int
+     * nor a string (a WeakMap, an SplObjectStorage-like iterator) is exported as a list of ['key' => ..., 'value' =>
+     * ...] pairs.
      */
     public function export(mixed $var, int $maxDepth = 10): mixed
     {
@@ -62,13 +67,19 @@ class Debug
         }
 
         if ($this->isIterated($var)) {
+            $pairs = [];
+            $scalarKeys = true;
             foreach ($var as $key => $subVar) {
-                if ($this->isIterated($subVar)) {
-                    $return[$key] = $this->export($subVar, $maxDepth - 1);
-                } elseif (\is_object($subVar)) {
-                    $return[$key] = $this->clean($subVar, $maxDepth - 1);
+                $scalarKeys = $scalarKeys && (\is_int($key) || \is_string($key));
+                $pairs[] = ['key' => $key, 'value' => $this->exportItem($subVar, $maxDepth - 1)];
+            }
+
+            foreach ($pairs as $pair) {
+                if ($scalarKeys) {
+                    $return[$pair['key']] = $pair['value'];
                 } else {
-                    $return[$key] = $subVar;
+                    // An object (WeakMap) or another type can't be an array key
+                    $return[] = ['key' => $this->exportItem($pair['key'], $maxDepth - 1), 'value' => $pair['value']];
                 }
             }
         } elseif (is_object($var)) {
@@ -80,12 +91,38 @@ class Debug
         return $return;
     }
 
+    private function exportItem(mixed $item, int $maxDepth): mixed
+    {
+        if ($this->isIterated($item)) {
+            return $this->export($item, $maxDepth);
+        }
+        if (\is_object($item)) {
+            return $this->clean($item, $maxDepth);
+        }
+
+        return $item;
+    }
+
     /**
+     * Iterables are iterated, unless that would consume them: a generator, an iterator over one, a NoRewindIterator
+     *
      * @phpstan-assert-if-true iterable<mixed> $var
      */
     private function isIterated(mixed $var): bool
     {
-        return is_iterable($var) && $var instanceof Generator === false;
+        if (is_iterable($var) === false) {
+            return false;
+        }
+
+        $iterator = $var;
+        while ($iterator instanceof OuterIterator) {
+            if ($iterator instanceof NoRewindIterator) {
+                return false;
+            }
+            $iterator = $iterator->getInnerIterator();
+        }
+
+        return $iterator instanceof Generator === false;
     }
 
     /**

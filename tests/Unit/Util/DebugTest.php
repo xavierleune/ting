@@ -171,4 +171,49 @@ class DebugTest extends TestCase
 
         $this->assertSame([1, 2], iterator_to_array($generator));
     }
+
+    public function testExportShouldNotConsumeIteratorsOverAGenerator()
+    {
+        $debug = new Debug();
+        foreach ([\IteratorIterator::class, \NoRewindIterator::class] as $class) {
+            $generator = (static function () {
+                yield 1;
+                yield 2;
+            })();
+            $iterator = new $class($generator);
+
+            $this->assertSame(['__CLASS__' => $class], $debug->export($iterator), $class);
+            $this->assertSame(['__CLASS__' => $class], $debug->export(['i' => $iterator])['i'], $class);
+
+            $this->assertSame([1, 2], iterator_to_array($generator), $class);
+        }
+    }
+
+    public function testExportShouldExportTheObjectKeysOfAnIterableAsPairs()
+    {
+        $city = new City();
+        $city->setName('Paris');
+        $map = new \WeakMap();
+        $map[$city] = 'capital';
+
+        $export = (new Debug())->export($map);
+
+        $this->assertCount(1, $export);
+        $this->assertSame(['key', 'value'], array_keys($export[0]));
+        $this->assertSame(City::class, $export[0]['key']['__CLASS__']);
+        $this->assertSame('Paris', $export[0]['key']['name']);
+        $this->assertSame('capital', $export[0]['value']);
+    }
+
+    public function testExportShouldExportAnObjectHoldingAWeakMap()
+    {
+        $holder = new \stdClass();
+        $holder->map = new \WeakMap();
+        $holder->map[$holder] = 1;
+
+        $export = (new Debug())->export($holder);
+
+        $this->assertSame(1, $export['map'][0]['value']);
+        $this->assertSame(\stdClass::class, $export['map'][0]['key']['__CLASS__']);
+    }
 }
