@@ -40,14 +40,14 @@ trait NotifyProperty
 
     /**
      * Notify all observers with old and new values.
-     * The same object given as old and new value is notified: it may have been modified in place.
+     * The same value given as old and new value, objects included, is not a change: nothing is notified.
      * @param $propertyName
      * @param $oldValue
      * @param $newValue
      */
     public function propertyChanged($propertyName, $oldValue, $newValue): void
     {
-        if ($oldValue === $newValue && is_object($newValue) === false) {
+        if ($oldValue === $newValue) {
             return;
         }
 

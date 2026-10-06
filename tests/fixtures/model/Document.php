@@ -29,14 +29,16 @@ use CCMBenchmark\Ting\Entity\NotifyProperty;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 
 /**
- * An entity whose mapped fields are all immutable
+ * An entity with mutable fields: a JSON object (\stdClass) and a \DateTime
  */
-class Event implements NotifyPropertyInterface
+class Document implements NotifyPropertyInterface
 {
     use NotifyProperty;
 
     protected ?int $id = null;
-    protected ?\DateTimeImmutable $startAt = null;
+    protected ?string $title = null;
+    protected ?\stdClass $payload = null;
+    protected ?\DateTime $publishedAt = null;
 
     public function getId(): ?int
     {
@@ -49,14 +51,36 @@ class Event implements NotifyPropertyInterface
         $this->id = $id;
     }
 
-    public function getStartAt(): ?\DateTimeImmutable
+    public function getTitle(): ?string
     {
-        return $this->startAt;
+        return $this->title;
     }
 
-    public function setStartAt(?\DateTimeImmutable $startAt): void
+    public function setTitle(?string $title): void
     {
-        $this->propertyChanged('startAt', $this->startAt, $startAt);
-        $this->startAt = $startAt;
+        $this->propertyChanged('title', $this->title, $title);
+        $this->title = $title;
+    }
+
+    public function getPayload(): ?\stdClass
+    {
+        return $this->payload;
+    }
+
+    public function setPayload(?\stdClass $payload): void
+    {
+        $this->propertyChanged('payload', $this->payload, $payload);
+        $this->payload = $payload;
+    }
+
+    public function getPublishedAt(): ?\DateTime
+    {
+        return $this->publishedAt;
+    }
+
+    public function setPublishedAt(?\DateTime $publishedAt): void
+    {
+        $this->propertyChanged('publishedAt', $this->publishedAt, $publishedAt);
+        $this->publishedAt = $publishedAt;
     }
 }

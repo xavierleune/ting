@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
 use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exception;
+use CCMBenchmark\Ting\Exceptions\ConfigException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
@@ -39,16 +40,21 @@ use CCMBenchmark\Ting\Query\QueryInterface;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Serializer\BackedEnum;
+use CCMBenchmark\Ting\Serializer\DateTime;
 use CCMBenchmark\Ting\Serializer\Json;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use CCMBenchmark\Ting\Util\PropertyAccessor;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresPhp;
 use tests\fixtures\ColorsEnum;
 use tests\fixtures\FakeDriver\Driver as FakeDriver;
 use tests\fixtures\PriorityEnum;
+use tests\fixtures\Serializer\CountingJson;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhCustomGetter;
+use tests\fixtures\model\DatedEntity;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
 
@@ -196,6 +202,168 @@ class MetadataTest extends TestCase
             'Field configuration must have "type" property'
         );
         $this->assertSame(0, $exception->getCode());
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: class-string, 2: bool}>
+     */
+    public static function provideDateTimeProperties(): array
+    {
+        return [
+            'typed \DateTimeImmutable'       => ['immutable', \DateTimeImmutable::class, false],
+            'typed \DateTimeInterface'       => ['interface', \DateTimeImmutable::class, false],
+            'inherited \DateTimeImmutable'   => ['inherited', \DateTimeImmutable::class, false],
+            'typed \DateTime'                => ['mutable', \DateTime::class, true],
+            'not typed'                      => ['untyped', \DateTime::class, true],
+            'union type'                     => ['union', \DateTime::class, true],
+            'no property, through a setter'  => ['virtual', \DateTime::class, true],
+        ];
+    }
+
+    /**
+     * @param class-string $class
+     */
+    #[DataProvider('provideDateTimeProperties')]
+    public function testDatetimeShouldHydrateTheClassOfItsProperty(string $property, string $class, bool $mutable)
+    {
+        $services = new TingServices();
+        foreach ([true, false] as $entityFirst) {
+            $metadata = new Metadata($services->serializerFactory());
+            if ($entityFirst) {
+                $metadata->setEntity(DatedEntity::class);
+            }
+            $metadata->addField(['fieldName' => $property, 'columnName' => 'col_at', 'type' => 'datetime']);
+            if ($entityFirst === false) {
+                $metadata->setEntity(DatedEntity::class);
+            }
+            $entity = new DatedEntity();
+
+            // Same format whatever the class: a MySQL DATETIME
+            $metadata->setEntityProperty($entity, 'col_at', '2026-01-02 03:04:05');
+
+            $value = (new PropertyAccessor())->getValue($entity, $property);
+            $this->assertSame($class, $value::class);
+            $this->assertSame('2026-01-02 03:04:05', $value->format('Y-m-d H:i:s'));
+            $this->assertSame('2026-01-02 03:04:05', $metadata->getEntityPropertyByFieldName($entity, $property));
+            $this->assertSame($mutable, $metadata->isMutable($property));
+        }
+    }
+
+    public function testDatetimeWithoutEntityShouldHydrateADateTime()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->addField(['fieldName' => 'at', 'columnName' => 'col_at', 'type' => 'datetime']);
+        $entity = new class () {
+            public mixed $at = null;
+        };
+
+        $metadata->setEntityProperty($entity, 'col_at', '2026-01-02 03:04:05');
+
+        $this->assertInstanceOf(\DateTime::class, $entity->at);
+        $this->assertTrue($metadata->isMutable('at'));
+    }
+
+    public function testAnExplicitSerializerShouldWinOverThePropertyType()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(DatedEntity::class);
+        $metadata->addField([
+            'fieldName'  => 'interface',
+            'columnName' => 'col_at',
+            'type'       => 'datetime',
+            'serializer' => DateTime::class,
+        ]);
+        $entity = new DatedEntity();
+
+        $metadata->setEntityProperty($entity, 'col_at', '2026-01-02 03:04:05');
+
+        $this->assertInstanceOf(\DateTime::class, $entity->interface);
+        $this->assertTrue($metadata->isMutable('interface'));
+    }
+
+    public function testDatetimeShouldKeepTheFormatGivenInItsOptions()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(DatedEntity::class);
+        $metadata->addField([
+            'fieldName'          => 'immutable',
+            'columnName'         => 'col_at',
+            'type'               => 'datetime',
+            'serializer_options' => ['serialize' => ['format' => 'U'], 'unserialize' => ['format' => 'U']],
+        ]);
+        $entity = new DatedEntity();
+
+        $metadata->setEntityProperty($entity, 'col_at', '86400');
+
+        $this->assertSame('1970-01-02', $entity->immutable->format('Y-m-d'));
+        $this->assertSame('86400', $metadata->getEntityPropertyByFieldName($entity, 'immutable'));
+    }
+
+    /**
+     * @return array<string, array{0: array<string, mixed>, 1: bool}>
+     */
+    public static function provideFieldsAndTheirDefaultMutability(): array
+    {
+        return [
+            'string'                       => [['type' => 'string'], false],
+            'int'                          => [['type' => 'int'], false],
+            'double'                       => [['type' => 'double'], false],
+            'bool'                         => [['type' => 'bool'], false],
+            'bool with a driver serializer' => [['type' => 'bool', 'serializer' => PgsqlBoolean::class], false],
+            'datetime, no entity'          => [['type' => 'datetime'], true],
+            'datetime_immutable'           => [['type' => 'datetime_immutable'], false],
+            'datetimezone'                 => [['type' => 'datetimezone'], false],
+            'uuid'                         => [['type' => 'uuid'], false],
+            'ip'                           => [['type' => 'ip'], false],
+            'geometry'                     => [['type' => 'geometry'], false],
+            'enum'                         => [['type' => 'string', 'serializer' => BackedEnum::class], false],
+            'json decoded to arrays'       => [
+                ['type' => 'json', 'serializer_options' => ['unserialize' => ['assoc' => true]]],
+                false,
+            ],
+            'json decoded to objects'      => [['type' => 'json'], true],
+            'json with explicit serializer' => [['type' => 'string', 'serializer' => Json::class], true],
+            'datetime with Serializer\DateTime' => [['type' => 'datetime', 'serializer' => DateTime::class], true],
+            'serializer of its own'        => [['type' => 'json', 'serializer' => CountingJson::class], true],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $field
+     */
+    #[DataProvider('provideFieldsAndTheirDefaultMutability')]
+    public function testIsMutableShouldDependOnTheFieldByDefault(array $field, bool $mutable)
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->addField(['fieldName' => 'value', 'columnName' => 'col_value'] + $field);
+
+        $this->assertSame($mutable, $metadata->isMutable('value'));
+    }
+
+    public function testTheMutableOptionShouldOverrideTheDefault()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->addField(['fieldName' => 'payload', 'columnName' => 'col_payload', 'type' => 'json', 'mutable' => false]);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'col_name', 'type' => 'string', 'mutable' => true]);
+
+        $this->assertFalse($metadata->isMutable('payload'));
+        $this->assertTrue($metadata->isMutable('name'));
+        $this->assertFalse($metadata->isMutable('unknown'));
+    }
+
+    public function testANonBooleanMutableOptionShouldThrowAnException()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+
+        $this->assertThrows(ConfigException::class, function () use ($metadata): void {
+            $metadata->addField(['fieldName' => 'name', 'columnName' => 'col_name', 'type' => 'string', 'mutable' => 'yes']);
+        }, 'The "mutable" option of field "name" must be a boolean');
     }
 
     public function testIfTableKnownShouldCallCallbackAndReturnTrue()
@@ -1532,14 +1700,14 @@ class MetadataTest extends TestCase
         $connection = new Connection($connectionPool, 'main', 'db');
         $services = new TingServices();
         $entity = new class () {
-            public \DateTime $day;
+            public \DateTimeImmutable $day;
             public string $label = 'a';
         };
-        $entity->day = new \DateTime('2026-01-02 03:04:05');
+        $entity->day = new \DateTimeImmutable('2026-01-02 03:04:05');
         $metadata = new Metadata($services->serializerFactory());
         $metadata->setEntity($entity::class);
         $metadata->setTable('event');
-        // No explicit serializer: "datetime" brings Serializer\DateTime by default
+        // No explicit serializer: "datetime" of a property typed \DateTimeImmutable brings Serializer\DateTimeImmutable
         $metadata->addField(['primary' => true, 'fieldName' => 'day', 'columnName' => 'ev_day', 'type' => 'datetime']);
         $metadata->addField(['fieldName' => 'label', 'columnName' => 'ev_label', 'type' => 'string']);
 

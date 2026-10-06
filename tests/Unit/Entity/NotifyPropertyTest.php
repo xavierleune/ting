@@ -45,6 +45,17 @@ class NotifyPropertyTest extends TestCase
         $notifyProperty->propertyChanged('Bouh', 'value', 'value');
     }
 
+    public function testPropertyChangedShouldNotNotifyTheSameObjectAsOldAndNewValue()
+    {
+        $mockListener = $this->createMock(PropertyListenerInterface::class);
+        $mockListener->expects($this->never())->method('propertyChanged');
+
+        $notifyProperty = new Bouh();
+        $notifyProperty->addPropertyListener($mockListener);
+        $value = new \DateTime();
+        $notifyProperty->propertyChanged('Bouh', $value, $value);
+    }
+
     public function testPropertyChangedShouldCallPropertyChangedOnListeners()
     {
         $mockListener = $this->createMock(PropertyListenerInterface::class);

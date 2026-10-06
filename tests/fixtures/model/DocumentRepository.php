@@ -5,7 +5,7 @@
  * Ting - PHP Datamapper
  * ==========================================
  *
- * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -27,57 +27,34 @@ namespace tests\fixtures\model;
 
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Repository\MetadataInitializer;
+use CCMBenchmark\Ting\Serializer;
 use CCMBenchmark\Ting\Serializer\SerializerFactoryInterface;
-use CCMBenchmark\Ting\Repository\Repository;
 
-class BouhRepository extends Repository implements MetadataInitializer
+class DocumentRepository implements MetadataInitializer
 {
-    public static $options;
-
-    /**
-     * @param SerializerFactoryInterface $serializerFactory
-     * @param array                      $options
-     *
-     * @return Metadata
-     */
     public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
     {
-        self::$options = $options;
-
         $metadata = new Metadata($serializerFactory);
-
-        $metadata->setEntity('tests\fixtures\model\Bouh');
+        $metadata->setEntity(Document::class);
         $metadata->setConnectionName('main');
         $metadata->setDatabase('bouh_world');
-        $metadata->setTable('T_BOUH_BOO');
-
+        $metadata->setTable('T_DOCUMENT_DOC');
         $metadata->addField([
             'primary'       => true,
             'autoincrement' => true,
             'fieldName'     => 'id',
-            'columnName'    => 'boo_id',
-            'type'          => 'int'
+            'columnName'    => 'doc_id',
+            'type'          => 'int',
         ]);
-
+        $metadata->addField(['fieldName' => 'title', 'columnName' => 'doc_title', 'type' => 'string']);
+        // Decoded to a \stdClass (no "assoc" option): mutable
+        $metadata->addField(['fieldName' => 'payload', 'columnName' => 'doc_payload', 'type' => 'json']);
+        // A \DateTime: mutable
         $metadata->addField([
-            'fieldName'  => 'firstname',
-            'columnName' => 'boo_firstname',
-            'type'      => 'string'
-        ]);
-
-        $metadata->addField([
-            'fieldName'  => 'name',
-            'columnName' => 'boo_name',
-            'type'       => 'string'
-        ]);
-
-        $metadata->addField([
-            'fieldName'  => 'roles',
-            'columnName' => 'boo_roles',
-            'type'       => 'string',
-            'serializer' => \CCMBenchmark\Ting\Serializer\Json::class,
-            // Bouh::$roles is an array: decoded as such, the field is immutable
-            'serializer_options' => ['unserialize' => ['assoc' => true]],
+            'fieldName'  => 'publishedAt',
+            'columnName' => 'doc_published_at',
+            'type'       => 'datetime',
+            'serializer' => Serializer\DateTime::class,
         ]);
 
         return $metadata;
