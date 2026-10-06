@@ -173,7 +173,7 @@ Values read from the database are cast according to `type`:
 | `double`             | `float`                                                                                      |
 | `bool`               | `bool`, see the note below                                                                   |
 | `string`             | `string`, no conversion                                                                      |
-| `datetime`           | `\DateTimeImmutable` if the property is typed `\DateTimeImmutable` or `\DateTimeInterface` (serializer `DateTimeImmutable`), `\DateTime` otherwise (serializer `DateTime`) |
+| `datetime`           | `\DateTimeImmutable` if the property is typed `\DateTimeImmutable` (serializer `DateTimeImmutable`), `\DateTime` otherwise, `\DateTimeInterface` included (serializer `DateTime`) |
 | `datetime_immutable` | `\DateTimeImmutable`, serializer `DateTimeImmutable` by default                              |
 | `datetimezone`       | `\DateTimeZone`, serializer `DateTimeZone` by default                                        |
 | `json`               | decoded JSON, serializer `Json` by default                                                   |

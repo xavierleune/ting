@@ -216,7 +216,7 @@ class MetadataTest extends TestCase
     {
         return [
             'typed \DateTimeImmutable'       => ['immutable', \DateTimeImmutable::class, false],
-            'typed \DateTimeInterface'       => ['interface', \DateTimeImmutable::class, false],
+            'typed \DateTimeInterface'       => ['interface', \DateTime::class, true],
             'inherited \DateTimeImmutable'   => ['inherited', \DateTimeImmutable::class, false],
             'typed \DateTime'                => ['mutable', \DateTime::class, true],
             'not typed'                      => ['untyped', \DateTime::class, true],
@@ -252,6 +252,23 @@ class MetadataTest extends TestCase
             $this->assertSame('2026-01-02 03:04:05', $metadata->getEntityPropertyByFieldName($entity, $property));
             $this->assertSame($mutable, $metadata->isMutable($property));
         }
+    }
+
+    public function testDatetimeTypedDateTimeInterfaceShouldWriteADateTimeAsIn3x()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setEntity(DatedEntity::class);
+        $metadata->addField(['fieldName' => 'interface', 'columnName' => 'col_at', 'type' => 'datetime']);
+        $entity = new DatedEntity();
+        $entity->interface = new \DateTime('2026-01-02 03:04:05');
+
+        // INSERT / UPDATE values, then a getBy() criterion
+        $this->assertSame('2026-01-02 03:04:05', $metadata->getEntityPropertyByFieldName($entity, 'interface'));
+        $this->assertSame(
+            '2026-01-02 03:04:05',
+            $metadata->getDatabaseValueOfProperty('interface', new \DateTime('2026-01-02 03:04:05'))
+        );
     }
 
     public function testDatetimeWithoutEntityShouldHydrateADateTime()

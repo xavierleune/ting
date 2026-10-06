@@ -152,11 +152,11 @@ and written by every save. A value modified in place without setter, on a field 
 
 The default comes from the serializer of the field: `Serializer\DateTime`, `Serializer\Json` without the `assoc`
 unserialize option and any serializer of your own are mutable; the serializers shipped with Ting for immutable values
-are not. A field of type `datetime` without serializer follows its property: typed `\DateTimeImmutable` or
-`\DateTimeInterface` (nullable or not), it hydrates a `\DateTimeImmutable` (immutable); typed `\DateTime`, not typed or
-only reachable through a setter, it hydrates a `\DateTime` (mutable). Override the default with the `mutable` option of
-the field, see [field options](repositories.md#field-options) — `'mutable' => false` on a field you only ever replace
-through its setter (a readonly value object serialized by your own serializer, for instance).
+are not. A field of type `datetime` without serializer follows its property: typed `\DateTimeImmutable` (nullable or
+not), it hydrates a `\DateTimeImmutable` (immutable); typed `\DateTimeInterface`, `\DateTime` or a union, not typed or
+only reachable through a setter, it hydrates a `\DateTime` (mutable), as in 3.x. Override the default with the
+`mutable` option of the field, see [field options](repositories.md#field-options) — `'mutable' => false` on a field
+you only ever replace through its setter (a readonly value object serialized by your own serializer, for instance).
 
 Writing the mutable fields on every save has costs:
 
@@ -167,7 +167,7 @@ Writing the mutable fields on every save has costs:
 * `UnitOfWork::isPropertyChanged()` is always `true` for a mutable field of a managed entity, unless the field was not
   read (see above).
 
-Prefer immutable values: type your dates `\DateTimeImmutable`, decode JSON to arrays
+Prefer immutable values: type your dates `\DateTimeImmutable` (not `\DateTimeInterface`), decode JSON to arrays
 (`'serializer_options' => ['unserialize' => ['assoc' => true]]`), make your value objects `readonly`, and replace them
 through the setter. A mutable primary key (a `\DateTime` key, say) modified in place still targets its row: its
 database value is kept when the entity becomes managed, and refreshed by each `UPDATE`.

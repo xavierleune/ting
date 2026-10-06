@@ -319,8 +319,8 @@ UnitOfWork
   `pushSave()` of a managed entity, with its current value, together with the notified changes of the other fields.
   Consequence: saving a managed entity that has a mutable field always runs an `UPDATE`, even without change, and
   `UnitOfWork::isPropertyChanged()` is always `true` for such a field. By default, a field is mutable when its
-  serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable` or
-  `\DateTimeInterface`), `Serializer\Json` without the `assoc` unserialize option (objects), or a serializer of your
+  serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable`),
+  `Serializer\Json` without the `assoc` unserialize option (objects), or a serializer of your
   own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
   trade-offs.
 * A mutable field is only written when its value is known: read from the database, set through its setter, or
@@ -330,10 +330,12 @@ UnitOfWork
   field, without its setter, is not written.
 * The other fields (scalars, `DateTimeImmutable`, enums, `json` decoded to arrays...) are updated when notified by
   `propertyChanged()`, as in 3.x: the same value given as old and new value, objects included, is not a change.
-* Optional, recommended: type your date properties `\DateTimeImmutable` (or `\DateTimeInterface`), and decode your
-  JSON columns to arrays (`'serializer_options' => ['unserialize' => ['assoc' => true]]`). A `datetime` field then
-  hydrates a `\DateTimeImmutable`, with the same `Y-m-d H:i:s` format, and is no longer written on every save.
-  A property typed `\DateTime`, or not typed, keeps hydrating a `\DateTime`.
+* Optional, recommended: type your date properties `\DateTimeImmutable`, and decode your JSON columns to arrays
+  (`'serializer_options' => ['unserialize' => ['assoc' => true]]`). A `datetime` field then hydrates a
+  `\DateTimeImmutable`, with the same `Y-m-d H:i:s` format, and is no longer written on every save. Only the
+  `\DateTimeImmutable` type (nullable or not) does it: a property typed `\DateTimeInterface`, `\DateTime` or a union,
+  or not typed, keeps hydrating a `\DateTime`, as in 3.x (a `\DateTimeInterface` property can hold a `\DateTime`, which
+  `Serializer\DateTimeImmutable` cannot write).
 * A primary key that is mutable (e.g. a `\DateTime`) and modified in place still targets its row: its database value
   is kept when the entity becomes managed, and refreshed by each `UPDATE`.
 
