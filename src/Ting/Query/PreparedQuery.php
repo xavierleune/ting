@@ -46,13 +46,9 @@ class PreparedQuery extends Query
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface
     {
-        if (!$collection instanceof CollectionInterface) {
-            $collection = $this->collectionFactory->get();
-        }
+        $collection ??= $this->newCollection();
 
-        $this->prepareQuery();
-
-        $this->statement->execute($this->params, $collection);
+        $this->statementForQuery()->execute($this->params, $collection);
 
         return $collection;
     }
@@ -64,9 +60,7 @@ class PreparedQuery extends Query
      */
     public function execute(): mixed
     {
-        $this->prepareExecute();
-
-        return $this->statement->execute($this->params);
+        return $this->statementForExecute()->execute($this->params);
     }
 
     public function getStatementName(): string

@@ -56,9 +56,9 @@ trait PreparedStatementTrait
      */
     public function prepareQuery(): static
     {
-        return $this->prepareOn(
-            $this->selectPrimary === true ? $this->connection->primary() : $this->connection->replica()
-        );
+        $this->statementForQuery();
+
+        return $this;
     }
 
     /**
@@ -69,26 +69,47 @@ trait PreparedStatementTrait
      */
     public function prepareExecute(): static
     {
-        return $this->prepareOn($this->connection->primary());
+        $this->statementForExecute();
+
+        return $this;
     }
 
     /**
-     * Prepare the statement on $driver, unless it already is
-     * (replica() returns the primary when no replica is configured: the statement is then prepared once)
-     * @return $this
+     * The statement of a reading query, prepared as prepareQuery() does
      * @throws Exception
      * @throws QueryException
      */
-    private function prepareOn(DriverInterface $driver): static
+    private function statementForQuery(): StatementInterface
     {
-        if ($this->prepared === true && $this->preparedOn === $driver) {
-            return $this;
+        return $this->statementOn(
+            $this->selectPrimary === true ? $this->connection->primary() : $this->connection->replica()
+        );
+    }
+
+    /**
+     * The statement of a writing query, prepared as prepareExecute() does
+     * @throws Exception
+     * @throws QueryException
+     */
+    private function statementForExecute(): StatementInterface
+    {
+        return $this->statementOn($this->connection->primary());
+    }
+
+    /**
+     * The statement prepared on $driver, prepared unless it already is
+     * (replica() returns the primary when no replica is configured: the statement is then prepared once)
+     * @throws Exception
+     * @throws QueryException
+     */
+    private function statementOn(DriverInterface $driver): StatementInterface
+    {
+        if ($this->statement === null || $this->preparedOn !== $driver) {
+            $this->statement  = $driver->prepare($this->sql);
+            $this->preparedOn = $driver;
+            $this->prepared   = true;
         }
 
-        $this->statement  = $driver->prepare($this->sql);
-        $this->preparedOn = $driver;
-        $this->prepared   = true;
-
-        return $this;
+        return $this->statement;
     }
 }

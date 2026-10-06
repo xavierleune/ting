@@ -103,9 +103,7 @@ class Query extends \CCMBenchmark\Ting\Query\Query
     {
         $this->checkTtl();
 
-        if (!$collection instanceof CollectionInterface) {
-            $collection = $this->collectionFactory->get();
-        }
+        $collection ??= $this->newCollection();
 
         $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
             parent::query($collection);
@@ -127,6 +125,9 @@ class Query extends \CCMBenchmark\Ting\Query\Query
     {
         if ($this->cacheKey === null) {
             throw new QueryException('You must call setCacheKey to use query method');
+        }
+        if ($this->cache === null) {
+            throw new QueryException('You must call setCache to use query method');
         }
 
         $collection->setFromCache(false);

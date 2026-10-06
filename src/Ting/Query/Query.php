@@ -88,15 +88,28 @@ class Query implements QueryInterface
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface
     {
-        if (!$collection instanceof CollectionInterface) {
-            $collection = $this->collectionFactory->get();
-        }
+        $collection ??= $this->newCollection();
 
         $driver = $this->selectPrimary === true ? $this->connection->primary() : $this->connection->replica();
         // The driver fills the collection: for a statement without result set, Mysqli returns true instead of it
         $driver->execute($this->sql, $this->params, $collection);
 
         return $collection;
+    }
+
+    /**
+     * @return CollectionInterface<T>
+     * @throws QueryException when the query has no collection factory
+     */
+    protected function newCollection(): CollectionInterface
+    {
+        if ($this->collectionFactory === null) {
+            throw new QueryException(
+                'Cannot build the collection of the query: it has no collection factory, give a collection to query()'
+            );
+        }
+
+        return $this->collectionFactory->get();
     }
 
     /**

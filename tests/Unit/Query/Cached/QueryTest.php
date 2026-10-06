@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Query\Cached;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Query\Cached\Query;
+use CCMBenchmark\Ting\Query\Cached\PreparedQuery;
 use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionFactory;
@@ -36,6 +37,7 @@ use CCMBenchmark\Ting\Repository\HydratorInterface;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use tests\fixtures\FakeDriver\MysqliResult;
 
@@ -225,5 +227,31 @@ class QueryTest extends TestCase
         $connection->method('replica')->willReturn($driver);
 
         return $connection;
+    }
+
+    public static function cachedQueriesProvider(): array
+    {
+        return [
+            'Query' => [Query::class],
+            'PreparedQuery' => [PreparedQuery::class],
+        ];
+    }
+
+    /**
+     * @param class-string<Query> $class
+     */
+    #[DataProvider('cachedQueriesProvider')]
+    public function testQueryWithoutCacheShouldRaiseQueryException(string $class)
+    {
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->never())->method('replica');
+        $query = new $class('SELECT', $connection);
+        $query->setTtl(10)->setCacheKey('myCacheKey');
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $query->query(new Collection()),
+            'You must call setCache to use query method'
+        );
     }
 }

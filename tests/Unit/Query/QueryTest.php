@@ -28,11 +28,17 @@ namespace CCMBenchmark\Ting\Tests\Unit\Query;
 
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
+use CCMBenchmark\Ting\Query\Cached\PreparedQuery as CachedPreparedQuery;
+use CCMBenchmark\Ting\Query\Cached\Query as CachedQuery;
+use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
+use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionFactory;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 class QueryTest extends TestCase
 {
@@ -127,5 +133,36 @@ class QueryTest extends TestCase
 
         $query = new Query('INSERT', $mockConnection);
         $this->assertSame(4, $query->getAffectedRows());
+    }
+
+    public static function queriesWithoutCollectionFactoryProvider(): array
+    {
+        return [
+            'Query' => [Query::class],
+            'PreparedQuery' => [PreparedQuery::class],
+            'Cached\\Query' => [CachedQuery::class],
+            'Cached\\PreparedQuery' => [CachedPreparedQuery::class],
+        ];
+    }
+
+    /**
+     * @param class-string<Query> $class
+     */
+    #[DataProvider('queriesWithoutCollectionFactoryProvider')]
+    public function testQueryWithoutCollectionNorCollectionFactoryShouldRaiseQueryException(string $class)
+    {
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->never())->method('replica');
+        $query = new $class('SELECT', $connection);
+        if ($query instanceof CachedQuery) {
+            $query->setCache(new ArrayAdapter());
+            $query->setTtl(10)->setCacheKey('myCacheKey');
+        }
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $query->query(),
+            'Cannot build the collection of the query: it has no collection factory, give a collection to query()'
+        );
     }
 }

@@ -50,13 +50,10 @@ class PreparedQuery extends Query
     {
         $this->checkTtl();
 
-        if (!$collection instanceof CollectionInterface) {
-            $collection = $this->collectionFactory->get();
-        }
+        $collection ??= $this->newCollection();
 
         $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
-            $this->prepareQuery();
-            $this->statement->execute($this->params, $collection);
+            $this->statementForQuery()->execute($this->params, $collection);
         });
 
         return $collection;
@@ -69,8 +66,6 @@ class PreparedQuery extends Query
      */
     public function execute(): mixed
     {
-        $this->prepareExecute();
-
-        return $this->statement->execute($this->params);
+        return $this->statementForExecute()->execute($this->params);
     }
 }

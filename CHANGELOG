@@ -96,6 +96,7 @@
     * Fix Pgsql Statement::execute() before setConnection() and setCollectionWithResult() before setQuery(): they throw a QueryException instead of a TypeError
     * Fix the hydrators iterated without result (setResult() not called): they yield nothing, as count() gives 0, instead of raising a "foreach() argument must be of type array|object" warning
     * Fix Hydrator and its subclasses on a row of a result without connection name or database, and before setMetadataRepository() or setUnitOfWork() (set by the CollectionFactory): they throw a HydratorException instead of a TypeError or an Error
+    * Fix Query::query() and its subclasses without collection on a query built without collection factory, and Cached\Query::query() / Cached\PreparedQuery::query() before setCache(): they throw a QueryException instead of an Error
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
