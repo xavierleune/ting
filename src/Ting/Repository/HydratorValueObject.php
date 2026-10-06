@@ -77,7 +77,8 @@ class HydratorValueObject implements HydratorInterface
 
     /**
      * Same rules as the native fetch_object() functions: each column is written to the property named after the column
-     * (or its alias) whatever its visibility, then the constructor is called without arguments
+     * (or its alias) whatever its visibility (a static property excepted: the column becomes a dynamic property), then
+     * the constructor is called without arguments
      *
      * @param \ReflectionClass<T> $class
      * @param Row $row columns as formatted by the driver
@@ -87,7 +88,8 @@ class HydratorValueObject implements HydratorInterface
     {
         $object = $class->newInstanceWithoutConstructor();
         foreach ($row as $column) {
-            if ($class->hasProperty($column['name'])) {
+            // A static property belongs to the class, not to the object: the column is handled as one without property
+            if ($class->hasProperty($column['name']) && $class->getProperty($column['name'])->isStatic() === false) {
                 $class->getProperty($column['name'])->setValue($object, $column['value']);
             } else {
                 $object->{$column['name']} = $column['value'];

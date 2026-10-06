@@ -31,6 +31,7 @@ use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\HydratorValueObject;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\ValueObject\Counter;
 use tests\fixtures\ValueObject\Person;
 
 class HydratorValueObjectTest extends TestCase
@@ -59,6 +60,30 @@ class HydratorValueObjectTest extends TestCase
 
         $this->assertTrue($fromCache->isFromCache());
         $this->assertEquals(iterator_to_array($withoutCache), iterator_to_array($fromCache));
+    }
+
+    public function testHydrateShouldNotWriteAStaticProperty()
+    {
+        $field = new \stdClass();
+        $field->name     = 'instances';
+        $field->orgname  = 'instances';
+        $field->table    = '';
+        $field->orgtable = '';
+        $field->type     = MYSQLI_TYPE_VAR_STRING;
+        $result = new Result();
+        $result->setResult((new MysqliResult([['42']]))->setFields([$field]));
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+
+        $hydrator = new HydratorValueObject(Counter::class);
+        $this->collectErrorTypes(function () use ($hydrator, $result, &$counter): void {
+            $counter = $hydrator->setResult($result)->getIterator()->current();
+        }, $thrown);
+
+        $this->assertNull($thrown);
+        // The column is handled as one without property: a dynamic property, as fetch_object() does
+        $this->assertSame(0, Counter::$instances);
+        $this->assertSame(['name' => null, 'instances' => '42'], get_object_vars($counter));
     }
 
     public function testCountShouldReturn2()
