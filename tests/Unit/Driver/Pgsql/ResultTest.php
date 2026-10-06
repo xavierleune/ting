@@ -348,6 +348,16 @@ class ResultTest extends TestCase
                 [0 => 'city', 2 => 'city'],
                 [$id, ['name' => 'd', 'orgName' => 'a IS NOT DISTINCT   FROM b', 'table' => '', 'schema' => ''], $name],
             ],
+            'IS NOT DISTINCT FROM without alias' => [
+                'SELECT a IS NOT DISTINCT FROM b, id, name FROM city',
+                [1 => 'city', 2 => 'city'],
+                [['name' => '?column?', 'orgName' => 'a IS NOT DISTINCT FROM b', 'table' => '', 'schema' => ''], $id, $name],
+            ],
+            'IS DISTINCT FROM with an alias without AS' => [
+                'SELECT a IS DISTINCT FROM b d, id FROM city',
+                [1 => 'city'],
+                [['name' => 'd', 'orgName' => 'a IS DISTINCT FROM b', 'table' => '', 'schema' => ''], $id],
+            ],
             'parenthesized UNION ALL' => [
                 '(SELECT id, name FROM city) UNION ALL (SELECT id, name FROM city)',
                 ['city', 'city'],
