@@ -541,14 +541,17 @@ class HydratorAggregatorTest extends TestCase
      */
     public static function nonScalarIdentifierProvider(): array
     {
+        // Loaded here, outside the errors collected by the test: the lowest symfony/uid versions declare implicitly
+        // nullable parameters, deprecated since PHP 8.4
+        $uuids = [
+            4 => Uuid::fromString('f47ac10b-58cc-4372-a567-0e02b2c3d479'),
+            3 => Uuid::fromString('9b2c1a3e-0d4f-4e6a-8b7c-1d2e3f4a5b6c'),
+        ];
+
         return [
             // A new instance for each row: the groups are compared by value, not by identity
             'uuid object' => [
-                fn ($result) => Uuid::fromString(
-                    $result['bouh']->getId() === 4
-                        ? 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-                        : '9b2c1a3e-0d4f-4e6a-8b7c-1d2e3f4a5b6c'
-                ),
+                fn ($result) => Uuid::fromString((string) $uuids[$result['bouh']->getId()]),
                 ['Leune', 'Robez-Masson'],
             ],
             'composite array' => [
