@@ -20,4 +20,11 @@ class HookedPropertiesEntity
             $this->hookBoth = $value . ' (hooked on set)';
         }
     }
+
+    /** Virtual: no backing value, write-only */
+    public string $virtualSetOnly {
+        set(string $value) {
+            $this->hookSetOnly = $value;
+        }
+    }
 }

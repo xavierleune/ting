@@ -33,6 +33,7 @@ use tests\fixtures\model\Bouh;
 use tests\fixtures\model\City;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
+use tests\fixtures\model\TrackedChild;
 
 class DebugTest extends TestCase
 {
@@ -99,5 +100,75 @@ class DebugTest extends TestCase
         $export = (new Debug())->export(new HookedPropertiesEntity());
 
         $this->assertSame('default (hooked on get)', $export['hookGetOnly']);
+    }
+
+    #[RequiresPhp('>= 8.4.0')]
+    public function testExportShouldSkipVirtualProperties()
+    {
+        $export = (new Debug())->export(new HookedPropertiesEntity());
+
+        $this->assertArrayNotHasKey('virtualSetOnly', $export);
+        $this->assertSame('default', $export['hookSetOnly']);
+    }
+
+    public function testExportShouldShowTheValueOfDates()
+    {
+        $export = (new Debug())->export([
+            'mutable' => new \DateTime('2026-01-02 03:04:05.123456', new \DateTimeZone('Europe/Paris')),
+            'immutable' => new \DateTimeImmutable('2026-01-02 03:04:05', new \DateTimeZone('UTC')),
+        ]);
+
+        $this->assertSame(
+            ['__CLASS__' => \DateTime::class, 'date' => '2026-01-02T03:04:05.123456+01:00', 'timezone' => 'Europe/Paris'],
+            $export['mutable']
+        );
+        $this->assertSame(
+            ['__CLASS__' => \DateTimeImmutable::class, 'date' => '2026-01-02T03:04:05.000000+00:00', 'timezone' => 'UTC'],
+            $export['immutable']
+        );
+    }
+
+    public function testExportShouldShowTheStateOfOtherInternalObjects()
+    {
+        $export = (new Debug())->export(new \DateTimeZone('Europe/Paris'));
+
+        $this->assertSame(\DateTimeZone::class, $export['__CLASS__']);
+        $this->assertSame('Europe/Paris', $export['timezone']);
+    }
+
+    public function testExportShouldStopOnANegativeMaxDepth()
+    {
+        $object = new \stdClass();
+        $object->self = $object;
+
+        $this->assertSame(\stdClass::class, (new Debug())->export($object, -1));
+        $this->assertSame('Array(1)', (new Debug())->export([$object], -1));
+    }
+
+    public function testExportShouldIncludeThePrivatePropertiesOfParentClasses()
+    {
+        $entity = new TrackedChild();
+        $entity->setOwner('Xavier');
+        $entity->setTitle('Title');
+
+        $export = (new Debug())->export($entity);
+
+        $this->assertSame('Xavier', $export['owner']);
+        $this->assertSame('Title', $export['title']);
+        $this->assertArrayNotHasKey('listeners', $export);
+    }
+
+    public function testExportShouldNotConsumeGenerators()
+    {
+        $generator = (static function () {
+            yield 1;
+            yield 2;
+        })();
+
+        $debug = new Debug();
+        $this->assertSame(['__CLASS__' => \Generator::class], $debug->export($generator));
+        $this->assertSame(['__CLASS__' => \Generator::class], $debug->export(['g' => $generator])['g']);
+
+        $this->assertSame([1, 2], iterator_to_array($generator));
     }
 }
