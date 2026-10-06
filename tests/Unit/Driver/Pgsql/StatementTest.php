@@ -322,6 +322,18 @@ class StatementTest extends TestCase
         $this->assertSame(0, $calls);
     }
 
+    public function testADetachedStatementShouldBeStale()
+    {
+        NativeFunctionMock::override('pg_query', true);
+        $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+        $statement->setConnection(new Pgsql());
+
+        $this->assertFalse($statement->isStale());
+        $statement->detach();
+        // A prepared query holding it prepares it again
+        $this->assertTrue($statement->isStale());
+    }
+
     public function testExecuteShouldReturnTrueIfNoError()
     {
         NativeFunctionMock::override('pg_execute', new PgsqlResult());

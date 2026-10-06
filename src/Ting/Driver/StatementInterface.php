@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -40,4 +41,10 @@ interface StatementInterface
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface;
 
     public function setLogger(?DriverLoggerInterface $logger = null): void;
+
+    /**
+     * True when the session the statement was prepared in is gone (the driver reconnected, or the connection was
+     * reset): the statement can no longer be executed, the query must be prepared again
+     */
+    public function isStale(): bool;
 }

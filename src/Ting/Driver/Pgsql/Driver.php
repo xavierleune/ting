@@ -85,6 +85,13 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
     protected array $preparedQueries = [];
 
     /**
+     * Every statement prepared in the current session, including those closed by name (closeStatement()) but still
+     * held, e.g. by a prepared query: all are detached when the session is gone
+     * @var \WeakMap<Statement, true>|null
+     */
+    private ?\WeakMap $sessionStatements = null;
+
+    /**
      * Names of the statements forgotten when the connection was reset, that closeStatement() still accepts
      * @var array<string, true>
      */
@@ -369,6 +376,8 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
             });
 
         $this->preparedQueries[$statementName] = $statement;
+        $this->sessionStatements ??= new \WeakMap();
+        $this->sessionStatements[$statement] = true;
 
         return $statement;
     }
@@ -603,10 +612,11 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface
      */
     private function forgetPreparedQueries(): void
     {
-        foreach ($this->preparedQueries as $statementName => $statement) {
-            if ($statement instanceof Statement) {
-                $statement->detach();
-            }
+        foreach ($this->sessionStatements ?? [] as $statement => $prepared) {
+            $statement->detach();
+        }
+        $this->sessionStatements = null;
+        foreach (array_keys($this->preparedQueries) as $statementName) {
             $this->forgottenPreparedQueries[$statementName] = true;
         }
         $this->preparedQueries = [];

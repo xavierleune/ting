@@ -1344,6 +1344,23 @@ class DriverTest extends TestCase
         $this->assertSame(2, $prepares());
     }
 
+    public function testReconnectShouldDetachEveryStatementOfTheSession()
+    {
+        [$driver] = $this->connectedDriverCountingPrepares();
+
+        $statement = $driver->prepare('SELECT 1');
+        // Closed by name (e.g. by the UnitOfWork, for the same SQL), but still held by a prepared query
+        $closedStatement = $driver->prepare('SELECT 2');
+        $driver->closeStatement(sha1('SELECT 2'));
+        $this->assertFalse($statement->isStale());
+
+        $driver->reconnect();
+
+        $this->assertTrue($statement->isStale());
+        $this->assertTrue($closedStatement->isStale());
+        $this->assertFalse($driver->prepare('SELECT 1')->isStale());
+    }
+
     public function testCloseStatementShouldAcceptAStatementForgottenOnReconnect()
     {
         // UnitOfWork closes its statements by name, after the process: a reconnection may have happened meanwhile

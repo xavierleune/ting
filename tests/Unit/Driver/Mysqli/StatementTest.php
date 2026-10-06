@@ -37,6 +37,22 @@ use tests\fixtures\FakeLogger\FakeDriverLogger;
 
 class StatementTest extends TestCase
 {
+    public function testADetachedStatementShouldBeStaleAndNotExecute()
+    {
+        $driverStatement = $this->createMock(MysqliStatement::class);
+        $driverStatement->expects($this->never())->method('execute');
+        $statement = new Statement($driverStatement, [], 'connectionName', 'database');
+
+        $this->assertFalse($statement->isStale());
+        $statement->detach();
+        $this->assertTrue($statement->isStale());
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $statement->execute([]),
+            'The prepared statement is no longer valid: the connection was reset, prepare it again'
+        );
+    }
+
     public function testExecuteShouldCallDriverStatementBindParams()
     {
         $driverStatement = $this->createMock(MysqliStatement::class);

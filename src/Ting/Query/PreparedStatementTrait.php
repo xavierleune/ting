@@ -32,7 +32,8 @@ use CCMBenchmark\Ting\Exception;
 /**
  * Prepares the statement of a prepared query on the driver it must run on: the primary for a writing query or when
  * selectPrimary(true) is set, a replica otherwise. The statement is prepared again when that driver changes (a query
- * read on a replica then executed as a write, or read again with selectPrimary(true)).
+ * read on a replica then executed as a write, or read again with selectPrimary(true)), and when it is stale (the
+ * driver reconnected, or its connection was reset: the statement is gone with the session).
  *
  * @internal shared by PreparedQuery and Cached\PreparedQuery
  */
@@ -97,14 +98,14 @@ trait PreparedStatementTrait
     }
 
     /**
-     * The statement prepared on $driver, prepared unless it already is
+     * The statement prepared on $driver, prepared unless it already is and is not stale
      * (replica() returns the primary when no replica is configured: the statement is then prepared once)
      * @throws Exception
      * @throws QueryException
      */
     private function statementOn(DriverInterface $driver): StatementInterface
     {
-        if ($this->statement === null || $this->preparedOn !== $driver) {
+        if ($this->statement === null || $this->preparedOn !== $driver || $this->statement->isStale()) {
             $this->statement  = $driver->prepare($this->sql);
             $this->preparedOn = $driver;
             $this->prepared   = true;

@@ -36,6 +36,12 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 class RecordingDriver extends Driver
 {
     /**
+     * The statements prepared, whose $stale property tests can set
+     * @var list<StatementInterface&object{stale: bool}>
+     */
+    public array $statements = [];
+
+    /**
      * @param \ArrayObject<int, string> $log
      */
     public function __construct(public readonly string $label, public readonly \ArrayObject $log)
@@ -46,7 +52,9 @@ class RecordingDriver extends Driver
     {
         $this->log[] = 'prepare on ' . $this->label;
 
-        return new class ($this->label, $this->log) implements StatementInterface {
+        return $this->statements[] = new class ($this->label, $this->log) implements StatementInterface {
+            public bool $stale = false;
+
             /**
              * @param \ArrayObject<int, string> $log
              */
@@ -63,6 +71,11 @@ class RecordingDriver extends Driver
 
             public function setLogger(?DriverLoggerInterface $logger = null): void
             {
+            }
+
+            public function isStale(): bool
+            {
+                return $this->stale;
             }
         };
     }

@@ -30,12 +30,16 @@ use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPoolInterface;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Statement;
+use CCMBenchmark\Ting\Driver\Pgsql\Driver as PgsqlDriver;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionFactory;
+use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use tests\fixtures\Fake\MysqliStatement;
+use tests\fixtures\Fake\Pgsql;
+use tests\fixtures\Fake\PgsqlResult;
 use tests\fixtures\FakeDriver\RecordingDriver;
 
 class PreparedQueryTest extends TestCase
@@ -196,6 +200,54 @@ class PreparedQueryTest extends TestCase
             ['prepare on primary', 'execute on primary', 'execute on primary', 'execute on primary'],
             $log->getArrayCopy()
         );
+    }
+
+    public function testAStaleStatementShouldBePreparedAgain()
+    {
+        $log = new \ArrayObject();
+        $primary = new RecordingDriver('primary', $log);
+        $pool = $this->createStub(ConnectionPoolInterface::class);
+        $pool->method('primary')->willReturn($primary);
+        $query = new PreparedQuery('UPDATE t SET a = 1', new Connection($pool, 'main', 'db'), (new TingServices())->collectionFactory());
+
+        $query->execute();
+        // e.g. the driver reconnected: same driver, new session
+        $primary->statements[0]->stale = true;
+        $query->execute();
+        $query->execute();
+
+        $this->assertSame(
+            ['prepare on primary', 'execute on primary', 'prepare on primary', 'execute on primary', 'execute on primary'],
+            $log->getArrayCopy()
+        );
+    }
+
+    public function testAQueryKeptAcrossAReconnectionShouldBePreparedAgain()
+    {
+        $prepares = 0;
+        NativeFunctionMock::override('pg_connect', fn () => new Pgsql());
+        NativeFunctionMock::override('pg_close', true);
+        NativeFunctionMock::override('pg_prepare', function () use (&$prepares): bool {
+            $prepares++;
+
+            return true;
+        });
+        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_execute', fn () => new PgsqlResult());
+        $driver = new PgsqlDriver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('db');
+        $pool = $this->createStub(ConnectionPoolInterface::class);
+        $pool->method('primary')->willReturn($driver);
+        $query = new PreparedQuery('UPDATE t SET a = :a', new Connection($pool, 'main', 'db'), (new TingServices())->collectionFactory());
+        $query->setParams(['a' => 1]);
+
+        $this->assertTrue($query->execute());
+        $driver->reconnect();
+
+        $this->assertTrue($query->execute());
+        $this->assertTrue($query->execute());
+        $this->assertSame(2, $prepares);
     }
 
     /**
