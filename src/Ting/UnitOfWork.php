@@ -70,6 +70,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * @var WeakMap<NotifyPropertyInterface, true>
      */
     protected WeakMap $listenedEntities;
+    /**
+     * Entities whose row has been deleted by process(): their primary key is still set, but saving them inserts them
+     * again. Forgotten once they are managed again.
+     *
+     * @var WeakMap<NotifyPropertyInterface, true>
+     */
+    protected WeakMap $entitiesDeleted;
     /** @var array<string, array{state: self::STATE_*, entity: NotifyPropertyInterface}> by object hash */
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
@@ -90,6 +97,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->mutablePrimaryValues = new WeakMap();
         $this->mutablePropertiesNotRead = new WeakMap();
         $this->listenedEntities = new WeakMap();
+        $this->entitiesDeleted = new WeakMap();
     }
 
     /**
@@ -121,6 +129,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         if (isset($this->entities[$entity]) === false) {
             $this->entities[$entity] = true;
+            // Its row exists again
+            $this->entitiesDeleted->offsetUnset($entity);
         }
 
         if (isset($this->mutablePrimaryValues[$entity]) === false) {
@@ -164,7 +174,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * @param NotifyPropertyInterface $entity
-     * @return bool - true if the entity has not been persisted yet
+     * @return bool - true if the entity is queued for its INSERT by pushSave()
      */
     public function isNew(NotifyPropertyInterface $entity): bool
     {
@@ -175,13 +185,20 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * Flag the entity to be persisted (insert or update) on next process.
-     * A new entity becomes managed only once inserted: until then, it stays new.
+     *
+     * A managed entity is updated with its changes. An entity not managed (a clone of a managed one, a detached one,
+     * one built by hand or read from a cache) is taken as an existing row when its metadata has an autoincrement
+     * primary key and its whole primary key is set: it is updated by that key with every readable field, as nothing
+     * tells which ones changed, then managed. Otherwise, as an entity deleted by process(), it is new: inserted, then
+     * managed. Until then, it is not managed.
      */
     public function pushSave(NotifyPropertyInterface $entity): static
     {
         $state = self::STATE_MANAGED;
 
-        if (isset($this->entities[$entity]) === false) {
+        if (isset($this->entities[$entity]) === false
+            && (isset($this->entitiesDeleted[$entity]) || $this->isExistingRow($entity) === false)
+        ) {
             $state = self::STATE_NEW;
         }
 
@@ -261,7 +278,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Stop watching changes on the entity
+     * Stop watching changes on the entity. Saved again, it is saved as any entity not managed (see pushSave()).
      *
      * @param NotifyPropertyInterface $entity
      */
@@ -282,6 +299,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->entitiesChanged = new WeakMap();
         $this->mutablePrimaryValues = new WeakMap();
         $this->mutablePropertiesNotRead = new WeakMap();
+        $this->entitiesDeleted = new WeakMap();
         $this->entitiesShouldBePersisted = [];
         $this->entities = new WeakMap();
     }
@@ -300,7 +318,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      *
      * An entity never inserted (queued for its INSERT, or not managed and without primary key) has no row: it is
      * unqueued, no query is run. An entity not managed but with its primary key is deleted by that key: it does not
-     * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, inserts it.
+     * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, saves it as any
+     * entity not managed (see pushSave()). Once deleted, an entity is detached and saving it inserts it again.
      */
     public function pushDelete(NotifyPropertyInterface $entity): static
     {
@@ -328,15 +347,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->metadataRepository->findMetadataForEntity(
             $entity,
             function (Metadata $metadata) use ($entity, &$hasPrimaryKey): void {
-                foreach ($metadata->getPrimaries() as $primary) {
-                    if ($metadata->isEntityPropertyReadable($entity, $primary['fieldName']) === false
-                        || $metadata->getEntityPropertyByFieldName($entity, $primary['fieldName']) === null
-                    ) {
-                        $hasPrimaryKey = false;
-
-                        return;
-                    }
-                }
+                $hasPrimaryKey = $this->isPrimaryKeySet($entity, $metadata);
             },
             static function (): void {
                 // Without metadata, process() throws
@@ -344,6 +355,45 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         );
 
         return $hasPrimaryKey;
+    }
+
+    /**
+     * @return bool true when the entity not managed is taken as an existing row: its primary key is generated by the
+     *              database (autoincrement) and set. False without metadata: process() then reports the missing
+     *              repository.
+     */
+    private function isExistingRow(NotifyPropertyInterface $entity): bool
+    {
+        $isExistingRow = false;
+        $this->metadataRepository->findMetadataForEntity(
+            $entity,
+            function (Metadata $metadata) use ($entity, &$isExistingRow): void {
+                $isExistingRow = $metadata->hasAutoincrement() && $this->isPrimaryKeySet($entity, $metadata);
+            },
+            static function (): void {
+                // Without metadata, process() throws
+            }
+        );
+
+        return $isExistingRow;
+    }
+
+    /**
+     * @template E of object
+     * @param Metadata<E> $metadata
+     * @return bool false when a primary key of the entity is not set (not initialized or null)
+     */
+    private function isPrimaryKeySet(NotifyPropertyInterface $entity, Metadata $metadata): bool
+    {
+        foreach ($metadata->getPrimaries() as $primary) {
+            if ($metadata->isEntityPropertyReadable($entity, $primary['fieldName']) === false
+                || $metadata->getEntityPropertyByFieldName($entity, $primary['fieldName']) === null
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -378,7 +428,11 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 try {
                     switch ($details['state']) {
                         case self::STATE_MANAGED:
-                            $this->processManaged($details['entity']);
+                            if (isset($this->entities[$details['entity']])) {
+                                $this->processManaged($details['entity']);
+                            } else {
+                                $this->processNotManaged($details['entity']);
+                            }
                             break;
 
                         case self::STATE_NEW:
@@ -453,6 +507,60 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     return;
                 }
 
+                throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
+            }
+        );
+    }
+
+    /**
+     * Update the row of an entity not managed, by its primary key, with every readable field: no change is tracked for
+     * it. Then the entity is managed, as if just read. Inserted instead when its primary key is no longer set.
+     *
+     * @throws Exception
+     * @throws QueryException
+     */
+    private function processNotManaged(NotifyPropertyInterface $entity): void
+    {
+        $this->metadataRepository->findMetadataForEntity(
+            $entity,
+            function (Metadata $metadata) use ($entity): void {
+                if ($this->isPrimaryKeySet($entity, $metadata) === false) {
+                    // Unset since pushSave(): no row to update
+                    $this->processNew($entity);
+
+                    return;
+                }
+
+                $properties = [];
+                foreach ($metadata->getFields() as $field) {
+                    $property = $field['fieldName'];
+                    // The primary key targets the row. A public typed property not initialized: the column keeps
+                    // its value
+                    if (($field['primary'] ?? false) || $metadata->isEntityPropertyReadable($entity, $property) === false) {
+                        continue;
+                    }
+
+                    $value = $metadata->getEntityPropertyByFieldName($entity, $property);
+                    $properties[$property] = [$value, $value];
+                }
+
+                if ($properties !== []) {
+                    $connection = $metadata->getConnection($this->connectionPool);
+                    $query = $metadata->generateQueryForUpdate($connection, $this->queryFactory, $entity, $properties);
+                    $query->prepareExecute();
+                    // Only a prepared statement can be closed
+                    $this->addStatementToClose($query->getStatementName(), $connection->primary());
+                    $query->execute();
+                }
+
+                unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+                // Every value written is known, the primary key is the one stored
+                $this->mutablePrimaryValues->offsetUnset($entity);
+                $this->mutablePropertiesNotRead->offsetUnset($entity);
+                $this->entitiesChanged->offsetUnset($entity);
+                $this->manage($entity);
+            },
+            function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
             }
         );
@@ -587,6 +695,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
                 $this->detach($entity);
+                // Its primary key is still set, but there is no row to update anymore
+                $this->entitiesDeleted[$entity] = true;
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
