@@ -28,9 +28,8 @@ namespace CCMBenchmark\Ting\Serializer;
 interface UnserializeInterface
 {
     /**
-     * @param string $serialized
+     * @param mixed $serialized the value read from the database: a string, or an int or a float with native types
      * @param array $options
-     * @return mixed
      */
-    public function unserialize($serialized, array $options = []);
+    public function unserialize(mixed $serialized, array $options = []): mixed;
 }
