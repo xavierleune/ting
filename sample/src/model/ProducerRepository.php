@@ -42,7 +42,6 @@ class ProducerRepository extends Repository implements MetadataInitializer
         $metadata->setEntity('sample\src\model\Producer');
         $metadata->setConnectionName('main');
         $metadata->setDatabase('world');
-        $metadata->setSchema('public');
         $metadata->setTable('producer');
 
         $metadata->addField([

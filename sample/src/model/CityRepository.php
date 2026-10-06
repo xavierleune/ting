@@ -63,7 +63,6 @@ class CityRepository extends Repository implements MetadataInitializer
         $metadata->setEntity('sample\src\model\City');
         $metadata->setConnectionName('main');
         $metadata->setDatabase('world');
-        $metadata->setSchema('public');
         $metadata->setTable('t_city_cit');
 
         $metadata->addField([

@@ -71,7 +71,7 @@ try {
     $query = $cityRepository->getQuery(
         'select
             c.cit_id, c.cit_name, c.cou_code, c.cit_district, c.cit_population
-        from public.t_city_cit as c
+        from t_city_cit as c
         where c.cou_code = :code limit 1'
     );
 
