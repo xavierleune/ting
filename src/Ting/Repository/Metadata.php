@@ -55,7 +55,7 @@ use CCMBenchmark\Ting\Util\PropertyAccessor;
 use Closure;
 
 /**
- * @template T
+ * @template T of object
  * @phpstan-type Field array{
  *     fieldName: string,
  *     columnName: string,
@@ -74,7 +74,7 @@ class Metadata
     protected ?string $connectionName     = null;
     protected ?string $databaseName = null;
     /** @var class-string<Repository<T>>|null */
-    protected $repository = null;
+    protected ?string $repository = null;
     /** @var class-string<T>|null */
     protected ?string $entity = null;
     protected ?string $table = null;
@@ -195,7 +195,7 @@ class Metadata
      *
      * @internal
      */
-    public function getRepository()
+    public function getRepository(): ?string
     {
         return $this->repository;
     }
@@ -480,7 +480,7 @@ class Metadata
      *
      * @internal
      */
-    public function createEntity()
+    public function createEntity(): object
     {
         return new $this->entity();
     }
@@ -883,7 +883,7 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
-        $forcePrimary = false
+        bool $forcePrimary = false
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = new Generator(

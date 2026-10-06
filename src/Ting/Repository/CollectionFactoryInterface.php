@@ -33,5 +33,5 @@ interface CollectionFactoryInterface
     /**
      * @return Collection<T>
      */
-    public function get();
+    public function get(): Collection;
 }

@@ -47,13 +47,13 @@ interface CollectionInterface extends IteratorAggregate, Countable
     /**
      * @return T|null
      */
-    public function first();
+    public function first(): mixed;
 
     /**
      * @param bool $value
      * @return void
      */
-    public function setFromCache($value): void;
+    public function setFromCache(bool $value): void;
 
     public function isFromCache(): bool;
 
