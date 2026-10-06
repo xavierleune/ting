@@ -51,6 +51,17 @@ class QueryTest extends TestCase
         $this->assertSame($cachedQuery, $cachedQuery->setTtl(10));
     }
 
+    public function testSetTtlShouldRejectANegativeTtl()
+    {
+        $cachedQuery = new Query('', $this->createStub(Connection::class));
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $cachedQuery->setTtl(-1),
+            'The TTL of a cached query must be 0 (the default lifetime of the pool) or more, -1 given'
+        );
+    }
+
     public function testSetCacheKeyShouldReturnThis()
     {
         $mockConnection = $this->createStub(Connection::class);

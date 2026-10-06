@@ -58,12 +58,21 @@ class Query extends \CCMBenchmark\Ting\Query\Query
     }
 
     /**
-     * Define the ttl for the current query, in seconds (0: no expiration)
+     * Define the ttl for the current query, in seconds (0: no expiration of its own, the default lifetime of the
+     * pool applies)
      * @param int $ttl
      * @return $this
+     * @throws QueryException when $ttl is negative: the result would never be cached
      */
     public function setTtl(int $ttl): static
     {
+        if ($ttl < 0) {
+            throw new QueryException(sprintf(
+                'The TTL of a cached query must be 0 (the default lifetime of the pool) or more, %d given',
+                $ttl
+            ));
+        }
+
         $this->ttl = $ttl;
         return $this;
     }
@@ -136,7 +145,8 @@ class Query extends \CCMBenchmark\Ting\Query\Query
             $this->cacheKey,
             function (ItemInterface $item) use ($collection, $execute, &$computed): array {
                 $computed = true;
-                // 0 meant "no expiration" with doctrine/cache, Symfony would expire the item immediately
+                // 0 meant "no expiration" with doctrine/cache, Symfony would expire the item immediately: null applies
+                // the default lifetime of the pool
                 $item->expiresAfter($this->ttl === 0 ? null : $this->ttl);
                 $execute($collection);
 
