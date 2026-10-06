@@ -332,7 +332,7 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushDelete($entity)->process();
 
         $this->assertSame(['DELETE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
-        $this->assertSame(3, $params[0]['#boo_id']);
+        $this->assertSame(3, $params[0]['w1_boo_id']);
     }
 
     public function testRemove()
@@ -558,8 +558,8 @@ class UnitOfWorkTest extends TestCase
         $read = fn (PreparedQuery $query): array => (fn () => [$this->sql, $this->params])->call($query);
         $this->assertSame(
             [
-                ['UPDATE `T_BOUH_BOO` SET `boo_name` = :boo_name WHERE `boo_id` = :#boo_id', ['boo_name' => 'newName', '#boo_id' => 3]],
-                ['DELETE FROM `T_BOUH_BOO` WHERE `boo_id` = :#boo_id', ['#boo_id' => 3]],
+                ['UPDATE `T_BOUH_BOO` SET `boo_name` = :v1_boo_name WHERE `boo_id` = :w1_boo_id', ['v1_boo_name' => 'newName', 'w1_boo_id' => 3]],
+                ['DELETE FROM `T_BOUH_BOO` WHERE `boo_id` = :w1_boo_id', ['w1_boo_id' => 3]],
             ],
             array_map($read, $queries)
         );
@@ -704,7 +704,7 @@ class UnitOfWorkTest extends TestCase
         $entity->setName('name');
         $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame(['UPDATE `T_BOUH_BOO` SET `boo_name` = :boo_name WHERE `boo_id` = :#boo_id'], $queries);
+        $this->assertSame(['UPDATE `T_BOUH_BOO` SET `boo_name` = :v1_boo_name WHERE `boo_id` = :w1_boo_id'], $queries);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -718,8 +718,8 @@ class UnitOfWorkTest extends TestCase
         $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'startAt'));
         $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame(['UPDATE `T_EVENT_EVT` SET `evt_start_at` = :evt_start_at WHERE `evt_id` = :#evt_id'], $queries);
-        $this->assertSame([['evt_start_at' => '2026-01-02 10:00:00', '#evt_id' => 1]], $params);
+        $this->assertSame(['UPDATE `T_EVENT_EVT` SET `evt_start_at` = :v1_evt_start_at WHERE `evt_id` = :w1_evt_id'], $queries);
+        $this->assertSame([['v1_evt_start_at' => '2026-01-02 10:00:00', 'w1_evt_id' => 1]], $params);
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'startAt'));
     }
 
@@ -747,7 +747,7 @@ class UnitOfWorkTest extends TestCase
         $entity->setStartAt(new \DateTimeImmutable('2026-01-01 10:00:00'));
         $unitOfWork->pushSave($entity)->process();
 
-        $this->assertSame([['evt_start_at' => '2026-01-01 10:00:00', '#evt_id' => 1]], $params);
+        $this->assertSame([['v1_evt_start_at' => '2026-01-01 10:00:00', 'w1_evt_id' => 1]], $params);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -777,11 +777,11 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            ['UPDATE `T_DOCUMENT_DOC` SET `doc_payload` = :doc_payload, `doc_published_at` = :doc_published_at WHERE `doc_id` = :#doc_id'],
+            ['UPDATE `T_DOCUMENT_DOC` SET `doc_payload` = :v1_doc_payload, `doc_published_at` = :v2_doc_published_at WHERE `doc_id` = :w1_doc_id'],
             $queries
         );
         $this->assertSame(
-            [['doc_payload' => '{"tags":["php"]}', 'doc_published_at' => '2026-01-01 10:00:00', '#doc_id' => 1]],
+            [['v1_doc_payload' => '{"tags":["php"]}', 'v2_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1]],
             $params
         );
     }
@@ -796,7 +796,7 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            [['doc_payload' => '{"tags":[]}', 'doc_published_at' => '2026-01-01 10:00:00', '#doc_id' => 1]],
+            [['v1_doc_payload' => '{"tags":[]}', 'v2_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1]],
             $params
         );
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
@@ -814,7 +814,7 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(
-            [['doc_title' => 'new', 'doc_payload' => '{"tags":[]}', 'doc_published_at' => '2026-01-01 11:00:00', '#doc_id' => 1]],
+            [['v1_doc_title' => 'new', 'v2_doc_payload' => '{"tags":[]}', 'v3_doc_published_at' => '2026-01-01 11:00:00', 'w1_doc_id' => 1]],
             $params
         );
     }
@@ -867,9 +867,9 @@ class UnitOfWorkTest extends TestCase
 
         $this->assertSame(
             [
-                ['boo_id' => 4, 'boo_name' => 'name', '#boo_id' => 3],
-                ['boo_name' => 'other', '#boo_id' => 4],
-                ['#boo_id' => 4],
+                ['v1_boo_id' => 4, 'v2_boo_name' => 'name', 'w1_boo_id' => 3],
+                ['v1_boo_name' => 'other', 'w1_boo_id' => 4],
+                ['w1_boo_id' => 4],
             ],
             $params
         );
@@ -892,17 +892,17 @@ class UnitOfWorkTest extends TestCase
 
         $this->assertSame(
             [
-                'UPDATE `T_SLOT_SLO` SET `slo_day` = :slo_day WHERE `slo_day` = :#slo_day',
-                'UPDATE `T_SLOT_SLO` SET `slo_label` = :slo_label, `slo_day` = :slo_day WHERE `slo_day` = :#slo_day',
-                'DELETE FROM `T_SLOT_SLO` WHERE `slo_day` = :#slo_day',
+                'UPDATE `T_SLOT_SLO` SET `slo_day` = :v1_slo_day WHERE `slo_day` = :w1_slo_day',
+                'UPDATE `T_SLOT_SLO` SET `slo_label` = :v1_slo_label, `slo_day` = :v2_slo_day WHERE `slo_day` = :w1_slo_day',
+                'DELETE FROM `T_SLOT_SLO` WHERE `slo_day` = :w1_slo_day',
             ],
             $queries
         );
         $this->assertSame(
             [
-                ['slo_day' => '2026-01-02 00:00:00', '#slo_day' => '2026-01-01 00:00:00'],
-                ['slo_label' => 'b', 'slo_day' => '2026-01-02 00:00:00', '#slo_day' => '2026-01-02 00:00:00'],
-                ['#slo_day' => '2026-01-02 00:00:00'],
+                ['v1_slo_day' => '2026-01-02 00:00:00', 'w1_slo_day' => '2026-01-01 00:00:00'],
+                ['v1_slo_label' => 'b', 'v2_slo_day' => '2026-01-02 00:00:00', 'w1_slo_day' => '2026-01-02 00:00:00'],
+                ['w1_slo_day' => '2026-01-02 00:00:00'],
             ],
             $params
         );
@@ -919,7 +919,7 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushSave($entity)->process();
 
         $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
-        $this->assertSame(['slo_day' => '2026-01-02 00:00:00', '#slo_day' => '2026-01-01 00:00:00'], $params[1]);
+        $this->assertSame(['v1_slo_day' => '2026-01-02 00:00:00', 'w1_slo_day' => '2026-01-01 00:00:00'], $params[1]);
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -935,7 +935,7 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->manage($entity);
         $unitOfWork->pushDelete($entity)->process();
 
-        $this->assertSame([['#slo_day' => '2026-01-02 00:00:00']], $params);
+        $this->assertSame([['w1_slo_day' => '2026-01-02 00:00:00']], $params);
     }
 
     #[AllowMockObjectsWithoutExpectations]
