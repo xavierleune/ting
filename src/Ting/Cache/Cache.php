@@ -94,7 +94,8 @@ class Cache implements CacheInterface
     /**
      * {@inheritdoc}
      *
-     * Logged as a read, flagged as a miss when $callback has to compute (and store) the value
+     * Logged as a read, flagged as a miss unless the pool returns a value it did not compute: when $callback computes
+     * (and stores) it, or when the read fails (CacheLoggerInterface knows hits and misses only)
      *
      * @param array<mixed>|null $metadata
      */
@@ -102,18 +103,22 @@ class Cache implements CacheInterface
     {
         $pool = $this->pool();
         $this->log(CacheLoggerInterface::OPERATION_GET, $key);
-        $miss = false;
+        $miss = true;
+        $computed = false;
         try {
-            return $pool->get(
+            $value = $pool->get(
                 $key,
-                function (ItemInterface $item, bool &$save) use ($callback, &$miss): mixed {
-                    $miss = true;
+                function (ItemInterface $item, bool &$save) use ($callback, &$computed): mixed {
+                    $computed = true;
 
                     return $callback($item, $save);
                 },
                 $beta,
                 $metadata
             );
+            $miss = $computed;
+
+            return $value;
         } finally {
             $this->stopLog($miss);
         }
@@ -126,9 +131,10 @@ class Cache implements CacheInterface
     {
         $pool = $this->pool();
         $this->log(CacheLoggerInterface::OPERATION_DELETE, $key);
-        $result = $pool->delete($key);
-        $this->stopLog();
-
-        return $result;
+        try {
+            return $pool->delete($key);
+        } finally {
+            $this->stopLog();
+        }
     }
 }
