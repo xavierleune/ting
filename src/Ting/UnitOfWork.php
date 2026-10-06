@@ -56,6 +56,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected WeakMap $mutablePrimaryValues;
     /**
+     * Mutable properties whose value is not known: left out of a partial read (a SELECT of some columns, a join), they
+     * hold a PHP default (null, a value set by the constructor...), not the stored value. They are not written until
+     * set through their setter. Only the entities read partially are listed, with property names only.
+     *
+     * @var WeakMap<NotifyPropertyInterface, array<string, true>> property name => true
+     */
+    protected WeakMap $mutablePropertiesNotRead;
+    /**
      * Entities this unit of work listens to: a listener can't be removed from an entity, so it stays registered once
      * the entity is detached (its notifications are then ignored), and is not added again when it is managed again
      *
@@ -80,7 +88,27 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->entities = new WeakMap();
         $this->entitiesChanged = new WeakMap();
         $this->mutablePrimaryValues = new WeakMap();
+        $this->mutablePropertiesNotRead = new WeakMap();
         $this->listenedEntities = new WeakMap();
+    }
+
+    /**
+     * Record the mutable properties left out of the partial read of an entity: their value is not known, so they are
+     * not written until set through their setter. Replaces the properties recorded before; none to forget them.
+     *
+     * @param list<string> $properties
+     *
+     * @internal called by the hydrators
+     */
+    public function setMutablePropertiesNotRead(NotifyPropertyInterface $entity, array $properties): void
+    {
+        if ($properties === []) {
+            $this->mutablePropertiesNotRead->offsetUnset($entity);
+
+            return;
+        }
+
+        $this->mutablePropertiesNotRead[$entity] = array_fill_keys($properties, true);
     }
 
     /**
@@ -184,6 +212,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             return;
         }
 
+        if (isset($this->mutablePropertiesNotRead[$entity][$propertyName])) {
+            // Set through its setter: its value is known from now on
+            $notRead = $this->mutablePropertiesNotRead[$entity];
+            unset($notRead[$propertyName]);
+            $this->setMutablePropertiesNotRead($entity, array_keys($notRead));
+        }
+
         if (isset($this->entitiesChanged[$entity]) === false) {
             $this->entitiesChanged[$entity] = [];
         }
@@ -197,7 +232,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * @return bool true if the property will be written by the next save of the entity: its change has been notified,
-     *              or it is a mutable field of a managed entity (written on every save)
+     *              or it is a mutable field of a managed entity (written on every save) whose value is known
      */
     public function isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName): bool
     {
@@ -207,7 +242,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             return true;
         }
 
-        if (isset($this->entities[$entity]) === false) {
+        if (isset($this->entities[$entity]) === false || isset($this->mutablePropertiesNotRead[$entity][$propertyName])) {
             return false;
         }
 
@@ -235,6 +270,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
         $this->entitiesChanged->offsetUnset($entity);
         $this->mutablePrimaryValues->offsetUnset($entity);
+        $this->mutablePropertiesNotRead->offsetUnset($entity);
         $this->entities->offsetUnset($entity);
     }
 
@@ -245,6 +281,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $this->entitiesChanged = new WeakMap();
         $this->mutablePrimaryValues = new WeakMap();
+        $this->mutablePropertiesNotRead = new WeakMap();
         $this->entitiesShouldBePersisted = [];
         $this->entities = new WeakMap();
     }
@@ -432,8 +469,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
 
     /**
      * Properties to write, with their database values: the notified changes of the immutable fields (a setter may
-     * notify a property that is not mapped: it has no column, it is ignored), then the mutable fields, written
-     * whether they changed or not.
+     * notify a property that is not mapped: it has no column, it is ignored), then the mutable fields whose value is
+     * known (read, set through their setter, or inserted), written whether they changed or not.
      * A primary key whose value differs from the one stored in the database (old notified value, or source value of
      * a mutable key) targets the row with the stored one.
      *
@@ -463,8 +500,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         }
 
         $sourceValues = $this->mutablePrimaryValues[$entity] ?? [];
+        $notRead = $this->mutablePropertiesNotRead[$entity] ?? [];
         foreach ($metadata->getMutableProperties() as $property) {
             if (($withMutableFields === false && array_key_exists($property, $sourceValues) === false)
+                || isset($notRead[$property])
                 || $metadata->isEntityPropertyReadable($entity, $property) === false
             ) {
                 continue;
@@ -508,6 +547,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
 
                 $this->mutablePrimaryValues->offsetUnset($entity);
+                // Every value written is known
+                $this->mutablePropertiesNotRead->offsetUnset($entity);
                 $this->keepMutablePrimaryValues($entity, $metadata);
                 $this->manage($entity);
             },

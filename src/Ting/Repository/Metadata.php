@@ -450,6 +450,26 @@ class Metadata
     }
 
     /**
+     * Mutable properties whose column was not read: hydrated from a partial row (a SELECT of some columns, a join)
+     *
+     * @param array<string, true> $columns names of the columns read
+     * @return list<string> names of the mutable properties left out
+     *
+     * @internal
+     */
+    public function getMutablePropertiesNotRead(array $columns): array
+    {
+        $properties = [];
+        foreach ($this->mutableProperties as $property => $mutable) {
+            if (isset($columns[$this->fieldsByProperty[$property]['columnName']]) === false) {
+                $properties[] = $property;
+            }
+        }
+
+        return $properties;
+    }
+
+    /**
      * Retrieve all defined primaries.
      *
      * @return array<string, Field> column name => field

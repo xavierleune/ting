@@ -16,7 +16,9 @@ Managed entities are stored in a `WeakMap`: the unit of work does not keep them 
 reference to an entity, it is freed, and forgotten by the unit of work.
 
 The unit of work keeps no copy of the values of the managed entities: changes are notified by the entities, and the
-[mutable fields](entities.md#mutable-values) are written on every save. The only exception is a mutable primary key:
+[mutable fields](entities.md#mutable-values) are written on every save. For an entity read partially, only the names
+of the mutable fields left out of the query are kept, so that their default value is not written. The only copied
+value is that of a mutable primary key:
 its database value is kept (in a `WeakMap` too) when the entity becomes managed (hydration, `manage()`, after its
 `INSERT`) and refreshed by each `UPDATE`, so that a key modified in place still targets its row. It is dropped with the
 entity, by `detach()`, `detachAll()` and `reset()`.
@@ -45,8 +47,8 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
   [field options](repositories.md#field-options)) and the entity becomes managed.
 * **managed entity**: the properties reported by `propertyChanged()` since the last write (and not set back to their
   old value) are updated, together with every [mutable field](entities.md#mutable-values) (a `\DateTime`, a JSON
-  object...), whether it changed or not. If the entity has no mutable field and nothing changed, no query is sent;
-  with a mutable field, an `UPDATE` always runs. An immutable property modified without calling its setter is not
+  object...), whether it changed or not, except a mutable field left out of a partial read and not set since. If the
+  entity has no mutable field and nothing changed, no query is sent; with a mutable field, an `UPDATE` always runs. An immutable property modified without calling its setter is not
   reported, so it is not updated: see [entities](entities.md#tracking-changes).
 * **deleted entity**: it is deleted by its primary key, then detached. An entity that was never inserted (still queued
   for its `INSERT`, or not managed and without primary key) has no row: `pushDelete()` only removes it from the queue,
@@ -94,7 +96,7 @@ and leaves no transaction open, so a `rollback()` after it would throw too and h
 | `isNew(NotifyPropertyInterface $entity)`                            | the entity is queued for an `INSERT`                       |
 | `shouldBePersisted(NotifyPropertyInterface $entity)`                | the entity is queued (save or delete)                      |
 | `shouldBeRemoved(NotifyPropertyInterface $entity)`                  | the entity is queued for a `DELETE`                        |
-| `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property will be written by the next save: its change was notified, or it is a mutable field of a managed entity |
+| `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property will be written by the next save: its change was notified, or it is a mutable field of a managed entity, not left out of a partial read |
 
 ## Managing an entity yourself
 
