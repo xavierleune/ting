@@ -28,6 +28,7 @@ namespace CCMBenchmark\Ting\Driver\Pgsql;
 
 use PgSql\Connection;
 use CCMBenchmark\Ting\Driver\DriverInterface;
+use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\Exception;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
@@ -55,6 +56,8 @@ class Driver implements DriverInterface
      * @var Connection|null
      */
     protected $connection = null;
+
+    use LostTransactionTrait;
 
     protected bool $transactionOpened = false;
 
@@ -133,6 +136,7 @@ class Driver implements DriverInterface
             pg_close($this->connection);
             $this->connection = null;
             $this->forgetPreparedQueries();
+            $this->loseTransaction();
         }
 
         return $this;
@@ -404,6 +408,7 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === true) {
             throw new TransactionException('Cannot start another transaction');
         }
+        $this->forgetLostTransaction();
         $this->validateConnection();
         if (@pg_query($this->connection, 'BEGIN') === false) {
             throw new TransactionException('Cannot start transaction: ' . pg_last_error($this->connection));
@@ -417,6 +422,7 @@ class Driver implements DriverInterface
      */
     public function commit(): void
     {
+        $this->assertTransactionNotLost();
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot commit no transaction');
         }
@@ -441,6 +447,9 @@ class Driver implements DriverInterface
      */
     public function rollback(): void
     {
+        if ($this->forgetLostTransaction() === true) {
+            return;
+        }
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot rollback no transaction');
         }
@@ -536,11 +545,13 @@ class Driver implements DriverInterface
     {
         $this->validateConnection();
 
-        // pg_ping() re-establishes a lost connection: the new backend has none of the prepared statements
+        // pg_ping() re-establishes a lost connection: the new backend has none of the prepared statements, and the
+        // server rolled back the transaction of the lost one
         $backendPid = pg_get_pid($this->connection);
         $result = pg_ping($this->connection);
         if ($result === false || pg_get_pid($this->connection) !== $backendPid) {
             $this->forgetPreparedQueries();
+            $this->loseTransaction();
         }
 
         if ($result && $this->currentCharset !== null) {
@@ -589,6 +600,7 @@ class Driver implements DriverInterface
     {
         $this->connection = null;
         $this->forgetPreparedQueries();
+        $this->loseTransaction();
         try {
             $this->setDatabase($this->database);
             if ($this->currentTimezone !== null) {
