@@ -109,8 +109,6 @@ class Metadata
         MysqliBoolean::class,
         PgsqlBoolean::class,
     ];
-    /** Format of the "datetime" type, whatever the class it hydrates */
-    private const DATETIME_FORMAT = 'Y-m-d H:i:s';
     /** @var array<string, bool> property name => true when the field is mutable (written on every save) */
     private array $mutableProperties = [];
     /**
@@ -302,11 +300,6 @@ class Metadata
         if (isset($params['serializer']) === false && $params['type'] === 'datetime') {
             $this->dateTimeFieldsToResolve[$params['fieldName']] = $params;
             $params['serializer'] = $this->getDateTimeSerializer($params['fieldName']);
-            if ($params['serializer'] === DateTimeImmutable::class) {
-                // Serializer\DateTimeImmutable formats as ATOM by default: keep the format of the "datetime" type
-                $params['serializer_options']['serialize']['format'] ??= self::DATETIME_FORMAT;
-                $params['serializer_options']['unserialize']['format'] ??= self::DATETIME_FORMAT;
-            }
         } elseif (isset($params['serializer']) === false && isset($this->defaultSerializers[$params['type']])) {
             unset($this->dateTimeFieldsToResolve[$params['fieldName']]);
             $params['serializer'] = $this->defaultSerializers[$params['type']];

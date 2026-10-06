@@ -329,6 +329,22 @@ UnitOfWork
 * A primary key that is mutable (e.g. a `\DateTime`) and modified in place still targets its row: its database value
   is kept when the entity becomes managed, and refreshed by each `UPDATE`.
 
+Serializers
+-----------
+
+* **`Serializer\DateTimeImmutable` (`datetime_immutable` fields) writes `Y-m-d H:i:s` by default**, as
+  `Serializer\DateTime`, instead of `\DateTimeInterface::ATOM` (`2024-01-31T10:00:00+01:00`). In 3.x, its ATOM default
+  was also the only format accepted on read, so a `datetime_immutable` field could not read a MySQL `DATETIME` or a
+  PostgreSQL `timestamp` (`2024-01-31 10:00:00`) without a `format` option. Values already stored as ATOM are still
+  read (see below). To keep writing ATOM, set the format:
+  `'serializer_options' => ['serialize' => ['format' => \DateTimeInterface::ATOM]]`.
+* `Serializer\DateTime` and `Serializer\DateTimeImmutable` read a value with their `format` first and, when it does
+  not match, with the PHP date parser (`new \DateTime($value)`): ATOM values, PostgreSQL `timestamptz` values
+  (`2024-01-31 10:00:00+01`)... are read whatever the format. A value that neither can parse still throws a
+  `Serializer\RuntimeException`; an empty string is now rejected too (with `unSerializeUseFormat` set to `false`, it
+  was read as the current time). `unSerializeUseFormat` set to `false` still skips the format and only uses the PHP
+  parser.
+
 Query and Driver Methods
 -------------------------
 

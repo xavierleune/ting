@@ -64,6 +64,64 @@ class DateTimeImmutableTest extends TestCase
         $this->assertIsObject($serializer->unserialize('2008-08-04', ['unSerializeUseFormat' => false]));
     }
 
+    public function testSerializeShouldUseTheDatetimeFormatByDefault()
+    {
+        $serializer = new DateTimeImmutable();
+
+        $this->assertSame(
+            '2024-01-31 10:00:00',
+            $serializer->serialize(new \DateTimeImmutable('2024-01-31 10:00:00'))
+        );
+        $this->assertSame(
+            '2024-01-31T10:00:00+01:00',
+            $serializer->serialize(
+                new \DateTimeImmutable('2024-01-31T10:00:00+01:00'),
+                ['format' => \DateTimeInterface::ATOM]
+            )
+        );
+    }
+
+    public function testUnserializeShouldReadADatabaseDatetimeByDefault()
+    {
+        $serializer = new DateTimeImmutable();
+
+        $this->assertSame(
+            '2024-01-31 10:00:00',
+            $serializer->unserialize('2024-01-31 10:00:00')->format('Y-m-d H:i:s')
+        );
+    }
+
+    public function testUnserializeShouldFallBackToPhpParsingWhenTheFormatDoesNotMatch()
+    {
+        $serializer = new DateTimeImmutable();
+
+        // ATOM, the default format before 4.0
+        $this->assertSame(
+            '2024-01-31T10:00:00+01:00',
+            $serializer->unserialize('2024-01-31T10:00:00+01:00')->format(\DateTimeInterface::ATOM)
+        );
+        // PostgreSQL timestamptz
+        $this->assertSame(
+            '2024-01-31T10:00:00+01:00',
+            $serializer->unserialize('2024-01-31 10:00:00+01')->format(\DateTimeInterface::ATOM)
+        );
+        // A database datetime with an explicit ATOM format
+        $this->assertSame(
+            '2024-01-31 10:00:00',
+            $serializer->unserialize('2024-01-31 10:00:00', ['format' => \DateTimeInterface::ATOM])
+                ->format('Y-m-d H:i:s')
+        );
+    }
+
+    public function testUnserializeAnEmptyStringShouldRaiseException()
+    {
+        $serializer = new DateTimeImmutable();
+
+        $this->assertThrows(RuntimeException::class, function () use ($serializer): void {
+            $serializer->unserialize('');
+        });
+    }
+
     public function testSerializeInvalidValueShouldRaiseException()
     {
         $serializer = new DateTimeImmutable();
