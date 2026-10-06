@@ -31,7 +31,7 @@ use Exception;
 class DateTimeImmutable implements SerializerInterface
 {
     /**
-     * @var array
+     * @var array{format: string, unSerializeUseFormat: bool}
      * format => always used for serialization. Used first for unserialization when unSerializeUseFormat is true
      * unSerializeUseFormat => true: the value is read with format then, when it does not match, with the PHP
      *     date parser (new \DateTimeImmutable()), so that values written with another format are still read;
@@ -42,7 +42,7 @@ class DateTimeImmutable implements SerializerInterface
 
     /**
      * @param mixed $toSerialize
-     * @param array $options
+     * @param array{format?: string, unSerializeUseFormat?: bool} $options
      * @return string|null
      * @throws RuntimeException
      */
@@ -64,7 +64,7 @@ class DateTimeImmutable implements SerializerInterface
 
     /**
      * @param string|null $serialized
-     * @param array  $options
+     * @param array{format?: string, unSerializeUseFormat?: bool} $options
      * @return \DateTimeImmutable|null
      * @throws RuntimeException
      */

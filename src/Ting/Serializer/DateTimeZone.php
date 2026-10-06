@@ -4,6 +4,9 @@ namespace CCMBenchmark\Ting\Serializer;
 
 use Exception;
 
+/**
+ * @phpstan-import-type SerializerOptions from SerializeInterface
+ */
 class DateTimeZone implements SerializerInterface
 {
     public function serialize($toSerialize, array $options = []): ?string
@@ -21,7 +24,7 @@ class DateTimeZone implements SerializerInterface
 
     /**
      * @param mixed $serialized
-     * @param array $options
+     * @param SerializerOptions $options unused
      * @return \DateTimeZone|null
      */
     public function unserialize(mixed $serialized, array $options = []): ?\DateTimeZone

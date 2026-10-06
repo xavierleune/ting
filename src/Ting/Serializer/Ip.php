@@ -25,11 +25,14 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+/**
+ * @phpstan-import-type SerializerOptions from SerializeInterface
+ */
 class Ip implements SerializerInterface, ScalarValueInterface
 {
     /**
      * @param mixed $toSerialize
-     * @param array $options
+     * @param SerializerOptions $options unused
      * @throws RuntimeException
      */
     public function serialize($toSerialize, array $options = []): ?int
@@ -49,7 +52,7 @@ class Ip implements SerializerInterface, ScalarValueInterface
 
     /**
      * @param mixed $serialized
-     * @param array  $options
+     * @param SerializerOptions $options unused
      * @throws RuntimeException
      */
     public function unserialize($serialized, array $options = []): null|string|bool

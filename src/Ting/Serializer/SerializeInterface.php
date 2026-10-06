@@ -25,11 +25,16 @@
 
 namespace CCMBenchmark\Ting\Serializer;
 
+/**
+ * Options of a serializer, by name
+ *
+ * @phpstan-type SerializerOptions array<string, mixed>
+ */
 interface SerializeInterface
 {
     /**
      * @param mixed $toSerialize
-     * @param array $options
+     * @param SerializerOptions $options
      */
     public function serialize(mixed $toSerialize, array $options = []): mixed;
 }
