@@ -26,7 +26,6 @@
 
 namespace CCMBenchmark\Ting\Repository;
 
-use stdClass;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\Hydrator\Relation;
@@ -44,7 +43,8 @@ use function iterator_to_array;
 use function sprintf;
 
 /**
- * @template T
+ * @template T type of the items, as built by the callable given to callableFinalizeAggregate(): the rows without
+ *             the aliases of the sources without one
  *
  * @template-extends Hydrator<T>
  */
@@ -55,10 +55,16 @@ final class HydratorRelational extends Hydrator
      */
     private $callableFinalizeAggregate;
 
+    /** @var SplDoublyLinkedList<array{source: string, target: string, targetSetter: string, many: bool}> */
     private SplDoublyLinkedList $config;
 
+    /** @var array<string, object> reference key => first instance met of the entity */
     protected array $referencesRelation = [];
 
+    /**
+     * @var array<int, array<string, mixed>> index of the relation => reference key of the target => entity of the
+     *      source, or entities of the sources by reference key (array<string, object>) for a RelationMany
+     */
     private array $resources = [];
 
     protected bool $identityMap = true;
@@ -104,7 +110,7 @@ final class HydratorRelational extends Hydrator
     /**
      * @throws Exception
      *
-     * @return Generator<int, T|stdClass>
+     * @return Generator<int, mixed> the rows, or what the callable given to callableFinalizeAggregate() returns
      */
     public function getIterator(): Generator
     {
@@ -154,6 +160,8 @@ final class HydratorRelational extends Hydrator
 
     /**
      * Stores the first instance met for the entity of $alias and returns its reference key
+     *
+     * @param array<int|string, object|null> $result row in which the entity of $alias is set
      *
      * @throws Exception
      */
@@ -248,7 +256,7 @@ final class HydratorRelational extends Hydrator
     }
 
     /**
-     *
+     * @param array<int|string, object|null> $result
      * @return mixed
      */
     private function finalizeAggregate(array $result): mixed

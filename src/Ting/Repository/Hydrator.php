@@ -36,29 +36,39 @@ use Generator;
 use WeakMap;
 
 /**
- * @template T
+ * Hydrates each row into an array: alias of the table => entity (null when a LEFT JOIN matched nothing), and
+ * 0 => stdClass holding the columns without metadata (COUNT(*)...)
+ *
+ * @template T type of the items, as documented by the caller (the hydrator cannot check it): the rows
+ *             (array<int|string, object|null>) for this class, what a subclass makes of them
+ * @phpstan-import-type Column from ResultInterface
+ * @phpstan-import-type Row from ResultInterface
+ * @phpstan-import-type SerializerOptions from UnserializeInterface
  *
  * @template-implements HydratorInterface<T>
  */
 class Hydrator implements HydratorInterface
 {
+    /** @var array<string, list<array{0: string, 1: string}>> alias of the target => [virtual column, setter] */
     protected array $mapAliases         = [];
+    /** @var array<string, list<array{0: string, 1: string}>> alias of the target => [alias of the object, setter] */
     protected array $mapObjects         = [];
+    /** @var array<string, string> alias => database */
     protected array $objectDatabase     = [];
+    /** @var array<string, string> alias => schema */
     protected array $objectSchema       = [];
+    /** @var array<string, array{0: UnserializeInterface, 1: SerializerOptions}> virtual column => [unserializer, options] */
     protected array $unserializeAliases = [];
     /** @var WeakMap<NotifyPropertyInterface, bool> */
     protected WeakMap $alreadyManaged;
+    /** @var array<string, object|null> identity map: reference key => entity */
     protected array $references         = [];
 
     /**
-     * @var Metadata[]
+     * @var array<string, Metadata<object>> alias => metadata of its table
      */
     protected array $metadataList       = [];
 
-    /**
-     * @var ResultInterface<T>
-     */
     protected ?ResultInterface $result = null;
 
     protected ?MetadataRepository $metadataRepository = null;
@@ -106,7 +116,8 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * @return Generator<int, array<int|string, T|stdClass|null>>
+     * @return Generator<int, mixed> the rows (array<int|string, object|null>), as hydrateColumns() returns them: a
+     *                               subclass yields what it makes of them
      */
     public function getIterator(): Generator
     {
@@ -135,14 +146,11 @@ class Hydrator implements HydratorInterface
     /**
      * @param string $alias
      * @param UnserializeInterface $unserialize
-     * @param array $options
+     * @param SerializerOptions $options
      * @return $this
      */
     public function unserializeAliasWith(string $alias, UnserializeInterface $unserialize, array $options = []): static
     {
-        if (isset($this->unserializeAliases[$alias]) === false) {
-            $this->unserializeAliases[$alias] = [];
-        }
         $this->unserializeAliases[$alias] = [$unserialize, $options];
 
         return $this;
@@ -210,7 +218,7 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * @param array $column
+     * @param Column $column
      *
      * @return string
      */
@@ -221,7 +229,7 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * @param array $result
+     * @param array<int|string, object|null> $result
      *
      * @return bool
      */
@@ -231,11 +239,10 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * @param stdClass $virtualObject
-     *
-     * @return stdClass
+     * @param object $virtualObject the stdClass of the virtual columns (key 0 of the row, which a table aliased "0"
+     *                              would take as well)
      */
-    private function unserializeVirtualObjectProperty(stdClass $virtualObject): stdClass
+    private function unserializeVirtualObjectProperty(object $virtualObject): object
     {
         foreach ($this->unserializeAliases as $aliasName => [$unserialize, $options]) {
             if (isset($virtualObject->$aliasName)) {
@@ -255,9 +262,9 @@ class Hydrator implements HydratorInterface
      *
      * @param string $connectionName
      * @param string $database
-     * @param array  $columns
+     * @param Row    $columns
      *
-     * @return array<int|string, T|stdClass|null>
+     * @return array<int|string, object|null> alias => entity, 0 => stdClass of the virtual columns
      */
     protected function hydrateColumns(string $connectionName, string $database, array $columns): array
     {
@@ -411,6 +418,7 @@ class Hydrator implements HydratorInterface
     /**
      * Identity map key of the entity of $table in the row: every primary value, read from the columns
      *
+     * @param Row $columns
      * @return string|false false when a primary of the table is missing from the row or null
      */
     private function referenceFromColumns(string $table, array $columns): string|false

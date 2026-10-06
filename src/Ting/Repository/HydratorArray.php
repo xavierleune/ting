@@ -31,9 +31,7 @@ use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\UnitOfWork;
 
 /**
- * @template T
- *
- * @template-implements HydratorInterface<T>
+ * @template-implements HydratorInterface<array<string, mixed>>
  */
 class HydratorArray implements HydratorInterface
 {
@@ -64,7 +62,7 @@ class HydratorArray implements HydratorInterface
     }
 
     /**
-     * @return Generator<int, array>
+     * @return Generator<int, array<string, mixed>> column name (or alias) => value
      */
     public function getIterator(): Generator
     {

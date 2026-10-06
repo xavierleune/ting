@@ -58,7 +58,7 @@ abstract class Repository implements ResetInterface
     public const QUERY_DELETE = 'delete';
 
     /**
-     * @var Metadata
+     * @var Metadata<T>
      */
     protected Metadata $metadata;
 
@@ -68,7 +68,8 @@ abstract class Repository implements ResetInterface
      * @param ConnectionPool $connectionPool
      * @param MetadataRepository $metadataRepository
      * @param QueryFactory $queryFactory
-     * @param CollectionFactory $collectionFactory
+     * @param CollectionFactory<mixed> $collectionFactory its hydrator, shared by the repositories, hydrates
+     *                                          the collections of the queries
      * @param CacheInterface $cache
      * @param UnitOfWork $unitOfWork
      *
@@ -101,8 +102,8 @@ abstract class Repository implements ResetInterface
 
 
     /**
-     * @param HydratorInterface<U>|null $hydrator
-     * @return Collection<U>
+     * @param HydratorInterface<U>|null $hydrator null for a clone of the hydrator of the collection factory
+     * @return ($hydrator is null ? Collection<mixed> : Collection<U>)
      *
      * @template U
      */
@@ -111,16 +112,26 @@ abstract class Repository implements ResetInterface
         return $this->collectionFactory->get($hydrator);
     }
 
+    /**
+     * @return Query<mixed> its collections are hydrated by the hydrator of the collection factory
+     */
     public function getQuery(string $sql): Query
     {
         return $this->queryFactory->get($sql, $this->connection, $this->collectionFactory);
     }
 
+    /**
+     * @return PreparedQuery<mixed> its collections are hydrated by the hydrator of the collection factory
+     */
     public function getPreparedQuery(string $sql): PreparedQuery
     {
         return $this->queryFactory->getPrepared($sql, $this->connection, $this->collectionFactory);
     }
 
+    /**
+     * @return \CCMBenchmark\Ting\Query\Cached\Query<mixed> its collections are hydrated by the hydrator of the
+     *                                                    collection factory
+     */
     public function getCachedQuery(string $sql): \CCMBenchmark\Ting\Query\Cached\Query
     {
         return $this->queryFactory->getCached(
@@ -131,6 +142,10 @@ abstract class Repository implements ResetInterface
         );
     }
 
+    /**
+     * @return \CCMBenchmark\Ting\Query\Cached\PreparedQuery<mixed> its collections are hydrated by the hydrator of
+     *                                                            the collection factory
+     */
     public function getCachedPreparedQuery(string $sql): \CCMBenchmark\Ting\Query\Cached\PreparedQuery
     {
         return $this->queryFactory->getCachedPrepared(

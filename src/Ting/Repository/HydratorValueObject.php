@@ -33,6 +33,7 @@ use CCMBenchmark\Ting\UnitOfWork;
 
 /**
  * @template T of object
+ * @phpstan-import-type Row from ResultInterface
  *
  * @template-implements HydratorInterface<T>
  */
@@ -43,7 +44,7 @@ class HydratorValueObject implements HydratorInterface
      */
     protected string $objectToHydrate;
     /**
-     * @var ResultInterface<list<array{name: string, value: mixed}>>|null rows as formatted by the driver
+     * @var ResultInterface|null rows as formatted by the driver
      */
     protected ?ResultInterface $result = null;
 
@@ -74,7 +75,7 @@ class HydratorValueObject implements HydratorInterface
      * (or its alias) whatever its visibility, then the constructor is called without arguments
      *
      * @param \ReflectionClass<T> $class
-     * @param list<array{name: string, value: mixed}> $row columns as formatted by the driver
+     * @param Row $row columns as formatted by the driver
      * @return T
      */
     private function hydrate(\ReflectionClass $class, ?\ReflectionMethod $constructor, array $row): object
