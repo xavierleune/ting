@@ -80,4 +80,26 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
 
         return $types;
     }
+
+    /**
+     * Runs $callable with an error handler converting the errors not silenced (@) to ErrorException, as Symfony's
+     * debug ErrorHandler does (with every error reported: PHPUnit lowers error_reporting() while it handles errors)
+     */
+    protected function withErrorsAsExceptions(callable $callable): mixed
+    {
+        $errorReporting = error_reporting(E_ALL);
+        set_error_handler(static function (int $type, string $message, string $file, int $line): bool {
+            if ((error_reporting() & $type) === 0) {
+                return false;
+            }
+
+            throw new \ErrorException($message, 0, $type, $file, $line);
+        });
+        try {
+            return $callable();
+        } finally {
+            restore_error_handler();
+            error_reporting($errorReporting);
+        }
+    }
 }

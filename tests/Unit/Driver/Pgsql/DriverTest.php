@@ -1225,6 +1225,124 @@ class DriverTest extends TestCase
         $this->assertSame(3, $queryCalls);
     }
 
+    /**
+     * Like the pg_* functions on a query error: a warning, then false
+     */
+    private static function failWithWarning(string $function): void
+    {
+        NativeFunctionMock::override($function, static function () use ($function): bool {
+            trigger_error($function . '(): Query failed: ERROR:  syntax error', E_USER_WARNING);
+
+            return false;
+        });
+    }
+
+    public static function failingQueryProvider(): iterable
+    {
+        yield 'execute() without parameter' => ['pg_query', fn (Driver $driver) => $driver->execute('SELEC 1'), QueryException::class];
+        yield 'execute() with parameters' => ['pg_query_params', fn (Driver $driver) => $driver->execute('SELEC :id', ['id' => 1]), QueryException::class];
+        yield 'prepare()' => ['pg_prepare', fn (Driver $driver) => $driver->prepare('SELEC 1'), QueryException::class];
+        yield 'startTransaction()' => ['pg_query', fn (Driver $driver) => $driver->startTransaction(), TransactionException::class];
+        yield 'getInsertedId()' => ['pg_query', fn (Driver $driver) => $driver->getInsertedId(), DriverException::class];
+        yield 'getInsertedIdForSequence()' => ['pg_query_params', fn (Driver $driver) => $driver->getInsertedIdForSequence('seq'), QueryException::class];
+        yield 'setTimezone()' => ['pg_query', fn (Driver $driver) => $driver->setTimezone('Mars/Olympus'), DriverException::class];
+    }
+
+    /**
+     * With an error handler converting warnings to exceptions (Symfony debug), the warning of the failed query
+     * must not escape instead of Ting's exception
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('failingQueryProvider')]
+    public function testAFailedQueryShouldRaiseTingExceptionAndNotAWarning(string $function, \Closure $query, string $exception)
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  syntax error');
+        self::failWithWarning($function);
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        $this->assertThrows($exception, fn () => $this->withErrorsAsExceptions(fn () => $query($driver)));
+    }
+
+    public function testTransactionCommandsFailingShouldRaiseTransactionExceptionAndNotAWarning()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        foreach (['commit', 'rollback'] as $command) {
+            NativeFunctionMock::override('pg_query', true);
+            $driver->startTransaction();
+            self::failWithWarning('pg_query');
+            $this->assertThrows(
+                TransactionException::class,
+                fn () => $this->withErrorsAsExceptions(fn () => $driver->$command())
+            );
+        }
+    }
+
+    public function testConnectionFailureShouldRaiseDriverExceptionAndNotAWarning()
+    {
+        self::failWithWarning('pg_connect');
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+
+        $this->assertThrows(
+            DriverException::class,
+            fn () => $this->withErrorsAsExceptions(fn () => $driver->setDatabase('myDatabase'))
+        );
+    }
+
+    public function testAFailedQueryShouldStopTheLogEvenWithWarningsConvertedToExceptions()
+    {
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  syntax error');
+        self::failWithWarning('pg_query');
+        self::failWithWarning('pg_prepare');
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startQuery');
+        $mockLogger->expects($this->once())->method('stopQuery');
+        $mockLogger->expects($this->once())->method('startPrepare');
+        $mockLogger->expects($this->once())->method('stopPrepare');
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->setLogger($mockLogger);
+
+        $this->withErrorsAsExceptions(function () use ($driver): void {
+            $this->assertThrows(QueryException::class, fn () => $driver->execute('SELEC 1'));
+            $this->assertThrows(QueryException::class, fn () => $driver->prepare('SELEC 1'));
+        });
+    }
+
+    public function testSetCharsetWithoutConnectionShouldRaiseDriverException()
+    {
+        $driver = new Driver();
+
+        // pg_last_error() without connection raised a deprecation, then an Error
+        $this->assertThrows(
+            DriverException::class,
+            fn () => $this->withErrorsAsExceptions(fn () => $driver->setCharset('utf8')),
+            'Can\'t set charset utf8 (not connected)'
+        );
+    }
+
+    public function testPrepareWithoutConnectionShouldNotStartTheLog()
+    {
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->never())->method('startPrepare');
+
+        $driver = new Driver();
+        $driver->setLogger($mockLogger);
+
+        $this->assertThrows(NeverConnectedException::class, fn () => $driver->prepare('SELECT 1'));
+    }
+
     public function testReconnectShouldForgetATimezoneRejectedByTheServer()
     {
         $rejected = false;

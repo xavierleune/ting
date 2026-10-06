@@ -142,7 +142,12 @@ class Driver implements DriverInterface
             return;
         }
 
-        if ($this->connection === null || pg_set_client_encoding($this->connection, $charset) === -1) {
+        if ($this->connection === null) {
+            // pg_last_error() without connection is deprecated, and throws an Error when no connection was opened
+            throw new DriverException('Can\'t set charset ' . $charset . ' (not connected)');
+        }
+
+        if (pg_set_client_encoding($this->connection, $charset) === -1) {
             throw new DriverException('Can\'t set charset ' . $charset . ' (' . pg_last_error($this->connection) . ')');
         }
 
@@ -167,7 +172,7 @@ class Driver implements DriverInterface
         }
 
         $dsn = $this->dsn . ' dbname=' . self::quoteDsnValue($database);
-        $resource = pg_connect($dsn);
+        $resource = @pg_connect($dsn);
         $this->database = $database;
 
         if ($resource === false) {
@@ -211,14 +216,18 @@ class Driver implements DriverInterface
             $this->logger->startQuery($sql, $params, $this->objectHash, $this->database);
         }
 
-        if ($values === []) {
-            $result = pg_query($this->connection, $convertedSql);
-        } else {
-            $result = pg_query_params($this->connection, $convertedSql, $values);
-        }
-
-        if ($this->logger !== null) {
-            $this->logger->stopQuery();
+        // Silenced: a failed query raises a warning, which an error handler may turn into an exception, before
+        // the QueryException below
+        try {
+            if ($values === []) {
+                $result = @pg_query($this->connection, $convertedSql);
+            } else {
+                $result = @pg_query_params($this->connection, $convertedSql, $values);
+            }
+        } finally {
+            if ($this->logger !== null) {
+                $this->logger->stopQuery();
+            }
         }
 
         if ($result === false) {
@@ -274,22 +283,24 @@ class Driver implements DriverInterface
             return $this->preparedQueries[$statementName];
         }
 
+        $this->validateConnection();
+
         $statement = new Statement($statementName, $paramsOrder, $this->name, $this->database);
 
         if ($this->logger !== null) {
             $this->logger->startPrepare($originalSQL, $this->objectHash, $this->database);
             $statement->setLogger($this->logger);
         }
-        $this->validateConnection();
-        $result = pg_prepare($this->connection, $statementName, $sql);
-        if ($this->logger !== null) {
-            $this->logger->stopPrepare($statementName);
+        try {
+            $result = @pg_prepare($this->connection, $statementName, $sql);
+        } finally {
+            if ($this->logger !== null) {
+                $this->logger->stopPrepare($statementName);
+            }
         }
 
         if ($result === false) {
-            $this->ifIsError(function () use ($sql): void {
-                throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $sql . ')');
-            });
+            throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $sql . ')');
         }
 
         // getAffectedRows() reports the last query, prepared or not. Weak: the driver holds the statement
@@ -389,7 +400,7 @@ class Driver implements DriverInterface
             throw new TransactionException('Cannot start another transaction');
         }
         $this->validateConnection();
-        if (pg_query($this->connection, 'BEGIN') === false) {
+        if (@pg_query($this->connection, 'BEGIN') === false) {
             throw new TransactionException('Cannot start transaction: ' . pg_last_error($this->connection));
         }
         $this->transactionOpened = true;
@@ -407,7 +418,7 @@ class Driver implements DriverInterface
         $this->validateConnection();
         // Even when the COMMIT fails, the transaction is over: rolled back by the server or lost with the connection
         $this->transactionOpened = false;
-        $result = pg_query($this->connection, 'COMMIT');
+        $result = @pg_query($this->connection, 'COMMIT');
         if ($result === false) {
             throw new TransactionException('Cannot commit transaction: ' . pg_last_error($this->connection));
         }
@@ -430,7 +441,7 @@ class Driver implements DriverInterface
         }
         $this->validateConnection();
         $this->transactionOpened = false;
-        if (pg_query($this->connection, 'ROLLBACK') === false) {
+        if (@pg_query($this->connection, 'ROLLBACK') === false) {
             throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($this->connection));
         }
     }
@@ -442,7 +453,7 @@ class Driver implements DriverInterface
     public function getInsertedId(): int
     {
         $this->validateConnection();
-        $resultResource = pg_query($this->connection, 'SELECT lastval()');
+        $resultResource = @pg_query($this->connection, 'SELECT lastval()');
         if ($resultResource === false) {
             throw new DriverException('Could not fetch last inserted id.');
         }
