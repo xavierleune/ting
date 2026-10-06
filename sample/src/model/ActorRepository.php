@@ -42,7 +42,6 @@ class ActorRepository extends Repository implements MetadataInitializer
         $metadata->setEntity('sample\src\model\Actor');
         $metadata->setConnectionName('main');
         $metadata->setDatabase('world');
-        $metadata->setSchema('public');
         $metadata->setTable('actor');
 
         $metadata->addField([

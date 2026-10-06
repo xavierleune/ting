@@ -42,7 +42,6 @@ class WorkerRepository extends Repository implements MetadataInitializer
         $metadata->setEntity('sample\src\model\Worker');
         $metadata->setConnectionName('main');
         $metadata->setDatabase('world');
-        $metadata->setSchema('public');
         $metadata->setTable('worker');
 
         $metadata->addField([

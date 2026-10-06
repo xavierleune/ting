@@ -42,7 +42,6 @@ class MovieRepository extends Repository implements MetadataInitializer
         $metadata->setEntity('sample\src\model\Movie');
         $metadata->setConnectionName('main');
         $metadata->setDatabase('world');
-        $metadata->setSchema('public');
         $metadata->setTable('movie');
 
         $metadata->addField([
