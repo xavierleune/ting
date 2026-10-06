@@ -357,7 +357,7 @@ class Hydrator implements HydratorInterface
                         $tmpEntities[$column['table']]        = [];
                     },
                     null,
-                    array_keys($this->preferredRepositories)
+                    [array_keys($this->preferredRepositories)]
                 );
             }
 

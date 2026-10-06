@@ -521,21 +521,25 @@ class MetadataRepositoryTest extends TestCase
 
     /**
      * Registers one metadata per [repository, database, schema] for the table T_CITY_CIT of the connection main,
-     * its entity being the repository name followed by "Entity"
+     * its entity being the repository name followed by "Entity" unless given, with the columns given (none by default)
      *
-     * @param list<array{string, string, string}> $definitions
+     * @param list<array{0: string, 1: string, 2: string, 3?: string, 4?: list<string>}> $definitions
      */
     private function metadataRepositoryFor(array $definitions): MetadataRepository
     {
         $services = new TingServices();
         $metadataRepository = new MetadataRepository($services->serializerFactory());
-        foreach ($definitions as [$repository, $database, $schema]) {
+        foreach ($definitions as $definition) {
+            [$repository, $database, $schema] = $definition;
             $metadata = new Metadata($services->serializerFactory());
-            $metadata->setEntity($repository . 'Entity');
+            $metadata->setEntity($definition[3] ?? $repository . 'Entity');
             $metadata->setConnectionName('main');
             $metadata->setDatabase($database);
             $metadata->setSchema($schema);
             $metadata->setTable('T_CITY_CIT');
+            foreach ($definition[4] ?? [] as $column) {
+                $metadata->addField(['fieldName' => $column, 'columnName' => $column, 'type' => 'string']);
+            }
             $metadataRepository->addMetadata($repository, $metadata);
         }
 
@@ -543,7 +547,7 @@ class MetadataRepositoryTest extends TestCase
     }
 
     /**
-     * @param list<string> $preferredRepositories
+     * @param list<list<string>> $preferredRepositories groups of repositories, by priority
      * @return string|null the entity of the metadata found, null when the not found callback is called
      */
     private function entityFoundForTable(
@@ -733,13 +737,35 @@ class MetadataRepositoryTest extends TestCase
         $found = fn (string $database, string $schema, array $preferred, string $table = 'T_CITY_CIT') =>
             $this->entityFoundForTable($metadataRepository, $database, $schema, $table, $preferred);
 
-        $this->assertSame('UserEntity', $found('bouh_world', '', ['User']));
-        $this->assertSame('UserLightEntity', $found('bouh_world', '', ['Other', 'UserLight']));
-        // Whatever the database and the schema read
-        $this->assertSame('UserLightEntity', $found('bouh_world_3', 'mySchema', ['UserLight']));
+        $this->assertSame('UserEntity', $found('bouh_world', '', [['User']]));
+        $this->assertSame('UserLightEntity', $found('bouh_world', '', [['Other', 'UserLight']]));
+        // Without exact match, whatever the database and the schema read
+        $this->assertSame('UserLightEntity', $found('bouh_world_3', 'mySchema', [['UserLight']]));
         // A preferred repository not mapping the table leaves the choice to the database and the schema
-        $this->assertThrows(HydratorException::class, fn () => $found('bouh_world', '', ['Other']));
-        $this->assertNull($found('bouh_world', '', ['User'], 'T_UNKNOWN'));
+        $this->assertThrows(HydratorException::class, fn () => $found('bouh_world', '', [['Other']]));
+        $this->assertNull($found('bouh_world', '', [['User']], 'T_UNKNOWN'));
+    }
+
+    /**
+     * The preference of the repository running the query breaks ties between the metadata of the database and the
+     * schema read: it does not override them (a join on the same table of another database or schema)
+     */
+    public function testFindMetadataForTableShouldPreferTheExactMatchOverThePreferredRepositories(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['FrUser', 'db_fr', ''],
+            ['EnUser', 'db_en', ''],
+            ['User', 'db', 'public'],
+            ['AuditUser', 'db', 'Audit'],
+        ]);
+
+        $this->assertSame('EnUserEntity', $this->entityFoundForTable($metadataRepository, 'db_en', '', preferredRepositories: [['FrUser']]));
+        $this->assertSame('FrUserEntity', $this->entityFoundForTable($metadataRepository, 'db_fr', '', preferredRepositories: [['FrUser']]));
+        $this->assertSame('AuditUserEntity', $this->entityFoundForTable($metadataRepository, 'db', 'Audit', preferredRepositories: [['User']]));
+        // Pgsql\Result lowercases the schemas read
+        $this->assertSame('AuditUserEntity', $this->entityFoundForTable($metadataRepository, 'db', 'audit', preferredRepositories: [['User']]));
+        // No metadata of the database and schema read: the preference chooses
+        $this->assertSame('FrUserEntity', $this->entityFoundForTable($metadataRepository, 'db_other', '', preferredRepositories: [['FrUser']]));
     }
 
     public function testFindMetadataForTableShouldApplyTheRulesToThePreferredRepositories(): void
@@ -750,7 +776,7 @@ class MetadataRepositoryTest extends TestCase
             ['CityLight', 'bouh_world_2', ''],
         ]);
 
-        $preferred = ['City', 'CitySecond'];
+        $preferred = [['City', 'CitySecond']];
         $this->assertSame(
             'CitySecondEntity',
             $this->entityFoundForTable($metadataRepository, 'bouh_world_2', '', preferredRepositories: $preferred)

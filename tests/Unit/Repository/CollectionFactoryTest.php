@@ -30,6 +30,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\HydratorSingleObject;
+use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\FakeDriver\MysqliResult;
@@ -105,6 +106,40 @@ class CollectionFactoryTest extends TestCase
         $collection = $sharedFactory->get($hydrator);
         $collection->set($this->createUserResult());
         $this->assertInstanceOf(UserLight::class, $collection->first()['user']);
+    }
+
+    /**
+     * The repository running the query prefers its metadata among those of the database and the schema read: it
+     * does not override objectDatabaseIs() (a join on the same table of another database)
+     */
+    public function testForRepositoryShouldNotOverrideTheDatabaseOfTheAlias()
+    {
+        $services = $this->servicesWithSameTableRepositories();
+        $archive = new Metadata($services->serializerFactory());
+        $archive->setEntity(UserLight::class);
+        $archive->setConnectionName('main');
+        $archive->setDatabase('bouh_archive');
+        $archive->setTable('user');
+        $archive->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'id', 'type' => 'int']);
+        $services->metadataRepository()->addMetadata('ArchivedUsers', $archive);
+
+        $users = $services->collectionFactory()->forRepository(UserRepository::class);
+        $hydrator = $services->hydrator()->objectDatabaseIs('user', 'bouh_archive');
+        $collection = $users->get($hydrator);
+        $collection->set($this->createUserResult());
+
+        $this->assertInstanceOf(UserLight::class, $collection->first()['user']);
+    }
+
+    private function servicesWithSameTableRepositories(): TingServices
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model\SameTable',
+            __DIR__ . '/../../fixtures/model/SameTable/*Repository.php'
+        );
+
+        return $services;
     }
 
     private function createUserResult(): Result
