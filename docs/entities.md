@@ -179,6 +179,15 @@ Ting reads and writes properties with [Symfony PropertyAccess](https://symfony.c
 * to read `name`, it calls `getName()`, `isName()` or `hasName()`, or reads the property if it is public;
 * to write `name`, it calls `setName()`, or writes the property if it is public.
 
+An array value (a `json` field decoded to arrays, for instance) is the exception: when the entity has an adder and a
+remover for the property (`addTag()` / `removeTag()` for `tags`), PropertyAccess calls them **instead of**
+`setTags()`, as in 3.x: it reads the current value with the getter, calls `removeTag()` for each element missing from
+the new value, then `addTag()` for each element missing from the current one (the order of the new value is not kept).
+The setter is not called, so these methods must call `propertyChanged()` themselves, and the property needs a default
+value (`private array $tags = [];`): a typed property not initialized makes the hydration throw a
+`Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException`. To have Ting call `setTags()`, declare it
+with the `setter` option.
+
 When your accessors do not follow these conventions, declare them in the metadata with the `getter` and `setter`
 options (like `isCapitalCity()` / `capitalCityIs()` above): see [field options](repositories.md#field-options).
 
