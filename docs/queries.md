@@ -67,8 +67,9 @@ Cached queries are described in [Cache](cache.md).
 ### Parameters
 
 Put named placeholders (`:name`) in the SQL and give their values with `setParams()`, an associative array without
-the leading colon. Values are escaped (MySQL) or sent as query parameters (PostgreSQL) by the driver: never
-concatenate user input in the SQL.
+the leading colon. The driver escapes and quotes the values into the SQL for a MySQL (or SphinxQL) `Query`, and sends
+them as bound parameters for a `PreparedQuery` and for every PostgreSQL query: never concatenate user input in the
+SQL.
 
 ```php
 public function findByName(string $name): CollectionInterface

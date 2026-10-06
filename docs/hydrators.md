@@ -573,7 +573,14 @@ which merge rows, the number of items you iterate over is usually lower: count t
 `iterator_count($collection)` instead.
 
 The keys of the iteration follow the rows of the result: with `HydratorAggregator`, they skip the rows merged into a
-group. Don't rely on them being consecutive.
+group. Don't rely on them being consecutive. `HydratorRelational` is the exception: it yields its roots with the keys
+`0` to `n - 1`, whatever the rows they were built from.
+
+A collection has a single cursor, the one of its result: it cannot be iterated twice at the same time. Iterating it
+again inside a `foreach` over it — a nested `foreach`, `json_encode($collection)`, `iterator_count($collection)`,
+`iterator_to_array($collection)` — restarts the result and leaves it at its end, so the outer loop stops after its
+current item, without error. Only `first()` and `count()` are safe inside the loop. To go through the items several
+times, copy them first (`$items = iterator_to_array($collection, false);`).
 
 ## Writing a hydrator
 
