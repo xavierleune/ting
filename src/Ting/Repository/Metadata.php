@@ -41,6 +41,7 @@ use CCMBenchmark\Ting\Query\QueryInterface;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPoolInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
+use CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface;
 use CCMBenchmark\Ting\Driver\Mysqli\Serializer\Boolean as MysqliBoolean;
 use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Exception;
@@ -529,9 +530,7 @@ class Metadata
             return false;
         }
 
-        if (method_exists($driver, 'getInsertedIdForSequence')
-            && isset($this->autoincrement['sequenceName'])
-        ) {
+        if ($driver instanceof SequenceAwareDriverInterface && isset($this->autoincrement['sequenceName'])) {
             $insertId = $driver->getInsertedIdForSequence($this->autoincrement['sequenceName']);
         } else {
             $insertId = $driver->getInsertedId();

@@ -624,6 +624,10 @@ Smaller Changes for Extensions
 
 These changes only matter if you extend Ting classes or rely on their internals.
 
+* A custom driver supporting sequences must implement `CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface`
+  (`getInsertedIdForSequence(string $sequenceName): int`): having a method of that name is no longer enough for the
+  `sequenceName` option of an autoincrement field.
+
 * Built-in serializers now declare native return types on `serialize()` / `unserialize()`: `Serializer\DateTime`,
   `DateTimeImmutable`, `DateTimeZone`, `Json`, `Ip`, `Uuid`, `BackedEnum` (`unserialize()`),
   `Driver\Mysqli\Serializer\Boolean` and `Driver\Pgsql\Serializer\Boolean`. A subclass overriding one of these methods

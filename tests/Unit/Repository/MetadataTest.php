@@ -26,9 +26,13 @@
 
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
+use CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface;
+use tests\fixtures\FakeDriver\SequenceAwareDriver;
+
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
+use CCMBenchmark\Ting\Driver\Pgsql\Driver as PgsqlDriver;
 use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exception;
@@ -573,6 +577,56 @@ class MetadataTest extends TestCase
 
         $metadata->setEntityPropertyForAutoIncrement($bouh, $driver);
         $this->assertCalledOnceWith($bouh, 'setId', [321]);
+    }
+
+    public function testSetEntityPropertyForAutoIncrementShouldReadTheSequenceOfASequenceAwareDriver()
+    {
+        $metadata = $this->createSequenceMetadata();
+        $driver = $this->createMock(SequenceAwareDriver::class);
+        $driver->expects($this->once())->method('getInsertedIdForSequence')->with('bouh_id_seq')->willReturn(654);
+        $driver->expects($this->never())->method('getInsertedId');
+
+        $bouh = $metadata->createEntity();
+        $metadata->setEntityPropertyForAutoIncrement($bouh, $driver);
+
+        $this->assertCalledOnceWith($bouh, 'setId', [654]);
+    }
+
+    public function testSetEntityPropertyForAutoIncrementWithASequenceShouldUseTheInsertedIdOfOtherDrivers()
+    {
+        $metadata = $this->createSequenceMetadata();
+        // Mysqli has no sequence: its insert id is the generated value
+        $driver = $this->getMockBuilder(MysqliDriver::class)->onlyMethods(['getInsertedId'])->getMock();
+        $driver->expects($this->once())->method('getInsertedId')->willReturn(321);
+
+        $bouh = $metadata->createEntity();
+        $metadata->setEntityPropertyForAutoIncrement($bouh, $driver);
+
+        $this->assertCalledOnceWith($bouh, 'setId', [321]);
+    }
+
+    public function testThePgsqlDriverShouldBeSequenceAware()
+    {
+        $this->assertInstanceOf(SequenceAwareDriverInterface::class, new PgsqlDriver());
+    }
+
+    /**
+     * @return Metadata<object>
+     */
+    private function createSequenceMetadata(): Metadata
+    {
+        $metadata = new Metadata((new TingServices())->serializerFactory());
+        $metadata->setEntity($this->bouhSpyClass());
+        $metadata->addField([
+            'primary'       => true,
+            'autoincrement' => true,
+            'fieldName'     => 'id',
+            'columnName'    => 'boo_id',
+            'type'          => 'int',
+            'sequenceName'  => 'bouh_id_seq',
+        ]);
+
+        return $metadata;
     }
 
     #[AllowMockObjectsWithoutExpectations]
