@@ -82,7 +82,7 @@
     * BC Deleted Generator::getByCriteriaWithOrderAndLimit(), merged into Generator::getByCriteria() with $order and $limit parameters
     * BC Deleted UnitOfWork::generateUid() and UnitOfWork::generateUUID() methods
     * New feature: HydratorValueObject allows hydrating simple objects without metadata using native fetch_object() methods
-    * New feature: ResultInterface now exposes fetchObject() method for value object hydration
+    * New feature: ResultInterface::setObjectToFetch() for value object hydration (corrected entry: no fetchObject() method was ever exposed; setObjectToFetch() was removed in 4.0.0, see above)
     * Improvement: UnitOfWork now uses WeakMap exclusively for internal entity storage (enhanced from PHP 8.0 implementation)
     * Improvement: PHPStan analysis raised to level 7 with baseline significantly reduced (from ~2200 to <50 errors)
     * Improvement: Type coverage tool added (tomasvotruba/type-coverage) with minimum thresholds: 97% return types, 85% param types, 83% property types
