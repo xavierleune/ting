@@ -1172,4 +1172,80 @@ class DriverTest extends TestCase
         $this->assertSame('SET timezone = DEFAULT;', $outerArgs[1][1]);
         $this->assertCount(2, $outerArgs);
     }
+
+    public function testSetTimezoneRejectedByTheServerShouldThrowAndNotBeRecorded()
+    {
+        $queryCalls = 0;
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query', function () use (&$queryCalls) {
+            $queryCalls++;
+
+            return false;
+        });
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  invalid value for parameter "TimeZone": "Mars/Olympus"');
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+
+        $this->assertThrows(
+            DriverException::class,
+            fn () => $driver->setTimezone('Mars/Olympus'),
+            'Can\'t set timezone Mars/Olympus (ERROR:  invalid value for parameter "TimeZone": "Mars/Olympus")'
+        );
+        // Not recorded as the current timezone: tried again
+        $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Mars/Olympus'));
+        $this->assertSame(2, $queryCalls);
+    }
+
+    public function testPingShouldForgetATimezoneRejectedByTheServer()
+    {
+        $rejected = false;
+        $queryCalls = 0;
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_ping', true);
+        NativeFunctionMock::override('pg_get_pid', 42);
+        NativeFunctionMock::override('pg_query', function () use (&$rejected, &$queryCalls) {
+            $queryCalls++;
+
+            return !$rejected;
+        });
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  invalid value for parameter "TimeZone"');
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setTimezone('Europe/Paris');
+
+        // e.g. the connection was re-established on a server without this timezone
+        $rejected = true;
+        $this->assertTrue($driver->ping());
+        // The session kept the server default: setting the timezone again tries it, and reports the error
+        $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Europe/Paris'));
+        $this->assertSame(3, $queryCalls);
+    }
+
+    public function testReconnectShouldForgetATimezoneRejectedByTheServer()
+    {
+        $rejected = false;
+        $queryCalls = 0;
+        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_query', function () use (&$rejected, &$queryCalls) {
+            $queryCalls++;
+
+            return !$rejected;
+        });
+        NativeFunctionMock::override('pg_last_error', 'ERROR:  invalid value for parameter "TimeZone"');
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setTimezone('Europe/Paris');
+
+        $rejected = true;
+        // The connection is open: the reconnection succeeded
+        $this->assertTrue($driver->reconnect());
+        $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Europe/Paris'));
+        $this->assertSame(3, $queryCalls);
+    }
 }

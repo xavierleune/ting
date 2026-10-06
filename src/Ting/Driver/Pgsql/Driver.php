@@ -531,26 +531,42 @@ class Driver implements DriverInterface
             pg_set_client_encoding($this->connection, $this->currentCharset);
         }
         if ($result && $this->currentTimezone !== null) {
-            pg_query($this->connection, sprintf('SET timezone = "%s";', $this->currentTimezone));
+            try {
+                $this->applyTimezone($this->currentTimezone);
+            } catch (DriverException) {
+                // The session keeps the server default: the next setTimezone() with this timezone applies it again
+                // and reports the error
+                $this->currentTimezone = null;
+            }
         }
 
         return $result;
     }
 
+    /**
+     * @throws DriverException when the server rejects the timezone, which is then not recorded
+     */
     public function setTimezone(?string $timezone = null): void
     {
         if ($this->currentTimezone === $timezone) {
             return;
         }
-        $value = $timezone;
-        $query = 'SET timezone = "%s";';
-        if ($timezone === null) {
-            $value = 'DEFAULT';
-            $query = str_replace('"', '', $query);
-        }
         $this->validateConnection();
-        pg_query($this->connection, sprintf($query, $value));
+        $this->applyTimezone($timezone);
         $this->currentTimezone = $timezone;
+    }
+
+    /**
+     * @throws DriverException
+     */
+    private function applyTimezone(?string $timezone): void
+    {
+        $value = $timezone === null ? 'DEFAULT' : '"' . $timezone . '"';
+        if (@pg_query($this->connection, 'SET timezone = ' . $value . ';') === false) {
+            throw new DriverException(
+                'Can\'t set timezone ' . $timezone . ' (' . pg_last_error($this->connection) . ')'
+            );
+        }
     }
 
     public function reconnect(): bool
@@ -562,7 +578,11 @@ class Driver implements DriverInterface
             if ($this->currentTimezone !== null) {
                 $tz = $this->currentTimezone;
                 $this->currentTimezone = null;
-                $this->setTimezone($tz);
+                try {
+                    $this->setTimezone($tz);
+                } catch (DriverException) {
+                    // As in ping(): the session keeps the server default, the next setTimezone() reports the error
+                }
             }
             if ($this->currentCharset !== null) {
                 $charset = $this->currentCharset;

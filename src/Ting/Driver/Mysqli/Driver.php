@@ -524,6 +524,9 @@ class Driver implements DriverInterface
         return $this->reconnect();
     }
 
+    /**
+     * @throws DriverException when the server rejects the timezone, which is then not recorded
+     */
     public function setTimezone(?string $timezone = null): void
     {
         if ($this->currentTimezone === $timezone) {
@@ -536,14 +539,35 @@ class Driver implements DriverInterface
             return;
         }
 
-        $value = $timezone;
-        $query = 'SET time_zone = "%s";';
-        if ($timezone === null) {
-            $value = 'DEFAULT';
-            $query = str_replace('"', '', $query);
-        }
-        $this->connection->query(sprintf($query, $value));
+        $this->applyTimezone($timezone);
         $this->currentTimezone = $timezone;
+    }
+
+    /**
+     * The timezone is sent as a string literal: a double-quoted string is an identifier under the sql_mode ANSI_QUOTES
+     *
+     * @throws DriverException
+     */
+    private function applyTimezone(?string $timezone): void
+    {
+        $value = $timezone === null ? 'DEFAULT' : $this->quoteValue($timezone);
+
+        try {
+            $succeeded = $this->connection->query('SET time_zone = ' . $value . ';') !== false;
+        } catch (mysqli_sql_exception $exception) {
+            throw new DriverException(
+                'Can\'t set timezone ' . $timezone . ' (' . $exception->getMessage() . ')',
+                $exception->getCode(),
+                $exception
+            );
+        }
+
+        if ($succeeded === false) {
+            throw new DriverException(
+                'Can\'t set timezone ' . $timezone . ' (' . $this->connection->error . ')',
+                (int) $this->connection->errno
+            );
+        }
     }
 
     private function createConnection(): void
@@ -579,7 +603,13 @@ class Driver implements DriverInterface
             }
 
             if ($this->currentTimezone !== null) {
-                $this->connection->query(sprintf('SET time_zone = "%s";', $this->currentTimezone));
+                try {
+                    $this->applyTimezone($this->currentTimezone);
+                } catch (DriverException) {
+                    // e.g. set while the reconnection was pending: the session keeps the server default, and the
+                    // next setTimezone() with this timezone applies it again and reports the error
+                    $this->currentTimezone = null;
+                }
             }
         } catch (\Exception) {
             return false;
