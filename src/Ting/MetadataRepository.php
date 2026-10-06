@@ -258,6 +258,11 @@ class MetadataRepository
     public function addMetadata(string $repositoryClass, Metadata $metadata): void
     {
         $metadata->propertyAccessor->setCacheItemPool($this->cacheItemPool);
+        // Metadata registered under a repository without Metadata::setRepository() (loaded by batchLoadMetadata(), its
+        // cache, or a repository built without it) name that repository
+        if ($metadata->getRepository() === null && is_subclass_of($repositoryClass, Repository::class)) {
+            $metadata->setRepository($repositoryClass);
+        }
         $this->metadataList[$repositoryClass] = $metadata;
         // By repository: registered again (a repository registers its metadata when built), it is not duplicated
         $this->tableWithConnectionToMetadata[$metadata->getConnectionName() . '#' . $metadata->getTable()]
