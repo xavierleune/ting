@@ -1498,4 +1498,46 @@ class DriverTest extends TestCase
         $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
         $this->assertSame([], $sent->getArrayCopy());
     }
+
+    public function testExecuteWhenTheParametersCannotBeParsedShouldRaiseQueryException()
+    {
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', fn () => $this->fail('The query should not be sent'));
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        $this->withBacktrackLimitOf1(function () use ($driver): void {
+            $this->assertThrows(
+                QueryException::class,
+                fn () => $driver->execute(str_repeat('SELECT :value FROM t ', 10), ['value' => 1]),
+                'Cannot parse the parameters of the query: Backtrack limit exhausted'
+            );
+        });
+    }
+
+    public function testPrepareWhenTheParametersCannotBeParsedShouldRaiseQueryException()
+    {
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_prepare', fn () => $this->fail('The query should not be prepared'));
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+
+        $this->withBacktrackLimitOf1(function () use ($driver): void {
+            $this->assertThrows(
+                QueryException::class,
+                fn () => $driver->prepare(str_repeat('SELECT :value FROM t ', 10)),
+                'Cannot parse the parameters of the query: Backtrack limit exhausted'
+            );
+        });
+    }
+
+    private function withBacktrackLimitOf1(\Closure $test): void
+    {
+        $backtrackLimit = ini_set('pcre.backtrack_limit', '1');
+        try {
+            $test();
+        } finally {
+            ini_set('pcre.backtrack_limit', (string) $backtrackLimit);
+        }
+    }
 }

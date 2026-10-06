@@ -90,6 +90,10 @@
     * Fix Query::query() throwing a TypeError since 4.0.0-rc.1 for a statement without result set on Mysqli (the driver returns true instead of the collection); it returns its collection, as PreparedQuery::query()
     * Fix Mysqli Driver::reconnect() called before connect() (since 3.x): it raised "Undefined array key" warnings then opened a connection with the default parameters of mysqli; it throws a NeverConnectedException, as ping()
     * PHPDoc fully typed for static analysis (generics and array shapes, see UPGRADE-4.0.md): Repository<T>, CollectionInterface<T>, HydratorInterface<T>, QueryInterface<T>; PHPStan no longer ignores missing iterable value types and generics
+    * Fix Mysqli and Pgsql drivers when the parameters of a query cannot be parsed (PCRE failure, e.g. pcre.backtrack_limit reached on a huge query): execute() and prepare() throw a QueryException instead of sending a null query on (deprecation, then an empty query or a TypeError)
+    * Fix Mysqli Driver when mysqli_init() fails: the constructor throws a DriverException instead of leaving a driver without connection (an Error on the first call), reconnect() returns false instead of reconnecting the dropped connection
+    * Fix Mysqli Result::getNumRows() and Pgsql Result without result (setResult() not called): no row, as the Mysqli iteration, instead of an Error or a TypeError; Pgsql Result::setQuery() before setResult() throws a QueryException
+    * Fix Pgsql Statement::execute() before setConnection() and setCollectionWithResult() before setQuery(): they throw a QueryException instead of a TypeError
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

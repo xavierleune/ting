@@ -1721,4 +1721,66 @@ class DriverTest extends TestCase
 
         $this->assertSame(['BEGIN', 'COMMIT'], $connection->commands);
     }
+
+    public function testConstructWhenMysqliCannotBeInitializedShouldRaiseDriverException()
+    {
+        NativeFunctionMock::override('mysqli_init', false);
+
+        $this->assertThrows(
+            DriverException::class,
+            fn () => new Driver(),
+            'Cannot initialize a mysqli connection'
+        );
+    }
+
+    public function testReconnectWhenMysqliCannotBeInitializedShouldFail()
+    {
+        $connection = $this->createStub(Mysqli::class);
+        $connection->method('real_connect')->willReturn(true);
+        $driver = new Driver($connection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        NativeFunctionMock::override('mysqli_init', false);
+
+        $this->assertFalse($driver->reconnect());
+    }
+
+    public function testExecuteWhenTheParametersCannotBeParsedShouldRaiseQueryException()
+    {
+        $connection = $this->createMock(Mysqli::class);
+        $connection->expects($this->never())->method('query');
+        $driver = new Driver($connection);
+
+        $this->withBacktrackLimitOf1(function () use ($driver): void {
+            $this->assertThrows(
+                QueryException::class,
+                fn () => $driver->execute(str_repeat('SELECT :value FROM t ', 10), ['value' => 1]),
+                'Cannot parse the parameters of the query: Backtrack limit exhausted'
+            );
+        });
+    }
+
+    public function testPrepareWhenTheParametersCannotBeParsedShouldRaiseQueryException()
+    {
+        $connection = $this->createMock(Mysqli::class);
+        $connection->expects($this->never())->method('prepare');
+        $driver = new Driver($connection);
+
+        $this->withBacktrackLimitOf1(function () use ($driver): void {
+            $this->assertThrows(
+                QueryException::class,
+                fn () => $driver->prepare(str_repeat('SELECT :value FROM t ', 10)),
+                'Cannot parse the parameters of the query: Backtrack limit exhausted'
+            );
+        });
+    }
+
+    private function withBacktrackLimitOf1(\Closure $test): void
+    {
+        $backtrackLimit = ini_set('pcre.backtrack_limit', '1');
+        try {
+            $test();
+        } finally {
+            ini_set('pcre.backtrack_limit', (string) $backtrackLimit);
+        }
+    }
 }

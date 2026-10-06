@@ -221,7 +221,7 @@ class Driver implements DriverInterface
     {
         [$convertedSql, $paramsOrder] = $this->convertParameters($sql);
 
-        $this->validateConnection();
+        $connection = $this->validConnection();
 
         $values = [];
         foreach (array_keys($paramsOrder) as $key) {
@@ -239,9 +239,9 @@ class Driver implements DriverInterface
         // the QueryException below
         try {
             if ($values === []) {
-                $result = @pg_query($this->connection, $convertedSql);
+                $result = @pg_query($connection, $convertedSql);
             } else {
-                $result = @pg_query_params($this->connection, $convertedSql, $values);
+                $result = @pg_query_params($connection, $convertedSql, $values);
             }
         } finally {
             if ($this->logger !== null) {
@@ -250,24 +250,25 @@ class Driver implements DriverInterface
         }
 
         if ($result === false) {
-            throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $convertedSql . ')');
+            throw new QueryException(pg_last_error($connection) . ' (Query: ' . $convertedSql . ')');
         }
         $this->result = $result;
 
 
         if (!$collection instanceof CollectionInterface) {
-            $resultStatus = pg_result_status($this->result);
+            $resultStatus = pg_result_status($result);
             if ($resultStatus === \PGSQL_TUPLES_OK) {
-                return pg_fetch_assoc($this->result);
+                return pg_fetch_assoc($result);
             }
             return $resultStatus;
         }
 
-        return $this->setCollectionWithResult($convertedSql, $collection);
+        return $this->setCollectionWithResult($result, $convertedSql, $collection);
     }
 
     /**
      * @template T
+     * @param \PgSql\Result $resultResource
      * @param string $sql
      * @param CollectionInterface<T> $collection
      * @return CollectionInterface<T>
@@ -275,12 +276,12 @@ class Driver implements DriverInterface
      *
      * @internal
      */
-    protected function setCollectionWithResult(string $sql, CollectionInterface $collection): CollectionInterface
+    protected function setCollectionWithResult(object $resultResource, string $sql, CollectionInterface $collection): CollectionInterface
     {
         $result = new Result();
         $result->setConnectionName($this->name);
         $result->setDatabase($this->database);
-        $result->setResult($this->result);
+        $result->setResult($resultResource);
         $result->setQuery($sql);
         $collection->set($result);
 
@@ -303,7 +304,7 @@ class Driver implements DriverInterface
             return $this->preparedQueries[$statementName];
         }
 
-        $this->validateConnection();
+        $connection = $this->validConnection();
 
         $statement = new Statement($statementName, $paramsOrder, $this->name, $this->database);
 
@@ -312,7 +313,7 @@ class Driver implements DriverInterface
             $statement->setLogger($this->logger);
         }
         try {
-            $result = @pg_prepare($this->connection, $statementName, $sql);
+            $result = @pg_prepare($connection, $statementName, $sql);
         } finally {
             if ($this->logger !== null) {
                 $this->logger->stopPrepare($statementName);
@@ -320,13 +321,13 @@ class Driver implements DriverInterface
         }
 
         if ($result === false) {
-            throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $sql . ')');
+            throw new QueryException(pg_last_error($connection) . ' (Query: ' . $sql . ')');
         }
 
         // getAffectedRows() reports the last query, prepared or not. Weak: the driver holds the statement
         $driver = \WeakReference::create($this);
         $statement
-            ->setConnection($this->connection)
+            ->setConnection($connection)
             ->setQuery($sql)
             ->setResultHandler(static function (object $result) use ($driver): void {
                 $driver = $driver->get();
@@ -343,6 +344,7 @@ class Driver implements DriverInterface
     /**
      * @return array{0: string, 1: array<int|string, int>} the SQL with numbered placeholders, and the position of each
      *                                                     parameter by name (an integer for a numeric name)
+     * @throws QueryException when PCRE fails (e.g. backtrack limit)
      */
     private function convertParameters(string $sql): array
     {
@@ -364,8 +366,12 @@ class Driver implements DriverInterface
 
                 return '$' . $paramsOrder[$match[1]];
             },
-            (string) $sql
+            $sql
         );
+
+        if ($sql === null) {
+            throw new QueryException('Cannot parse the parameters of the query: ' . preg_last_error_msg());
+        }
 
         $sql = str_replace('\:', ':', $sql);
 
@@ -421,9 +427,9 @@ class Driver implements DriverInterface
             throw new TransactionException('Cannot start another transaction');
         }
         $this->forgetLostTransaction();
-        $this->validateConnection();
-        if (@pg_query($this->connection, 'BEGIN') === false) {
-            throw new TransactionException('Cannot start transaction: ' . pg_last_error($this->connection));
+        $connection = $this->validConnection();
+        if (@pg_query($connection, 'BEGIN') === false) {
+            throw new TransactionException('Cannot start transaction: ' . pg_last_error($connection));
         }
         $this->transactionOpened = true;
     }
@@ -438,12 +444,12 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot commit no transaction');
         }
-        $this->validateConnection();
+        $connection = $this->validConnection();
         // Even when the COMMIT fails, the transaction is over: rolled back by the server or lost with the connection
         $this->transactionOpened = false;
-        $result = @pg_query($this->connection, 'COMMIT');
+        $result = @pg_query($connection, 'COMMIT');
         if ($result === false) {
-            throw new TransactionException('Cannot commit transaction: ' . pg_last_error($this->connection));
+            throw new TransactionException('Cannot commit transaction: ' . pg_last_error($connection));
         }
         // The COMMIT of a transaction aborted by a failed statement succeeds, but answers ROLLBACK
         if (pg_result_status($result, \PGSQL_STATUS_STRING) !== 'COMMIT') {
@@ -465,10 +471,10 @@ class Driver implements DriverInterface
         if ($this->transactionOpened === false) {
             throw new TransactionException('Cannot rollback no transaction');
         }
-        $this->validateConnection();
+        $connection = $this->validConnection();
         $this->transactionOpened = false;
-        if (@pg_query($this->connection, 'ROLLBACK') === false) {
-            throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($this->connection));
+        if (@pg_query($connection, 'ROLLBACK') === false) {
+            throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($connection));
         }
     }
 
@@ -478,8 +484,7 @@ class Driver implements DriverInterface
      */
     public function getInsertedId(): int
     {
-        $this->validateConnection();
-        $resultResource = @pg_query($this->connection, 'SELECT lastval()');
+        $resultResource = @pg_query($this->validConnection(), 'SELECT lastval()');
         if ($resultResource === false) {
             throw new DriverException('Could not fetch last inserted id.');
         }
@@ -496,17 +501,17 @@ class Driver implements DriverInterface
      */
     public function getInsertedIdForSequence(string $sequenceName): int
     {
-        $this->validateConnection();
+        $connection = $this->validConnection();
         $sql = "SELECT currval($1)";
-        $resultResource = @pg_query_params($this->connection, $sql, [$sequenceName]);
+        $resultResource = @pg_query_params($connection, $sql, [$sequenceName]);
 
         if ($resultResource === false) {
-            throw new QueryException(pg_last_error($this->connection) . ' (Query: ' . $sql . ')');
+            throw new QueryException(pg_last_error($connection) . ' (Query: ' . $sql . ')');
         }
 
         $row = pg_fetch_row($resultResource);
         if ($row === false) {
-            throw new QueryException('Could not fetch last inserted id. Details: '. pg_last_error($this->connection));
+            throw new QueryException('Could not fetch last inserted id. Details: '. pg_last_error($connection));
         }
         return (int) $row[0];
     }
@@ -558,23 +563,23 @@ class Driver implements DriverInterface
      */
     public function ping(): bool
     {
-        $this->validateConnection();
+        $connection = $this->validConnection();
 
         // pg_ping() re-establishes a lost connection: the new backend has none of the prepared statements, and the
         // server rolled back the transaction of the lost one
-        $backendPid = pg_get_pid($this->connection);
-        $result = pg_ping($this->connection);
-        if ($result === false || pg_get_pid($this->connection) !== $backendPid) {
+        $backendPid = pg_get_pid($connection);
+        $result = pg_ping($connection);
+        if ($result === false || pg_get_pid($connection) !== $backendPid) {
             $this->forgetPreparedQueries();
             $this->loseTransaction();
         }
 
         if ($result && $this->currentCharset !== null) {
-            pg_set_client_encoding($this->connection, $this->currentCharset);
+            pg_set_client_encoding($connection, $this->currentCharset);
         }
         if ($result && $this->currentTimezone !== null) {
             try {
-                $this->applyTimezone($this->currentTimezone);
+                $this->applyTimezone($connection, $this->currentTimezone);
             } catch (DriverException) {
                 // The session keeps the server default: the next setTimezone() with this timezone applies it again
                 // and reports the error
@@ -593,20 +598,20 @@ class Driver implements DriverInterface
         if ($this->currentTimezone === $timezone) {
             return;
         }
-        $this->validateConnection();
-        $this->applyTimezone($timezone);
+        $this->applyTimezone($this->validConnection(), $timezone);
         $this->currentTimezone = $timezone;
     }
 
     /**
+     * @param Connection $connection
      * @throws DriverException
      */
-    private function applyTimezone(?string $timezone): void
+    private function applyTimezone(object $connection, ?string $timezone): void
     {
         $value = $timezone === null ? 'DEFAULT' : '"' . $timezone . '"';
-        if (@pg_query($this->connection, 'SET timezone = ' . $value . ';') === false) {
+        if (@pg_query($connection, 'SET timezone = ' . $value . ';') === false) {
             throw new DriverException(
-                'Can\'t set timezone ' . $timezone . ' (' . pg_last_error($this->connection) . ')'
+                'Can\'t set timezone ' . $timezone . ' (' . pg_last_error($connection) . ')'
             );
         }
     }
@@ -640,12 +645,15 @@ class Driver implements DriverInterface
     }
 
     /**
+     * @return Connection
      * @throws NeverConnectedException
      */
-    private function validateConnection(): void
+    private function validConnection(): object
     {
         if ($this->connection === null) {
             throw new NeverConnectedException('Please connect to your database before trying to ping it.');
         }
+
+        return $this->connection;
     }
 }

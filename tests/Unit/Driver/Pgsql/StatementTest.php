@@ -104,6 +104,7 @@ class StatementTest extends TestCase
             'connectionName',
             'database'
         );
+        $statement->setConnection(new Pgsql());
         $statement->setQuery('SELECT firstname FROM Bouh');
         $statement->execute($params, $collection);
 
@@ -168,6 +169,7 @@ class StatementTest extends TestCase
             'connectionName',
             'database'
         );
+        $statement->setConnection(new Pgsql());
 
         $this->assertThrows(QueryException::class, function () use ($statement, $collection): void {
             $statement->execute([]);
@@ -193,6 +195,7 @@ class StatementTest extends TestCase
         $mockLogger->expects($this->once())->method('stopStatementExecute');
 
         $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+        $statement->setConnection(new Pgsql());
         $statement->setLogger($mockLogger);
 
         $this->assertThrows(
@@ -224,6 +227,7 @@ class StatementTest extends TestCase
         NativeFunctionMock::override('pg_query', true);
 
         $statement = new Statement('MyStatementName', ['id' => 1], 'connectionName', 'database');
+        $statement->setConnection(new Pgsql());
 
         $this->assertThrows(QueryException::class, function () use ($statement): void {
             $statement->execute([]);
@@ -306,6 +310,7 @@ class StatementTest extends TestCase
             'connectionName',
             'database'
         );
+        $statement->setConnection(new Pgsql());
 
         $this->assertTrue($statement->execute([]));
     }
@@ -327,8 +332,33 @@ class StatementTest extends TestCase
             'connectionName',
             'database'
         );
+        $statement->setConnection(new Pgsql());
         $statement->setLogger($mockLogger);
         $statement->setQuery('SELECT firstname FROM Bouh');
         $statement->execute([]);
+    }
+
+    public function testExecuteBeforeSetConnectionShouldRaiseQueryException()
+    {
+        NativeFunctionMock::override('pg_execute', fn () => $this->fail('The statement should not be executed'));
+        $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+        $statement->setQuery('SELECT firstname FROM Bouh');
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $statement->execute([]),
+            'The prepared statement MyStatementName has no connection: it must be prepared by the driver'
+        );
+    }
+
+    public function testSetCollectionWithResultBeforeSetQueryShouldRaiseQueryException()
+    {
+        $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $statement->setCollectionWithResult(new PgsqlResult(), new Collection()),
+            'The prepared statement MyStatementName has no query: it must be prepared by the driver'
+        );
     }
 }
