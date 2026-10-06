@@ -118,4 +118,14 @@ class JsonTest extends TestCase
         $this->assertSame('""', $serializer->serialize(''));
         $this->assertNull($serializer->unserialize(''));
     }
+
+    public function testSerializeWithPartialOutputOnErrorShouldReturnThePartialOutput()
+    {
+        $serializer = new Json();
+
+        $this->assertSame(
+            '{"a":0,"b":1}',
+            $serializer->serialize(['a' => INF, 'b' => 1], ['options' => JSON_PARTIAL_OUTPUT_ON_ERROR])
+        );
+    }
 }

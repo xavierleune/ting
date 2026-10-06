@@ -49,7 +49,9 @@ class Json implements SerializerInterface, ArrayValueInterface
 
         $json = json_encode($toSerialize, $jsonOptions, $jsonDepth);
 
-        if ($json === false || json_last_error() !== JSON_ERROR_NONE) {
+        // false on any error, except with JSON_PARTIAL_OUTPUT_ON_ERROR, which returns the partial output: the error
+        // it leaves in json_last_error() is the one asked for
+        if ($json === false) {
             throw new RuntimeException('Could not convert value to json. Error was : ' . json_last_error_msg());
         }
 
