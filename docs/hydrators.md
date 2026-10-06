@@ -130,7 +130,8 @@ public function findByName(string $name): CollectionInterface
 }
 ```
 
-The repository's own methods (`get()`, `getBy()`, `getAll()`...) use it. It returns the **first** value of the row,
+The repository's `getBy()` and `getAll()` use it (`get()` and `getOneBy()` use the default hydrator of the
+`CollectionFactory` and return the first value of the first row). It returns the **first** value of the row,
 in the order of the selected columns: if the query starts with an unmapped column (`SELECT COUNT(*) AS n, id, ...`),
 you get the `stdClass` instead of the entity. Select the entity columns first, or map the extra columns into the entity
 with [`mapAliasTo()`](#mapping-a-column-into-an-entity), which works with every hydrator extending `Hydrator`.
@@ -213,7 +214,8 @@ The objects are not entities: the unit of work doesn't manage them.
 ## Customising the default hydrator
 
 `Hydrator` (and therefore `HydratorSingleObject`, `HydratorAggregator` and `HydratorRelational`) can be configured
-before the query runs. All these methods return the hydrator, so calls can be chained.
+before the query runs. These methods return the hydrator, so calls can be chained, except `identityMap()`, which
+returns nothing.
 
 ### Mapping a column into an entity
 
@@ -308,7 +310,9 @@ public function findBooksWithAuthor(): CollectionInterface
 ```
 
 Several `mapObjectTo()` calls can chain objects on several levels. When the joined entity is `null` (`LEFT JOIN`
-without match), the method is not called.
+without match), the method is not called and the row keeps the `$from` key, with the value `null`. This requires the
+columns of `$from` to be selected **before** those of `$to`: when they come after, as in the query above, the method
+receives an empty `$from` entity (every property `null`) instead.
 
 ### Tables from another database
 
@@ -346,7 +350,8 @@ $hydrator->identityMap(true);
 // Two books by Frank Herbert now share the same Author instance
 ```
 
-The map lives as long as the hydrator. It requires the entity's primary key in the selected columns. To enable it for
+The map lives as long as the hydrator. It requires the entity's primary key in the selected columns (every column of
+a composite key): an entity whose key is missing or `null` in the row is not kept. To enable it for
 every query, enable it on the hydrator given to the `CollectionFactory` (see [Getting started](getting-started.md)):
 the factory clones that hydrator for each collection.
 
@@ -474,14 +479,14 @@ User {
     id: 1,
     name: 'Sylvain',
     books: [
-        'book-1-' => Book {id: 1, title: 'Tintin au Tibet', author: Author {id: 1, name: 'Hergé'}},
-        'book-2-' => Book {id: 2, title: "L'Oreille cassée", author: Author {id: 1, name: 'Hergé'}},
+        '<reference of book 1>' => Book {id: 1, title: 'Tintin au Tibet', author: Author {id: 1, name: 'Hergé'}},
+        '<reference of book 2>' => Book {id: 2, title: "L'Oreille cassée", author: Author {id: 1, name: 'Hergé'}},
     ],
 }
 ```
 
-The array given to a `RelationMany` method is indexed by an internal reference: use `array_values()` if you need a
-list.
+The array given to a `RelationMany` method is indexed by an internal reference (built from the alias and every
+primary key value, its format is not part of the API): use `array_values()` if you need a list.
 
 Things to know:
 
