@@ -41,7 +41,7 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
 `process()` writes the queued entities in the order they were pushed:
 
 * **new entity**: every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
-  properties. The generated key is then set on the entity (through its setter, see
+  properties. The generated key is then set on the entity, replacing any value set before (through its setter, see
   [field options](repositories.md#field-options)) and the entity becomes managed.
 * **managed entity**: the properties reported by `propertyChanged()` since the last write (and not set back to their
   old value) are updated, together with every [mutable field](entities.md#mutable-values) (a `\DateTime`, a JSON
