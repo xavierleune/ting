@@ -300,6 +300,67 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function selectListProvider(): array
+    {
+        $id = ['name' => 'id', 'orgName' => 'id', 'table' => 'city', 'schema' => ''];
+        $name = ['name' => 'name', 'orgName' => 'name', 'table' => 'city', 'schema' => ''];
+
+        return [
+            'DISTINCT' => ['SELECT DISTINCT id, name FROM city', ['city', 'city'], [$id, $name]],
+            'ALL' => ['SELECT ALL id, name FROM city', ['city', 'city'], [$id, $name]],
+            'DISTINCT ON' => [
+                'SELECT DISTINCT ON (id, lower(name)) id, name FROM city',
+                ['city', 'city'],
+                [$id, $name],
+            ],
+            'DISTINCT in a sub-query' => [
+                'SELECT id, (SELECT DISTINCT 1) AS one, name FROM city',
+                ['city', false, 'city'],
+                [$id, ['name' => 'one', 'orgName' => '(SELECT DISTINCT 1)', 'table' => '', 'schema' => ''], $name],
+            ],
+            'a column named distinct_id' => [
+                'SELECT distinct_id, name FROM city',
+                ['city', 'city'],
+                [['name' => 'distinct_id', 'orgName' => 'distinct_id', 'table' => 'city', 'schema' => ''], $name],
+            ],
+            'ARRAY[] with a comma' => [
+                'SELECT id, ARRAY[a, b] AS ab, name FROM city',
+                ['city', false, 'city'],
+                [$id, ['name' => 'ab', 'orgName' => 'ARRAY[a, b]', 'table' => '', 'schema' => ''], $name],
+            ],
+            'quoted alias with a space' => [
+                'SELECT id AS "the id", name FROM city',
+                ['city', 'city'],
+                [['name' => 'the id', 'orgName' => 'id', 'table' => 'city', 'schema' => ''], $name],
+            ],
+            'quoted alias with a space on an expression' => [
+                'SELECT count(id) AS "nb of ids", name FROM city GROUP BY name',
+                [1 => 'city'],
+                [['name' => 'nb of ids', 'orgName' => 'count(id)', 'table' => '', 'schema' => ''], $name],
+            ],
+            'IS DISTINCT FROM' => [
+                'SELECT a IS DISTINCT FROM b AS d, id, name FROM city',
+                [1 => 'city', 2 => 'city'],
+                [['name' => 'd', 'orgName' => 'a IS DISTINCT FROM b', 'table' => '', 'schema' => ''], $id, $name],
+            ],
+            'IS NOT DISTINCT FROM, with a comment' => [
+                'SELECT id, a IS NOT DISTINCT /* c */ FROM b AS d, name FROM city',
+                [0 => 'city', 2 => 'city'],
+                [$id, ['name' => 'd', 'orgName' => 'a IS NOT DISTINCT   FROM b', 'table' => '', 'schema' => ''], $name],
+            ],
+        ];
+    }
+
+    /**
+     * @param array<int, string|false> $tables
+     * @param list<array<string, string>> $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('selectListProvider')]
+    public function testSetQueryShouldParseTheSelectList(string $query, array $tables, array $expected)
+    {
+        $this->assertSame($expected, $this->parseColumns($query, $tables));
+    }
+
     public function testIterator()
     {
         NativeFunctionMock::override('pg_result_seek', true);
