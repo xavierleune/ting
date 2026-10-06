@@ -76,7 +76,7 @@ class DateTime implements SerializerInterface
 
         $options = array_merge(self::$defaultOptions, $options);
         if ($options['unSerializeUseFormat'] === true) {
-            $value = \DateTime::createFromFormat($options['format'], (string) $serialized);
+            $value = \DateTime::createFromFormat(self::readFormat($options['format']), (string) $serialized);
             if ($value !== false) {
                 return $value;
             }
@@ -94,5 +94,14 @@ class DateTime implements SerializerInterface
                 'Cannot convert ' . $serialized . ' to datetime. Error is : ' . $e->getMessage()
             );
         }
+    }
+
+    /**
+     * Without "!" or "|", createFromFormat() takes the fields missing from the format from the current time: a date
+     * read with 'Y-m-d' would get the current time of day
+     */
+    private static function readFormat(string $format): string
+    {
+        return str_starts_with($format, '!') || str_contains($format, '|') ? $format : '!' . $format;
     }
 }

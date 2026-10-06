@@ -122,6 +122,19 @@ class DateTimeImmutableTest extends TestCase
         });
     }
 
+    public function testUnserializeADateFormatShouldResetTheTime()
+    {
+        $serializer = new DateTimeImmutable();
+
+        foreach (['Y-m-d', '!Y-m-d', 'Y-m-d|'] as $format) {
+            $this->assertSame(
+                '2024-01-31 00:00:00.000000',
+                $serializer->unserialize('2024-01-31', ['format' => $format])->format('Y-m-d H:i:s.u'),
+                $format
+            );
+        }
+    }
+
     public function testSerializeInvalidValueShouldRaiseException()
     {
         $serializer = new DateTimeImmutable();
