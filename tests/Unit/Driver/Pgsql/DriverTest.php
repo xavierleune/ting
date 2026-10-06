@@ -197,6 +197,42 @@ class DriverTest extends TestCase
         $this->assertTrue($called);
     }
 
+    public function testConnectionReopenedAfterAFailedReconnectShouldGetTheCharsetAndTheTimezone()
+    {
+        $sent = [];
+        $links = [new Pgsql(), false, new Pgsql()];
+        NativeFunctionMock::override('pg_connect', function () use (&$links) {
+            return array_shift($links);
+        });
+        NativeFunctionMock::override('pg_close', true);
+        NativeFunctionMock::override('pg_set_client_encoding', function ($connection, string $charset) use (&$sent): int {
+            $sent[] = $charset;
+
+            return 0;
+        });
+        NativeFunctionMock::override('pg_query', function ($connection, string $sql) use (&$sent): bool {
+            $sent[] = $sql;
+
+            return true;
+        });
+
+        $driver = new Driver();
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('myDatabase');
+        $driver->setCharset('LATIN1');
+        $driver->setTimezone('Europe/Paris');
+        $this->assertFalse($driver->reconnect());
+        $sent = [];
+
+        // As ConnectionPool does: the driver is not connected, setDatabase() opens a new session, then the charset
+        // and the timezone are set (no-ops, they are recorded as current)
+        $driver->setDatabase('myDatabase');
+        $driver->setCharset('LATIN1');
+        $driver->setTimezone('Europe/Paris');
+
+        $this->assertSame(['LATIN1', 'SET timezone = "Europe/Paris";'], $sent);
+    }
+
     public function testCloseShouldReturnSelf()
     {
         $driver = new Driver();
@@ -282,8 +318,10 @@ class DriverTest extends TestCase
 
     public function testSetDatabaseShouldCompleteGeneratedDsnByConnect()
     {
-        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): void {
+        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): Pgsql {
             $outerDsn = $dsn;
+
+            return new Pgsql();
         });
 
         $driver = new Driver();
@@ -298,8 +336,10 @@ class DriverTest extends TestCase
 
     public function testConnectShouldQuoteEveryValueOfTheDsn()
     {
-        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): void {
+        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): Pgsql {
             $outerDsn = $dsn;
+
+            return new Pgsql();
         });
 
         $driver = new Driver();
@@ -315,8 +355,10 @@ class DriverTest extends TestCase
 
     public function testConnectShouldEscapeQuotesAndBackslashesOfThePassword()
     {
-        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): void {
+        NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerDsn): Pgsql {
             $outerDsn = $dsn;
+
+            return new Pgsql();
         });
 
         $driver = new Driver();
