@@ -135,6 +135,7 @@
     * Fix PostgreSQL booleans on a `bool` field without serializer (since 3.x): 'f' was hydrated as true, and a PHP false sent by the Pgsql driver as '' (pg_query_params / pg_execute), which PostgreSQL rejects for a boolean; 'f' is read as false, and the Pgsql driver sends a PHP boolean as '1' / '0'
     * Fix the Pgsql column parser (since 3.x) on quoted identifiers holding another character than [a-z0-9_$] (a colon, a space, an accent, a dash, ""): such a column, table or schema, even in the SQL Ting generates (getAll(), getBy()...), was not hydrated; quoted identifiers are unescaped ("a""b" is a"b), aliases included
     * Fix the Pgsql column parser on a query made of parenthesized SELECTs, as (SELECT ...) UNION ALL (SELECT ...): it threw "can't parse columns" (3.x read the whole query as a single column, not hydrated); the columns are those of the first SELECT
+    * Fix the Pgsql column parser on "a IS [NOT] DISTINCT FROM b" without alias: its right operand was taken for an alias (column named "b"); it is named ?column?, as PostgreSQL names it
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

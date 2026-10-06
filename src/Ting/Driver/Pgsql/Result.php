@@ -257,6 +257,16 @@ class Result implements ResultInterface
 
                         $matches['column'] = $cut > 0 ? trim(substr($column, 0, - $cut)) : $column;
 
+                        // The right operand of IS [NOT] DISTINCT FROM is no alias: PostgreSQL names the column ?column?
+                        if (
+                            $noAlias === false
+                            && ($matches['prefix'] ?? '') === ''
+                            && preg_match('/\bdistinct\s+from$/i', $matches['column']) === 1
+                        ) {
+                            $matches['column'] = $column;
+                            $matches['alias'] = '?column?';
+                        }
+
                         $columnComponent = [
                             'complex' => true,
                             'table' => '',
