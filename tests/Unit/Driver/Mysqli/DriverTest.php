@@ -772,6 +772,13 @@ class DriverTest extends TestCase
         $this->assertSame('`Bouh`', $driver->escapeField('Bouh'));
     }
 
+    public function testEscapeFieldShouldDoubleTheEmbeddedBackticks()
+    {
+        $driver = new Driver($this->createStub(Mysqli::class));
+
+        $this->assertSame('`na``me`', $driver->escapeField('na`me'));
+    }
+
     public function testStartTransactionShouldRaiseExceptionIfCalledTwice()
     {
         $mockDriver = $this->createStub(Mysqli::class);

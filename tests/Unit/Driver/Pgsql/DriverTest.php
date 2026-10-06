@@ -410,6 +410,13 @@ class DriverTest extends TestCase
         $this->assertSame('"Bouh"', $driver->escapeField('Bouh'));
     }
 
+    public function testEscapeFieldShouldDoubleTheEmbeddedDoubleQuotes()
+    {
+        $driver = new Driver();
+
+        $this->assertSame('"na""me"', $driver->escapeField('na"me'));
+    }
+
     public function testStartTransactionShouldExecuteQueryBegin()
     {
         NativeFunctionMock::override('pg_connect', new Pgsql());
