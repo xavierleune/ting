@@ -34,6 +34,9 @@ use Generator;
 use SplDoublyLinkedList;
 
 use function array_column;
+use function array_filter;
+use function array_key_exists;
+use function array_keys;
 use function array_diff;
 use function array_map;
 use function array_unique;
@@ -211,7 +214,13 @@ final class HydratorRelational extends Hydrator
         $this->resources          = [];
         $results                  = [];
 
+        $checked = false;
         foreach ($this->hydratedRows() as $result) {
+            if ($checked === false) {
+                $this->assertAliasesInResult($relations, $result);
+                $checked = true;
+            }
+
             foreach ($relations as $index => $relation) {
                 $target = $result[$relation['target']] ?? null;
                 $source = $result[$relation['source']] ?? null;
@@ -233,6 +242,12 @@ final class HydratorRelational extends Hydrator
                 $rootKeys[] = $entity !== null ? $this->saveReference($root, $entity) : null;
             }
 
+            if (array_filter($rootKeys, static fn (?string $rootKey): bool => $rootKey !== null) === []) {
+                // No root entity (LEFT JOIN on the root side): nothing to yield, the entities of the row are given to
+                // no root
+                continue;
+            }
+
             foreach ($sources as $source) {
                 unset($result[$source]);
             }
@@ -244,6 +259,30 @@ final class HydratorRelational extends Hydrator
 
         foreach ($results as $result) {
             yield $this->finalizeAggregate($result);
+        }
+    }
+
+    /**
+     * @param list<array{source: string, target: string, targetSetter: string, many: bool}> $relations
+     * @param array<int|string, mixed> $result the first row
+     *
+     * @throws HydratorException when an alias of a relation is not in the result (a typo would otherwise give a
+     *                           single row)
+     */
+    private function assertAliasesInResult(array $relations, array $result): void
+    {
+        foreach ($relations as $relation) {
+            foreach ([$relation['target'], $relation['source']] as $alias) {
+                if (array_key_exists($alias, $result) === false) {
+                    throw new HydratorException(sprintf(
+                        'The alias "%s" of the relation %s -> %s is not in the result, which holds: %s',
+                        $alias,
+                        $relation['source'],
+                        $relation['target'],
+                        implode(', ', array_keys($result))
+                    ));
+                }
+            }
         }
     }
 
