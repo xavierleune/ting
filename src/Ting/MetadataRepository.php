@@ -69,12 +69,13 @@ class MetadataRepository
      * database or schema, or several on the same one): the result tells the database and the schema of the table,
      * but not always reliably (Mysqli fields carry no database, Pgsql\Result lowercases the schemas, a query without
      * schema has none).
-     * The candidates are the preferred repositories mapping the table when there is one (the repository running
-     * the query, see Hydrator::preferRepository()), every metadata of the table otherwise. In this order, the
-     * metadata found is:
-     * - the only one of the same schema and database (the schema compared case-insensitively when no exact match),
-     * - the only one of the candidates,
-     * - the only one of the same database, or when none shares it, the only one of the same schema.
+     * The candidates are the metadata of the same schema and database (the schema compared case-insensitively when
+     * none has the same case), every metadata of the table when none matches. The first group of preferred
+     * repositories mapping one of the candidates (the repositories given to the hydrator with
+     * Hydrator::preferRepository(), then the one running the query) restricts them. Then, the metadata found is:
+     * - the only candidate,
+     * - without exact match, the only one of the same database, or when none shares it, the only one of the same
+     *   schema,
      * Otherwise, the choice is ambiguous and a HydratorException is thrown: the last registered never wins.
      *
      * @param string   $connectionName
@@ -83,8 +84,8 @@ class MetadataRepository
      * @param string   $table
      * @param Closure $callbackFound called with applicable Metadata if applicable
      * @param Closure $callbackNotFound called if unknown table - no parameter
-     * @param list<string> $preferredRepositories the classes the metadata to use are registered under, when they
-     *                                            map the table
+     * @param list<list<string>> $preferredRepositories groups of classes the metadata to use are registered under,
+     *                                                  by priority
      *
      * @throws HydratorException when several metadata could be the one of the table
      *
@@ -110,28 +111,36 @@ class MetadataRepository
         }
 
         $repositories = $this->tableWithConnectionToMetadata[$connectionKey];
-        $preferred = array_intersect_key($repositories, array_flip($preferredRepositories));
-        if ($preferred !== []) {
-            $repositories = $preferred;
+        $candidates = array_keys($repositories, $schema . '#' . $database, true);
+        if ($candidates === []) {
+            foreach (array_keys($repositories) as $repository) {
+                $metadata = $this->metadataList[$repository];
+                if ($metadata->getDatabase() === $database && strcasecmp((string) $metadata->getSchema(), $schema) === 0) {
+                    $candidates[] = $repository;
+                }
+            }
+        }
+        $exactMatch = $candidates !== [];
+        if ($exactMatch === false) {
+            $candidates = array_keys($repositories);
         }
 
-        // Several exact matches: the same table of the same database and schema, mapped by several repositories
-        $exactMatches = array_keys($repositories, $schema . '#' . $database, true);
-        $repository = count($exactMatches) === 1
-            ? $exactMatches[0]
-            : $this->findSingleCandidate(
-                $connectionName,
-                $database,
-                $schema,
-                $table,
-                $exactMatches !== [] ? $exactMatches : array_keys($repositories)
-            );
+        foreach ($preferredRepositories as $group) {
+            $preferred = array_values(array_intersect($candidates, $group));
+            if ($preferred !== []) {
+                $candidates = $preferred;
+                break;
+            }
+        }
+
+        $repository = $this->findSingleCandidate($connectionName, $database, $schema, $table, $candidates, $exactMatch);
 
         $callbackFound($this->metadataList[$repository]);
     }
 
     /**
      * @param list<string> $candidates the repositories the metadata of the table can be registered under
+     * @param bool $exactMatch true when the candidates are of the schema and the database read
      *
      * @throws HydratorException
      */
@@ -140,33 +149,32 @@ class MetadataRepository
         string $database,
         string $schema,
         string $table,
-        array $candidates
+        array $candidates,
+        bool $exactMatch
     ): string {
         if (count($candidates) === 1) {
             return $candidates[0];
         }
 
-        $sameSchema = [];
-        $sameDatabase = [];
-        foreach ($candidates as $repository) {
-            $metadata = $this->metadataList[$repository];
-            if (strcasecmp((string) $metadata->getSchema(), $schema) === 0) {
-                $sameSchema[] = $repository;
+        if ($exactMatch === false) {
+            $sameSchema = [];
+            $sameDatabase = [];
+            foreach ($candidates as $repository) {
+                $metadata = $this->metadataList[$repository];
+                if (strcasecmp((string) $metadata->getSchema(), $schema) === 0) {
+                    $sameSchema[] = $repository;
+                }
+                if ($metadata->getDatabase() === $database) {
+                    $sameDatabase[] = $repository;
+                }
             }
-            if ($metadata->getDatabase() === $database) {
-                $sameDatabase[] = $repository;
-            }
-        }
 
-        $sameSchemaAndDatabase = array_values(array_intersect($sameSchema, $sameDatabase));
-        $partialMatches = $sameDatabase !== [] ? $sameDatabase : $sameSchema;
-        foreach ([$sameSchemaAndDatabase, $partialMatches] as $matches) {
-            if (count($matches) === 1) {
-                return $matches[0];
+            $partialMatches = $sameDatabase !== [] ? $sameDatabase : $sameSchema;
+            if (count($partialMatches) === 1) {
+                return $partialMatches[0];
             }
-            if ($matches !== []) {
-                $candidates = $matches;
-                break;
+            if ($partialMatches !== []) {
+                $candidates = $partialMatches;
             }
         }
 
