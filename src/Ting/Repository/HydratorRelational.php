@@ -161,16 +161,16 @@ final class HydratorRelational extends Hydrator
     /**
      * Stores the first instance met for the entity of $alias and returns its reference key
      *
-     * @param array<int|string, object|null> $result row in which the entity of $alias is set
+     * @param object $entity the entity of $alias in the row
      *
      * @throws Exception
      */
-    private function saveReference(string $alias, array $result): string
+    private function saveReference(string $alias, object $entity): string
     {
-        $key = $this->getIdentifiers($alias, $result[$alias]);
+        $key = $this->getIdentifiers($alias, $entity);
 
         if (isset($this->referencesRelation[$key]) === false) {
-            $this->referencesRelation[$key] = $result[$alias];
+            $this->referencesRelation[$key] = $entity;
         }
 
         return $key;
@@ -211,25 +211,26 @@ final class HydratorRelational extends Hydrator
         $this->resources          = [];
         $results                  = [];
 
-        foreach ($this->result as $columns) {
-            $result = $this->hydrateColumns($this->result->getConnectionName(), $this->result->getDatabase(), $columns);
-
+        foreach ($this->hydratedRows() as $result) {
             foreach ($relations as $index => $relation) {
-                if (isset($result[$relation['target']], $result[$relation['source']]) === false) {
+                $target = $result[$relation['target']] ?? null;
+                $source = $result[$relation['source']] ?? null;
+                if ($target === null || $source === null) {
                     continue;
                 }
 
                 $this->saveResourceFor(
                     $index,
                     $relation,
-                    $this->saveReference($relation['target'], $result),
-                    $this->saveReference($relation['source'], $result)
+                    $this->saveReference($relation['target'], $target),
+                    $this->saveReference($relation['source'], $source)
                 );
             }
 
             $rootKeys = [];
             foreach ($roots as $root) {
-                $rootKeys[] = isset($result[$root]) ? $this->saveReference($root, $result) : null;
+                $entity = $result[$root] ?? null;
+                $rootKeys[] = $entity !== null ? $this->saveReference($root, $entity) : null;
             }
 
             foreach ($sources as $source) {
@@ -248,10 +249,8 @@ final class HydratorRelational extends Hydrator
 
     private function hydrateNoAssociation(): Generator
     {
-        foreach ($this->result as $columns) {
-            yield $this->finalizeAggregate(
-                $this->hydrateColumns($this->result->getConnectionName(), $this->result->getDatabase(), $columns)
-            );
+        foreach ($this->hydratedRows() as $result) {
+            yield $this->finalizeAggregate($result);
         }
     }
 

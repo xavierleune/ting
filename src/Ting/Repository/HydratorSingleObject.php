@@ -44,8 +44,7 @@ class HydratorSingleObject extends Hydrator
      */
     public function getIterator(): Generator
     {
-        foreach ($this->result as $key => $row) {
-            $data = $this->hydrateColumns($this->result->getConnectionName(), $this->result->getDatabase(), $row);
+        foreach ($this->hydratedRows() as $key => $data) {
             yield $key => reset($data);
         }
     }

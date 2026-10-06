@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Repository;
 use stdClass;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Serializer\UnserializeInterface;
 use CCMBenchmark\Ting\UnitOfWork;
@@ -118,15 +119,37 @@ class Hydrator implements HydratorInterface
     /**
      * @return Generator<int, mixed> the rows (array<int|string, object|null>), as hydrateColumns() returns them: a
      *                               subclass yields what it makes of them
+     * @throws HydratorException
      */
     public function getIterator(): Generator
     {
-        foreach ($this->result as $key => $columns) {
-            yield $key => $this->hydrateColumns(
-                $this->result->getConnectionName(),
-                $this->result->getDatabase(),
-                $columns
-            );
+        yield from $this->hydratedRows();
+    }
+
+    /**
+     * The rows of the result, hydrated by hydrateColumns(): none without result, as count()
+     *
+     * @return Generator<int, array<int|string, object|null>>
+     * @throws HydratorException when a row comes from a result without connection name or database (a cached
+     *                           collection without result has no row)
+     */
+    protected function hydratedRows(): Generator
+    {
+        $result = $this->result;
+        if ($result === null) {
+            return;
+        }
+
+        foreach ($result as $key => $columns) {
+            $connectionName = $result->getConnectionName();
+            $database = $result->getDatabase();
+            if ($connectionName === null || $database === null) {
+                throw new HydratorException(
+                    'Cannot hydrate a row of a result without connection name or database: its metadata cannot be found'
+                );
+            }
+
+            yield $key => $this->hydrateColumns($connectionName, $database, $columns);
         }
     }
 
@@ -265,9 +288,17 @@ class Hydrator implements HydratorInterface
      * @param Row    $columns
      *
      * @return array<int|string, object|null> alias => entity, 0 => stdClass of the virtual columns
+     * @throws HydratorException when the metadata repository or the unit of work is not set
      */
     protected function hydrateColumns(string $connectionName, string $database, array $columns): array
     {
+        $metadataRepository = $this->metadataRepository;
+        if ($metadataRepository === null) {
+            throw new HydratorException(
+                'Hydrator used before setMetadataRepository(): the metadata of the rows cannot be found'
+            );
+        }
+
         $result        = [];
         $tmpEntities   = []; // Temporary entity when all properties are null for the moment (LEFT/RIGHT JOIN)
         $validEntities = []; // Entity marked as valid will fill an object
@@ -288,7 +319,7 @@ class Hydrator implements HydratorInterface
             // We have the information table, it's not a virtual column like COUNT(*)
             if (isset($result[$column['table']]) === false && isset($this->metadataList[$column['table']]) === false) {
                 $schema = $this->extractSchemaFromColumn($column);
-                $this->metadataRepository->findMetadataForTable(
+                $metadataRepository->findMetadataForTable(
                     $connectionName,
                     // objectDatabaseIs() applies to its alias only, not to the tables read after it
                     $this->objectDatabase[$column['table']] ?? $database,
@@ -454,10 +485,14 @@ class Hydrator implements HydratorInterface
 
     /**
      * @param mixed $entity
+     * @throws HydratorException
      */
     private function manageIfYouCan(mixed $entity): void
     {
         if ($entity instanceof NotifyPropertyInterface && $this->alreadyManaged->offsetExists($entity) === false) {
+            if ($this->unitOfWork === null) {
+                throw new HydratorException('Hydrator used before setUnitOfWork(): the entities cannot be managed');
+            }
             $this->unitOfWork->manage($entity);
             $this->alreadyManaged[$entity] = true;
         }

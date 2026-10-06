@@ -62,6 +62,11 @@ class HydratorValueObject implements HydratorInterface
      */
     public function getIterator(): \Generator
     {
+        // As count(): without result, there is no row
+        if ($this->result === null) {
+            return;
+        }
+
         $class = new \ReflectionClass($this->objectToHydrate);
         $constructor = $class->getConstructor();
 
