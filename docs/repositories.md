@@ -187,7 +187,8 @@ Values read from the database are cast according to `type`:
 
 The way booleans are stored depends on the database, so declare the serializer of your driver on `bool` fields:
 `CCMBenchmark\Ting\Driver\Mysqli\Serializer\Boolean` (`1` / `0`) or `CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean`
-(`t` / `f`). Without it, PostgreSQL's `'f'` would be cast to `true`.
+(`t` / `f`). Without it, a `bool` field still reads PostgreSQL's `'f'` as `false`, and the Pgsql driver sends a PHP
+boolean as `'1'` / `'0'` (PHP would send `false` as `''`, which PostgreSQL rejects).
 
 ## Serializers
 

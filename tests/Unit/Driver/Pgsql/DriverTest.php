@@ -865,6 +865,24 @@ class DriverTest extends TestCase
         $this->assertSame(2, $count);
     }
 
+    /**
+     * pg_query_params() sends false as '', which PostgreSQL rejects for a boolean (or an integer)
+     */
+    public function testExecuteShouldSendBooleansAsValuesPostgresqlAccepts()
+    {
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', function ($connection, $sql, $values) use (&$outerValues): void {
+            $outerValues = $values;
+        });
+        NativeFunctionMock::override('pg_result_status', \PGSQL_COMMAND_OK);
+
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->execute('UPDATE t SET a = :no, b = :yes', ['no' => false, 'yes' => true]);
+
+        $this->assertSame(['0', '1'], $outerValues);
+    }
+
     public function testExecuteShouldRaiseExceptionIfValueNotDefined()
     {
         NativeFunctionMock::override('pg_connect', new Pgsql());
