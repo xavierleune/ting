@@ -679,6 +679,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 } finally {
                     // The INSERT wrote every value: no change left, and the generated id is not one
                     $this->entitiesChanged->offsetUnset($entity);
+                    // Kept by manage() before the generated id was written back: a mutable autoincrement key (a value
+                    // object with a serializer of its own) is stored with the generated value
+                    $this->mutablePrimaryValues->offsetUnset($entity);
+                    $this->keepMutablePrimaryValues($entity, $metadata);
                 }
             },
             function () use ($entity): void {
