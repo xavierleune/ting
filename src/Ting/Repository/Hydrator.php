@@ -298,10 +298,13 @@ class Hydrator implements HydratorInterface
     /**
      * Hydrate one object from values
      *
-     * @internal hydrate all column into the right Entity according to the table name and metadata information
-     *           all virtual columns (COUNT(*), etc) will be set in the array key 0
-     *           all Entities without any information (a "LEFT JOIN user" can return no information at all about user)
-     *              are set to null
+     * Hydrate all column into the right Entity according to the table name and metadata information
+     * all virtual columns (COUNT(*), etc) will be set in the array key 0
+     * all Entities without any information (a "LEFT JOIN user" can return no information at all about user)
+     *    are set to null
+     *
+     * @internal not to be called from outside; a hydrator extending this class may call it (a supported extension
+     *           point)
      *
      * @param string $connectionName
      * @param string $database

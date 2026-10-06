@@ -74,7 +74,8 @@ abstract class Repository implements ResetInterface
      * @param CacheInterface $cache
      * @param UnitOfWork $unitOfWork
      *
-     * @internal
+     * @internal called by RepositoryFactory only; a repository may override it, with the same parameters, calling
+     *           parent::__construct() (a supported extension point)
      */
     public function __construct(
         protected ConnectionPool $connectionPool,
