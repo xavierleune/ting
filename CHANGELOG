@@ -69,6 +69,7 @@
     * Fix Collection::first() and count() disturbing a foreach over the same collection (the result has a single cursor): first() inside the loop restarted it forever, count() on a cached collection ended it; first() returns the first item of the last iteration, CacheResult::getNumRows() counts without moving the cursor
     * BC Serializer\DateTimeImmutable (datetime_immutable fields) writes Y-m-d H:i:s by default instead of ATOM, and could not read a MySQL DATETIME / PostgreSQL timestamp without a format option; Serializer\DateTime and Serializer\DateTimeImmutable now read a value that does not match their format with the PHP date parser (ATOM values written by the old default, PostgreSQL timestamptz...), and reject an empty string instead of reading it as the current time with unSerializeUseFormat false
     * Fix Serializer\BackedEnum::unserialize() on an int-backed enum: a value that is not an integer ('abc', '') threw a TypeError instead of a Serializer\RuntimeException, and '1.5' returned the case 1 with a deprecation; only integers and integer strings are accepted
+    * Fix Serializer\Json::serialize() throwing with the JSON_PARTIAL_OUTPUT_ON_ERROR option: the partial output is returned
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
