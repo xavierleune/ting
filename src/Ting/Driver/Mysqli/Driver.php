@@ -613,9 +613,16 @@ class Driver implements DriverInterface
      * Replaces the connection with a new one.
      *
      * On failure the driver stays connected, without usable connection: ping() retries, queries throw.
+     *
+     * @throws NeverConnectedException when connect() has not been called: there is nothing to reconnect to
      */
     public function reconnect(): bool
     {
+        $config = $this->connectionConfig;
+        if ($config === []) {
+            throw new NeverConnectedException('Please connect to your database before trying to reconnect.');
+        }
+
         // The previous connection is dropped whatever happens: its statements cannot be reused, its transaction is lost
         $this->loseTransaction();
         $this->oldPreparedQueries = array_replace_recursive($this->oldPreparedQueries, $this->preparedQueries);
@@ -624,7 +631,7 @@ class Driver implements DriverInterface
 
         try {
             $this->createConnection();
-            $connected = $this->connection->real_connect($this->connectionConfig['hostname'], $this->connectionConfig['username'], $this->connectionConfig['password'], $this->currentDatabase, $this->connectionConfig['port']);
+            $connected = $this->connection->real_connect($config['hostname'], $config['username'], $config['password'], $this->currentDatabase, $config['port']);
             if ($connected === false) {
                 return false;
             }

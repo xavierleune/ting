@@ -1219,6 +1219,25 @@ class DriverTest extends TestCase
         });
     }
 
+    public function testReconnectShouldRaiseAnExceptionWhenNeverConnected()
+    {
+        $realConnectCalls = 0;
+        $connection = $this->createStub(Mysqli::class);
+        $connection->method('real_connect')->willReturnCallback(function () use (&$realConnectCalls): bool {
+            $realConnectCalls++;
+            return true;
+        });
+        NativeFunctionMock::override('mysqli_init', $connection);
+
+        $driver = new Driver($this->createStub(Mysqli::class));
+
+        $this->assertThrows(NeverConnectedException::class, function () use ($driver): void {
+            $driver->reconnect();
+        });
+        // No connection opened with undefined parameters
+        $this->assertSame(0, $realConnectCalls);
+    }
+
     public function testPingShouldReconnectIfConnectionHasGone()
     {
         $realConnectCalls = [];
