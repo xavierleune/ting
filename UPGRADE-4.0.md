@@ -504,14 +504,57 @@ interface ConnectionPoolInterface
 Type Hints and Strict Types
 ----------------------------
 
-* All methods have full type hints for parameters and return types.
-* If you extend Ting classes or implement Ting interfaces, ensure your signatures match exactly.
-* Pay special attention to:
-  - Return type declarations (`: void`, `: static`, `: mixed`, etc.)
-  - Parameter types (`string`, `array`, `?int`, etc.)
-  - Nullable types where applicable
+**Every method of every Ting interface, and every public or protected method of every non-final class, now declares
+a native return type and native parameter types** (3.13 declared almost none; the few parameters left untyped are
+listed in "Native types everywhere" below). The signatures quoted in this guide are examples, not an exhaustive list:
+an implementation or an override written against 3.x must be compared with the 4.0 declaration of **each** method it
+implements or overrides, not only with the methods listed here.
 
-The extension points you are the most likely to implement:
+* **Implementing an interface**: every method must declare a return type compatible with the interface (the same
+  type, or a narrower one), otherwise PHP raises a fatal error when loading the class. Its parameters may stay
+  untyped (an untyped parameter is wider), or take the type of the interface.
+* **Extending a non-final class** (a repository, a hydrator, a driver, a serializer...): an override must declare a
+  compatible return type, with the same fatal error otherwise; a parameter type it declares must be the type of the
+  parent, or a wider one.
+
+Start with your repositories, which every application has:
+
+* `MetadataInitializer::initMetadata()` now returns `Metadata`: **every repository** must declare it.
+  ```php
+  // Before (3.x):
+  public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = [])
+
+  // After (4.0):
+  public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
+  ```
+* A repository overriding a method of `Repository` with its 3.x signature does not load either, e.g.
+  `public function getAll($forceMaster = false)` (no return type): write
+  `public function getAll(bool $forcePrimary = false): CollectionInterface`. The methods of `Repository` in 4.0:
+  ```php
+  public function __construct(ConnectionPool $connectionPool, MetadataRepository $metadataRepository, QueryFactory $queryFactory, CollectionFactory $collectionFactory, CacheInterface $cache, UnitOfWork $unitOfWork);
+  public function getCollection(?HydratorInterface $hydrator = null): Collection;
+  public function getQuery(string $sql): Query;
+  public function getPreparedQuery(string $sql): PreparedQuery;
+  public function getCachedQuery(string $sql): Cached\Query;
+  public function getCachedPreparedQuery(string $sql): Cached\PreparedQuery;
+  public function getQueryBuilder(string $type): QueryInterface;
+  public function get(mixed $primariesKeyValue, bool $forcePrimary = false): ?object;
+  public function getAll(bool $forcePrimary = false): CollectionInterface;
+  public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface;
+  public function getOneBy(array $criteria, bool $forcePrimary = false): ?object;
+  public function save(NotifyPropertyInterface $entity): void;
+  public function delete(NotifyPropertyInterface $entity): void;
+  public function startTransaction(): void;
+  public function rollback(): void;
+  public function commit(): void;
+  public function ping(): bool;
+  public function pingPrimary(): bool;
+  public function getMetadata(): Metadata;
+  public function reset(): void;
+  ```
+  An override of `getCollection()` must return `Collection` (or a subclass), not `CollectionInterface`.
+
+The other extension points you are the most likely to implement:
 
 * Loggers (ting_bundle's `DriverLogger` and `CacheLogger` included):
   ```php
@@ -532,8 +575,6 @@ The extension points you are the most likely to implement:
   `PropertyListenerInterface::propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue,
   mixed $newValue): void`. The `NotifyProperty` trait declares `protected array $listeners = []`: an entity using the
   trait must not redeclare `$listeners` without this type.
-* Repositories: `Repository::getCollection(?HydratorInterface $hydrator = null): Collection`; an override must return
-  `Collection` (or a subclass), not `CollectionInterface`.
 * Serializers: `SerializeInterface::serialize(mixed $toSerialize, array $options = []): mixed` and
   `UnserializeInterface::unserialize(mixed $serialized, array $options = []): mixed`. A serializer implementing them
   directly **must now declare a return type** (`mixed`, or any narrower type such as `?string`), or PHP raises a fatal
@@ -541,16 +582,155 @@ The extension points you are the most likely to implement:
   class **extending** one of them must declare a compatible return type on the methods it overrides (see
   "Smaller changes for extensions").
 
+<details>
+<summary>Every method of every Ting interface in 4.0 (generated by reflection)</summary>
+
+Every one of these methods is typed in 4.0; in 3.13, only `ResetInterface::reset()` had a return type. Class names are
+short: the classes of Ting, `Generator` is PHP's.
+
+```php
+// Cache\CacheInterface
+public function setLogger(CacheLoggerInterface $logger): void;
+
+// ConnectionPoolInterface
+public function setConfig(array $config): void;
+public function primary(string $name, string $database): DriverInterface;
+public function replica(string $name, string $database): DriverInterface;
+public function closeAll(): void;
+public function setDatabaseOptions(array $options): void;
+
+// Driver\DriverInterface
+public function connect(string $hostname, ?string $username, ?string $password, int $port): static;
+public function close(): static;
+public function setName(string $name): static;
+public function setCharset(string $charset): void;
+public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): mixed;
+public function prepare(string $sql): StatementInterface;
+public function setDatabase(string $database): static;
+public function ifIsError(callable $callback): static;
+public function ifIsNotConnected(callable $callback): static;
+public function escapeField(mixed $field = null): string;
+public function startTransaction(): void;
+public function rollback(): void;
+public function commit(): void;
+public function getInsertedId(): int;
+public function getAffectedRows(): string|int;
+public function setLogger(?DriverLoggerInterface $logger = null): static;
+public static function getConnectionKey(array $connectionConfig, string $database): string;
+public function closeStatement(string $statement): void;
+public function ping(): bool;
+public function setTimezone(?string $timezone = null): void;
+
+// Driver\ResultInterface
+public function setConnectionName(string $connectionName): static;
+public function setDatabase(string $database): static;
+public function setResult(mixed $result): static;
+public function getConnectionName(): ?string;
+public function getDatabase(): ?string;
+public function getNumRows(): mixed;
+
+// Driver\SequenceAwareDriverInterface
+public function getInsertedIdForSequence(string $sequenceName): int;
+
+// Driver\StatementInterface
+public function execute(array $params, ?CollectionInterface $collection = null): CollectionInterface|bool;
+public function setLogger(?DriverLoggerInterface $logger = null): void;
+public function isStale(): bool;
+
+// Entity\NotifyPropertyInterface
+public function addPropertyListener(PropertyListenerInterface $listener): void;
+
+// Entity\PropertyListenerInterface
+public function propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue, mixed $newValue): void;
+
+// Logger\CacheLoggerInterface
+public function startOperation(string $operation, array|string $keys): void;
+public function stopOperation(bool $miss = false): void;
+
+// Logger\DriverLoggerInterface
+public function addConnection(string $name, string $connection, array $connectionConfig): void;
+public function startQuery(string $sql, array $params, string $connection, string $database): void;
+public function startPrepare(string $sql, string $connection, string $database): void;
+public function startStatementExecute(string $statement, array $params = []): void;
+public function stopQuery(): void;
+public function stopPrepare(string $statement): void;
+public function stopStatementExecute(string $statement): void;
+
+// Query\QueryFactoryInterface (CacheInterface: Symfony\Contracts\Cache\CacheInterface)
+public function get(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): QueryInterface;
+public function getPrepared(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): PreparedQuery;
+public function getCached(string $sql, Connection $connection, CacheInterface $cache, ?CollectionFactoryInterface $collectionFactory = null): Cached\Query;
+public function getCachedPrepared(string $sql, Connection $connection, CacheInterface $cache, ?CollectionFactoryInterface $collectionFactory = null): Cached\PreparedQuery;
+
+// Query\QueryInterface
+public function query(?CollectionInterface $collection = null): CollectionInterface;
+public function execute(): mixed;
+public function setParams(array $params): static;
+public function selectPrimary(bool $usePrimary): static;
+public function getInsertedId(): int;
+public function getAffectedRows(): string|int;
+
+// Repository\CollectionFactoryInterface
+public function get(): Collection;
+
+// Repository\CollectionInterface
+public function set(ResultInterface $result): void;
+public function first(): mixed;
+public function setFromCache(bool $value): void;
+public function isFromCache(): bool;
+public function toCache(): array;
+public function fromCache(array $result): void;
+public function getIterator(): Generator;
+public function count(): int;
+
+// Repository\HydratorInterface
+public function setMetadataRepository(MetadataRepository $metadataRepository): void;
+public function setUnitOfWork(UnitOfWork $unitOfWork): void;
+public function setResult(ResultInterface $result): static;
+public function count(): int;
+public function getIterator(): Generator;
+
+// Repository\MetadataInitializer
+public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata;
+
+// ResetInterface
+public function reset(): void;
+
+// Serializer\SerializeInterface
+public function serialize(mixed $toSerialize, array $options = []): mixed;
+
+// Serializer\SerializerFactoryInterface
+public function get(string $serializerName): SerializerInterface;
+
+// Serializer\UnserializeInterface
+public function unserialize(mixed $serialized, array $options = []): mixed;
+```
+
+</details>
+
 ### Native types everywhere
 
-Every parameter, return value and property of Ting now has a native type (PHPStan enforces it). The handles of the
-native extensions (`mysqli`, `mysqli_stmt`, `mysqli_result`, `PgSql\Connection`, `PgSql\Result`) are typed `object`,
-with the precise class in the PHPDoc: the `PgSql` classes are final and only built by a server, and the `mysqli`
-properties cannot be read on a stand-in, so tests keep passing fakes.
+Every return value of Ting now has a native type, and so do the parameters and properties, with a few exceptions that
+PHP cannot or need not type:
 
-What breaks depends on the kind of type added:
+* the `$toSerialize` / `$serialized` parameter of the `serialize()` / `unserialize()` methods of the built-in
+  serializers, and the `$result` parameter of `setResult()` in `Driver\Mysqli\Result`, `Driver\Pgsql\Result` and
+  `Driver\CacheResult`: untyped, which is the same as the `mixed` of their interface;
+* `Repository\HydratorRelational::identityMap($enable)`, untyped (`Hydrator::identityMap()` takes a `bool`);
+* the callables of `Repository\HydratorAggregator` (`$callableForId`, `$callableForData`, `$callableFinalizeAggregate`):
+  PHP has no `callable` property type.
 
-* **Return types on interfaces**: an implementation without a return type is a fatal error at load time.
+PHPStan (level 8, with a type coverage check) enforces it. The handles of the native extensions (`mysqli`,
+`mysqli_stmt`, `mysqli_result`, `PgSql\Connection`, `PgSql\Result`) are typed `object`, with the precise class in the
+PHPDoc: the `PgSql` classes are final and only built by a server, and the `mysqli` properties cannot be read on a
+stand-in, so tests keep passing fakes.
+
+What breaks depends on the kind of type added. The methods listed below are examples, the rules apply to every
+method:
+
+* **Return types on interfaces**: an implementation without a return type is a fatal error at load time. Every
+  interface method has one (see the list above), for instance:
+  - `Repository\MetadataInitializer::initMetadata(): Metadata`
   - `Serializer\SerializeInterface::serialize(): mixed`, `Serializer\UnserializeInterface::unserialize(): mixed`
   - `Repository\CollectionFactoryInterface::get(): Collection`
   - `Repository\CollectionInterface::first(): mixed`
@@ -560,15 +740,17 @@ What breaks depends on the kind of type added:
   - `Query\QueryFactoryInterface::get()`, `getPrepared()`, `getCached()`, `getCachedPrepared()`: `string $sql`
   - `Repository\CollectionInterface::setFromCache(bool $value)`
 * **Return types on non-final classes**: a subclass overriding the method without a compatible return type is a fatal
-  error at load time.
-  - `Repository\Repository::get()` and `getOneBy()`: `?object`
+  error at load time. Every public and protected method has one, for instance:
+  - every method of `Repository\Repository` (see above): `get()` and `getOneBy()` return `?object`, `getAll()` and
+    `getBy()` a `CollectionInterface`
   - `Repository\Metadata::getRepository(): ?string` and `createEntity(): object`
 
   The entity template of `Repository` and `Metadata` is bound to `object` (`@template T of object`).
 * **Property types on non-final classes**: a subclass redeclaring the property must use the same type (see
   "Smaller Changes for Extensions" for the list).
 * **Parameter types on classes**: an override without type keeps working. Values that were cast before are no longer:
-  in non-strict mode PHP still coerces scalars (`setTtl('10')`), but `null` or an object is a `TypeError`.
+  in non-strict mode PHP still coerces scalars (`setTtl('10')`), but `null` or an object is a `TypeError`. For
+  instance:
   - `Query\Cached\Query::setTtl(int $ttl)` and `setForce(bool $value)`
   - `Repository\Collection::setFromCache(bool $value)`
   - `Repository\Hydrator::identityMap(bool $enable)`, `unserializeAliasWith(string $alias, ...)`,
@@ -586,9 +768,10 @@ What breaks depends on the kind of type added:
     argument must be a `mysqli_driver`
   - `Driver\Mysqli\Driver::setCollectionWithResult(object $resultData, ...)` (protected),
     `Driver\Mysqli\Statement::__construct(object $driverStatement, ...)` and `setCollectionWithResult(object $resultData,
-    ...)`, `Driver\Pgsql\Driver::setCollectionWithResult(string $sql, ...)` (protected),
-    `Driver\Pgsql\Statement::__construct(string $statementName, ...)`, `setConnection(object $connection)` and
-    `setCollectionWithResult(object $resultResource, ...)` (all internal)
+    ...)`, `Driver\Pgsql\Statement::__construct(string $statementName, ...)` and `setConnection(object $connection)`
+    (all internal)
+  - The `setCollectionWithResult()` methods of the Pgsql driver changed more than their types, see "Smaller Changes
+    for Extensions"
 
 Example of updated method signatures:
 ```php
@@ -689,7 +872,7 @@ These changes only matter if you extend Ting classes or rely on their internals.
   |--------------------------------|-------------------------------------------------------------------------------------|
   | `ConnectionPool`               | `array $connectionConfig`, `$databaseOptions`, `$connectionReplicas`, `$connections` |
   | `MetadataRepository`           | `array $metadataList`, `array $entityToRepository`                                   |
-  | `Driver\Mysqli\Driver`         | `mysqli_driver $driver`, `?object $connection`                                       |
+  | `Driver\Mysqli\Driver`         | `mysqli_driver $driver`, `object $connection` (set by the constructor, never `null`) |
   | `Driver\Mysqli\Result`         | `?object $result`, `?array $iteratorCurrent`                                         |
   | `Driver\Mysqli\Statement`      | `object $driverStatement`                                                            |
   | `Driver\Pgsql\Driver`          | `?object $connection`, `?object $result`, `string $dsn` (`''` until `connect()`)      |
@@ -699,6 +882,15 @@ These changes only matter if you extend Ting classes or rely on their internals.
   | `Repository\Metadata`          | `?string $repository`                                                                |
   | `Repository\MetadataCacheGenerator` | `string $cacheDir`                                                              |
   | `Repository\Repository`        | `Metadata $metadata`, `Connection $connection` (no longer `null` before the constructor sets them) |
+* The protected / internal `setCollectionWithResult()` of the Pgsql driver changed their parameters, beyond their
+  types:
+
+  | Method                                         | 3.13                                                         | 4.0                                                                                  |
+  |------------------------------------------------|--------------------------------------------------------------|--------------------------------------------------------------------------------------|
+  | `Driver\Pgsql\Driver::setCollectionWithResult()` (protected) | `($sql, CollectionInterface $collection)`, reading `$this->result` | `(object $resultResource, string $sql, CollectionInterface $collection)`: the result is passed first |
+  | `Driver\Pgsql\Statement::setCollectionWithResult()` | `($resultResource, ?CollectionInterface $collection = null)` | `(object $resultResource, CollectionInterface $collection): bool`: the collection is required |
+
+  A subclass calling or overriding them must follow.
 * `Connection::__construct()` (internal, called by the repositories) types `$name` and `$database` as `string` and
   throws a `RuntimeException` when one of them is empty (3.x only rejected `null`).
 * The protected `Metadata::getColumnsFromCriteria()` and `Metadata::getPrimariesKeyValuesAsArray()` now validate the
