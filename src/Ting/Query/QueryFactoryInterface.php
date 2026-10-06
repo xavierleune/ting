@@ -36,7 +36,7 @@ interface QueryFactoryInterface
      * @param Connection $connection
      * @param CollectionFactoryInterface $collectionFactory
      */
-    public function get($sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): QueryInterface;
+    public function get(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): QueryInterface;
 
     /**
      * @param string $sql
@@ -44,7 +44,7 @@ interface QueryFactoryInterface
      * @param CollectionFactoryInterface $collectionFactory
      * @return PreparedQuery
      */
-    public function getPrepared($sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): PreparedQuery;
+    public function getPrepared(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): PreparedQuery;
 
     /**
      * @param string $sql
@@ -54,7 +54,7 @@ interface QueryFactoryInterface
      * @return Cached\Query
      */
     public function getCached(
-        $sql,
+        string $sql,
         Connection $connection,
         CacheInterface $cache,
         ?CollectionFactoryInterface $collectionFactory = null
@@ -68,7 +68,7 @@ interface QueryFactoryInterface
      * @return Cached\PreparedQuery
      */
     public function getCachedPrepared(
-        $sql,
+        string $sql,
         Connection $connection,
         CacheInterface $cache,
         ?CollectionFactoryInterface $collectionFactory = null

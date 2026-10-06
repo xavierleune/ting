@@ -43,7 +43,7 @@ class Query implements QueryInterface
      * @param CollectionFactoryInterface $collectionFactory
      */
     public function __construct(
-        protected $sql,
+        protected string $sql,
         protected Connection $connection,
         protected ?CollectionFactoryInterface $collectionFactory = null
     ) {
