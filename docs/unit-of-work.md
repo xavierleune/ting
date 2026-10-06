@@ -55,8 +55,9 @@ Use `pushSave()` both to insert and to update: the unit of work knows which one 
 `Repository::save($entity)` and `Repository::delete($entity)` are shortcuts for `pushSave($entity)->process()` and
 `pushDelete($entity)->process()`. Note that they process the **whole** queue, including entities pushed earlier.
 
-If a query fails, `process()` throws (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure
-are removed from the queue, the others stay queued.
+If a query fails, `process()` closes the statements it prepared and rethrows the exception
+(`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
+removed from the queue (its tracked changes are kept, so saving it again retries) and the following ones stay queued.
 
 ### Transactions
 
@@ -71,13 +72,17 @@ try {
         ->pushSave($newCity)
         ->pushDelete($oldCity)
         ->process();
-    $cityRepository->commit();
 } catch (\Throwable $e) {
     $cityRepository->rollback();
     $unitOfWork->detachAll();
     throw $e;
 }
+$cityRepository->commit();
 ```
+
+`commit()` stays outside the `try`: a failed `commit()` throws a `CCMBenchmark\Ting\Exceptions\TransactionException`
+and leaves no transaction open, so a `rollback()` after it would throw too and hide the original error (see
+[Transactions](repositories.md#transactions)).
 
 ## Inspecting the state
 
