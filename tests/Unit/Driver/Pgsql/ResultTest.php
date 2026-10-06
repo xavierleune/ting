@@ -31,6 +31,7 @@ use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use tests\fixtures\Fake\PgsqlResult;
 
 class ResultTest extends TestCase
 {
@@ -52,7 +53,7 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
 
         $this->assertThrows(
             \Throwable::class,
@@ -96,7 +97,7 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
 
         $this->assertThrows(
             \Throwable::class,
@@ -115,7 +116,7 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
 
         $this->assertNull($result->setQuery('select NOW(1)'));
     }
@@ -131,7 +132,7 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
         $result->setQuery('SELECT x FROM generate_series(1, 3) AS x');
         $result->rewind();
 
@@ -154,7 +155,7 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
         $result->setQuery($query);
         $result->rewind();
 
@@ -184,7 +185,7 @@ class ResultTest extends TestCase
     public function testSetQueryShouldRaiseExceptionOnAnAsteriskColumn(string $query)
     {
         $result = new Result();
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
 
         $this->assertThrows(
             QueryException::class,
@@ -334,7 +335,7 @@ class ResultTest extends TestCase
         };
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
 
         $result->rewind();
         $this->assertSame(1, $result->calls['next']);
@@ -356,7 +357,7 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult('result resource');
+        $result->setResult(new PgsqlResult());
         $result->rewind();
         $result->next();
 

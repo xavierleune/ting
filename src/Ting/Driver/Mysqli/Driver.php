@@ -50,15 +50,13 @@ class Driver implements DriverInterface
 
     protected string $name = '';
 
-    /**
-     * @var mysqli_driver|null $driver
-     */
-    protected $driver;
+    protected mysqli_driver $driver;
 
     /**
+     * Natively typed object: tests stand in for mysqli, whose properties cannot be read without a server
      * @var mysqli|null driver connection
      */
-    protected $connection = null;
+    protected ?object $connection = null;
 
     protected string $currentDatabase = '';
 
@@ -115,9 +113,8 @@ class Driver implements DriverInterface
 
     /**
      * @param mysqli|null $connection
-     * @param mysqli_driver|null $driver
      */
-    public function __construct($connection = null, $driver = null)
+    public function __construct(?object $connection = null, ?mysqli_driver $driver = null)
     {
         if ($connection === null) {
             $this->createConnection();
@@ -338,7 +335,7 @@ class Driver implements DriverInterface
      * @param CollectionInterface $collection
      * @return CollectionInterface
      */
-    protected function setCollectionWithResult($resultData, CollectionInterface $collection): CollectionInterface
+    protected function setCollectionWithResult(object $resultData,CollectionInterface $collection): CollectionInterface
     {
         $result = new Result();
         $result->setConnectionName($this->name);

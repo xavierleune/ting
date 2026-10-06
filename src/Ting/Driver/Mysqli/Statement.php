@@ -49,11 +49,12 @@ class Statement implements StatementInterface
     protected string $objectHash = '';
 
     /**
-     * @param mysqli_stmt  $driverStatement
+     * @param mysqli_stmt  $driverStatement natively typed object: tests stand in for mysqli_stmt, whose properties
+     *                                      cannot be read without a server
      * @param list<string> $paramsOrder parameter names, in the order of the placeholders (a name can repeat)
      */
     public function __construct(
-        protected $driverStatement,
+        protected object $driverStatement,
         protected array $paramsOrder,
         protected string $connectionName,
         protected string $database
@@ -127,7 +128,7 @@ class Statement implements StatementInterface
      *
      * @internal
      */
-    public function setCollectionWithResult($resultData, CollectionInterface $collection): bool
+    public function setCollectionWithResult(object $resultData, CollectionInterface $collection): bool
     {
         $result = new Result();
         $result->setConnectionName($this->connectionName);

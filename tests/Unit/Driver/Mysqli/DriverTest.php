@@ -99,9 +99,7 @@ class DriverTest extends TestCase
     public function testShouldUseGivenDriver()
     {
         $mockPool = $this->createStub(Mysqli::class);
-        $mockDriver = $this->createStub(Driver::class);
-
-        $driver = new Driver($mockPool, $mockDriver);
+        $driver = new Driver($mockPool, new \mysqli_driver());
 
         $this->assertInstanceOf(DriverInterface::class, $driver);
     }
