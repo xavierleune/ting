@@ -531,6 +531,15 @@ Hydrators and Transactions
 * `HydratorRelational` throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when its relations form a cycle (a
   bidirectional relation, or an alias given to itself); 3.x partially ignored them. Declare one direction and set the
   back reference in the setter, see [HydratorRelational](docs/hydrators.md#hydratorrelational).
+* When several metadata share a table on a connection (one per database or schema, e.g. `City` in `world` and
+  `CityArchive` in `world_archive`, both on `T_CITY_CIT`) and none matches the database and schema of the result, the
+  hydrator no longer takes the first metadata registered (an order that depends on the files found or on the service
+  configuration). It takes the only metadata of the same database, else the only one of the same schema, and otherwise
+  throws a `CCMBenchmark\Ting\Exceptions\HydratorException` listing the candidates: name the database or the schema
+  of the alias with `Hydrator::objectDatabaseIs()` / `objectSchemaIs()`, see
+  [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
+  still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
+  exact match (PostgreSQL results report lowercased schemas).
 * The array given to a `RelationMany` method is still indexed by an internal reference, but its format changed
   (`'book-1-'` in 3.x): use `array_values()` rather than relying on these keys.
 * `startTransaction()`, `commit()` and `rollback()` throw a `CCMBenchmark\Ting\Exceptions\TransactionException` when

@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -27,6 +28,7 @@ namespace CCMBenchmark\Ting;
 
 use Closure;
 use ReflectionClass;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Repository\MetadataInitializer;
 use CCMBenchmark\Ting\Repository\Repository;
@@ -61,12 +63,23 @@ class MetadataRepository
     }
 
     /**
+     * Finds the metadata of a table read in a result. Several metadata can share a table on a connection (one per
+     * database or schema): the result tells the database and the schema of the table, but not always reliably
+     * (Mysqli fields carry no database, Pgsql\Result lowercases the schemas, a query without schema has none).
+     * In this order, the metadata found is:
+     * - the one of the same schema and database (the schema compared case-insensitively when no exact match),
+     * - the only one registered for the table,
+     * - the only one of the same database, or when none shares it, the only one of the same schema.
+     * Otherwise, the choice is ambiguous and a HydratorException is thrown.
+     *
      * @param string   $connectionName
      * @param string   $database
      * @param string   $schema
      * @param string   $table
      * @param Closure $callbackFound called with applicable Metadata if applicable
      * @param Closure $callbackNotFound called if unknown table - no parameter
+     *
+     * @throws HydratorException when several metadata could be the one of the table
      *
      * @internal
      */
@@ -88,15 +101,74 @@ class MetadataRepository
             return;
         }
 
-        if (isset($this->tableWithConnectionToMetadata[$connectionKey][$schema . '#' . $database])) {
-            $callbackFound(
-                $this->metadataList[$this->tableWithConnectionToMetadata[$connectionKey][$schema . '#' . $database]]
-            );
-        } else {
-            $callbackFound(
-                $this->metadataList[current($this->tableWithConnectionToMetadata[$connectionKey])]
+        $repositories = $this->tableWithConnectionToMetadata[$connectionKey];
+        $repository = $repositories[$schema . '#' . $database]
+            ?? $this->findSingleCandidate($connectionName, $database, $schema, $table, $repositories);
+
+        $callbackFound($this->metadataList[$repository]);
+    }
+
+    /**
+     * @param array<string, string> $repositories the repositories registered for the table, by "schema#database"
+     *
+     * @throws HydratorException
+     */
+    private function findSingleCandidate(
+        string $connectionName,
+        string $database,
+        string $schema,
+        string $table,
+        array $repositories
+    ): string {
+        $candidates = array_values(array_unique($repositories));
+        if (count($candidates) === 1) {
+            return $candidates[0];
+        }
+
+        $sameSchema = [];
+        $sameDatabase = [];
+        foreach ($candidates as $repository) {
+            $metadata = $this->metadataList[$repository];
+            if (strcasecmp((string) $metadata->getSchema(), $schema) === 0) {
+                $sameSchema[] = $repository;
+            }
+            if ($metadata->getDatabase() === $database) {
+                $sameDatabase[] = $repository;
+            }
+        }
+
+        $sameSchemaAndDatabase = array_values(array_intersect($sameSchema, $sameDatabase));
+        $partialMatches = $sameDatabase !== [] ? $sameDatabase : $sameSchema;
+        foreach ([$sameSchemaAndDatabase, $partialMatches] as $matches) {
+            if (count($matches) === 1) {
+                return $matches[0];
+            }
+            if ($matches !== []) {
+                $candidates = $matches;
+                break;
+            }
+        }
+
+        $candidateList = [];
+        foreach ($candidates as $repository) {
+            $candidateList[] = sprintf(
+                '%s (database "%s", schema "%s")',
+                $repository,
+                $this->metadataList[$repository]->getDatabase(),
+                $this->metadataList[$repository]->getSchema()
             );
         }
+
+        throw new HydratorException(sprintf(
+            'Cannot choose the metadata of the table "%s" read on the connection "%s" from the database "%s" and '
+            . 'the schema "%s": it can be %s. Name the database or the schema of its alias with '
+            . 'Hydrator::objectDatabaseIs() or Hydrator::objectSchemaIs().',
+            $table,
+            $connectionName,
+            $database,
+            $schema,
+            implode(' or ', $candidateList)
+        ));
     }
 
     /**

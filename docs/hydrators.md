@@ -335,6 +335,18 @@ $hydrator->objectSchemaIs('b', 'my_schema');
 
 It takes precedence over the schema written in the query.
 
+These settings matter when several metadata share a table on the connection (one per database or schema). The
+hydrator takes the metadata of the same database and schema as the table read; without one, it takes:
+
+1. the only metadata registered for the table, whatever its database or schema (a cross-database MySQL read: the
+   result doesn't tell the database of each table, the hydrator only knows the one of the connection);
+2. else the only metadata of the same database, or when none shares the database, the only one of the same schema.
+
+Otherwise it can't choose and throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming the table and the
+candidate repositories: set `objectDatabaseIs()` or `objectSchemaIs()` on the alias. Schemas are compared
+case-insensitively when no exact match, as PostgreSQL results report lowercased schemas (`mySchema` is read
+`myschema`).
+
 ### Identity map
 
 By default, every row produces new objects, even when the same entity appears in several rows. With
