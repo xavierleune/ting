@@ -103,6 +103,45 @@ class JsonTest extends TestCase
         });
     }
 
+    public function testUnserializeShouldHonourTheObjectAsArrayFlag()
+    {
+        $serializer = new Json();
+
+        $this->assertSame(['a' => 1], $serializer->unserialize('{"a":1}', ['options' => JSON_OBJECT_AS_ARRAY]));
+        // An explicit assoc takes precedence, as with json_decode()
+        $this->assertInstanceOf(
+            \stdClass::class,
+            $serializer->unserialize('{"a":1}', ['assoc' => false, 'options' => JSON_OBJECT_AS_ARRAY])
+        );
+    }
+
+    public function testTheThrowOnErrorFlagShouldGiveTheSerializerException()
+    {
+        $serializer = new Json();
+
+        $exception = $this->assertThrows(
+            RuntimeException::class,
+            fn () => $serializer->unserialize('bouh', ['options' => JSON_THROW_ON_ERROR])
+        );
+        $this->assertInstanceOf(\JsonException::class, $exception->getPrevious());
+        $exception = $this->assertThrows(
+            RuntimeException::class,
+            fn () => $serializer->serialize(['a' => INF], ['options' => JSON_THROW_ON_ERROR])
+        );
+        $this->assertInstanceOf(\JsonException::class, $exception->getPrevious());
+    }
+
+    public function testAnErrorLeftByAnotherJsonCallShouldNotFailAValidValue()
+    {
+        $serializer = new Json();
+
+        // JSON_THROW_ON_ERROR leaves the error of the previous call in json_last_error()
+        json_decode('bouh');
+        $this->assertSame(['a' => 1], $serializer->unserialize('{"a":1}', ['assoc' => true, 'options' => JSON_THROW_ON_ERROR]));
+        json_decode('bouh');
+        $this->assertSame('{"a":1}', $serializer->serialize(['a' => 1], ['options' => JSON_THROW_ON_ERROR]));
+    }
+
     public function testNullValueShouldReturnNull()
     {
         $serializer = new Json();

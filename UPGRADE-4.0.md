@@ -320,7 +320,7 @@ UnitOfWork
   Consequence: saving a managed entity that has a mutable field always runs an `UPDATE`, even without change, and
   `UnitOfWork::isPropertyChanged()` is always `true` for such a field. By default, a field is mutable when its
   serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable`),
-  `Serializer\Json` without the `assoc` unserialize option (objects), or a serializer of your
+  `Serializer\Json` decoding objects (without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag), or a serializer of your
   own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
   trade-offs.
 * A mutable field is only written when its value is known: read from the database, set through its setter, or

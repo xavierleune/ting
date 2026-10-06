@@ -346,6 +346,17 @@ class MetadataTest extends TestCase
                 ['type' => 'json', 'serializer_options' => ['unserialize' => ['assoc' => true]]],
                 false,
             ],
+            'json decoded to arrays by the JSON_OBJECT_AS_ARRAY flag' => [
+                ['type' => 'json', 'serializer_options' => ['unserialize' => ['options' => JSON_OBJECT_AS_ARRAY]]],
+                false,
+            ],
+            'json decoded to objects despite the JSON_OBJECT_AS_ARRAY flag' => [
+                [
+                    'type'               => 'json',
+                    'serializer_options' => ['unserialize' => ['assoc' => false, 'options' => JSON_OBJECT_AS_ARRAY]],
+                ],
+                true,
+            ],
             'json decoded to objects'      => [['type' => 'json'], true],
             'json with explicit serializer' => [['type' => 'string', 'serializer' => Json::class], true],
             'datetime with Serializer\DateTime' => [['type' => 'datetime', 'serializer' => DateTime::class], true],

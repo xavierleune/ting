@@ -419,8 +419,12 @@ class Metadata
         }
 
         if ($params['serializer'] === Json::class) {
-            // Arrays are values, objects (\stdClass) are not
-            return ($params['serializer_options']['unserialize']['assoc'] ?? false) !== true;
+            // Arrays are values, objects (\stdClass) are not. As json_decode(), without assoc (or null), the
+            // JSON_OBJECT_AS_ARRAY flag decides
+            $unserialize = $params['serializer_options']['unserialize'] ?? [];
+            $assoc = $unserialize['assoc'] ?? ((($unserialize['options'] ?? 0) & JSON_OBJECT_AS_ARRAY) !== 0);
+
+            return $assoc !== true;
         }
 
         // Serializer\DateTime, and any serializer of your own
@@ -431,7 +435,8 @@ class Metadata
      * A mutable field holds a PHP value that can be modified in place (a \DateTime, a \stdClass...): such a change is
      * not notified, so the unit of work writes the field on every save of a managed entity.
      * Set with the "mutable" option of the field; by default, a field is mutable when its serializer is
-     * Serializer\DateTime, Serializer\Json without the "assoc" unserialize option, or a serializer of your own.
+     * Serializer\DateTime, Serializer\Json decoding objects (neither the "assoc" unserialize option nor, without it, the
+     * JSON_OBJECT_AS_ARRAY flag in the "options" unserialize option), or a serializer of your own.
      */
     public function isMutable(string $propertyName): bool
     {

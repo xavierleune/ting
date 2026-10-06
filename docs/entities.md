@@ -150,8 +150,8 @@ the constructor, such as `new \DateTime()`): the mutable fields not read are lef
 not overwrite their column with that default. Once set through its setter (with a new value), such a field is known,
 and written by every save. A value modified in place without setter, on a field not read, is not written.
 
-The default comes from the serializer of the field: `Serializer\DateTime`, `Serializer\Json` without the `assoc`
-unserialize option and any serializer of your own are mutable; the serializers shipped with Ting for immutable values
+The default comes from the serializer of the field: `Serializer\DateTime`, `Serializer\Json` decoding objects
+(without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag) and any serializer of your own are mutable; the serializers shipped with Ting for immutable values
 are not. A field of type `datetime` without serializer follows its property: typed `\DateTimeImmutable` (nullable or
 not), it hydrates a `\DateTimeImmutable` (immutable); typed `\DateTimeInterface`, `\DateTime` or a union, not typed or
 only reachable through a setter, it hydrates a `\DateTime` (mutable), as in 3.x. Override the default with the
