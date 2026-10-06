@@ -575,7 +575,11 @@ class Driver implements DriverInterface
         }
 
         if ($result && $this->currentCharset !== null) {
-            pg_set_client_encoding($connection, $this->currentCharset);
+            if (pg_set_client_encoding($connection, $this->currentCharset) === -1) {
+                // As for the timezone: the session keeps the server default, the next setCharset() with this
+                // charset applies it again and reports the error
+                $this->currentCharset = null;
+            }
         }
         if ($result && $this->currentTimezone !== null) {
             try {
@@ -640,7 +644,11 @@ class Driver implements DriverInterface
             if ($this->currentCharset !== null) {
                 $charset = $this->currentCharset;
                 $this->currentCharset = null;
-                $this->setCharset($charset);
+                try {
+                    $this->setCharset($charset);
+                } catch (DriverException) {
+                    // As in ping(): the session keeps the server default, the next setCharset() reports the error
+                }
             }
         } catch (DriverException) {
             return false;
