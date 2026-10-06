@@ -451,12 +451,12 @@ class Hydrator implements HydratorInterface
             $result[0] = $this->unserializeVirtualObjectProperty($result[0]);
         }
 
-        // A mutable field whose column is not in the row holds a value that was not read (null, a default set by the
+        // A field whose column is not in the row holds a value that was not read (null, a default set by the
         // constructor...): the unit of work must not write it
         foreach ($readColumns as $table => $tableColumns) {
-            $notRead = $this->metadataList[$table]->getMutablePropertiesNotRead($tableColumns);
+            $notRead = $this->metadataList[$table]->getPropertiesNotRead($tableColumns);
             if ($notRead !== [] && $result[$table] instanceof NotifyPropertyInterface) {
-                $this->unitOfWork?->setMutablePropertiesNotRead($result[$table], $notRead);
+                $this->unitOfWork?->setPropertiesNotRead($result[$table], $notRead);
             }
         }
 

@@ -923,15 +923,14 @@ Queries, Entities and the Unit of Work
   after `manage()`. In 4.0, the unit of work ignores the changes of an entity it does not manage: after `detach()`,
   `$city->setName('Lyon')`, `manage($city)` then `pushSave($city)`, the `UPDATE` does not include the new name (and
   nothing runs when it is the only change). Make the change after `manage()`.
-* **Saving an entity not managed whose `autoincrement` primary key is set updates its row.** In 3.x, such an entity (a
-  clone of a managed entity, a detached entity, one read from a cache or a session, one built with its id) was
-  inserted as a new row: its id was left out of the `INSERT`, then replaced by the generated one. It is now an existing
-  row: it is updated by its primary key with every readable mapped property (its changes are not tracked), then
-  managed, and `isNew()` is `false` for it. To duplicate a row, set the `autoincrement` property of the copy to `null`
-  (or unset it) before saving it. Clone an entity read partially only once read whole: its copy writes the columns not
-  read with their current value (`NULL`). An id missing from the database updates no row, without error. Entities
-  without `autoincrement` key are still inserted, and an entity deleted by `process()` is inserted again by its next
-  save. See [Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed).
+* **Saving the clone of a managed entity updates the row of its original.** In 3.x, the clone was inserted as a new
+  row (its `autoincrement` id left out of the `INSERT`, then replaced by the generated one). It is now updated by its
+  primary key with every readable mapped property, except the properties its original did not read (partial read),
+  then managed; `isNew()` is `false` for it. To duplicate a row, set the `autoincrement` property of the clone to
+  `null` (or unset it) before saving it. A clone whose original is no longer managed (detached, freed) or which was
+  serialized is inserted, as in 3.x, and so is any other entity not managed (detached, read from a cache or a session,
+  built by hand with its id): `manage()` it first to update its row. See
+  [Saving a clone](docs/unit-of-work.md#saving-a-clone).
 * **Mysqli non-prepared queries turn the escaped colon `\:` into `:`**, as prepared queries and the PostgreSQL driver
   already did. 3.x sent the backslash to MySQL, which dropped it inside a string literal (except under the sql_mode
   `NO_BACKSLASH_ESCAPES`, where the backslash was kept) and received it as is elsewhere. A query that relied on the
@@ -946,6 +945,11 @@ Queries, Entities and the Unit of Work
   An entity defining `__sleep()` is honoured again (ignored since 3.12): only the properties it lists are serialized,
   as with `serialize()` (a private property of a parent class needs its mangled name, `"\0Parent\0name"`); a name
   which does not exist raises the warning of `serialize()` as an `E_USER_WARNING` (PHP raises an `E_WARNING`).
+* **The `NotifyProperty` trait declares `protected ?\WeakReference $listenersOwner = null`**, the object its listeners
+  were added to, used to recognize a clone (see above). It is left out of `__serialize()` and `__debugInfo()`; an
+  entity defining its own `__serialize()` from `get_object_vars()` must leave it out as well as `$listeners`
+  (serializing a `WeakReference` throws). `addPropertyListener()` no longer adds a listener already added (a clone
+  keeps the listeners of its original), so the unit of work is not notified twice of a change of a saved clone.
 
 Smaller Changes for Extensions
 ------------------------------

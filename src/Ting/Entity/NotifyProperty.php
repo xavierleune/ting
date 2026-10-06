@@ -30,13 +30,23 @@ trait NotifyProperty
 {
     /** @var list<PropertyListenerInterface> */
     protected array $listeners = [];
+    /**
+     * The object the listeners were added to: this one, unless it is a clone, which copies the listeners and this
+     * reference of its original. The unit of work tells a clone of an entity it manages by it.
+     *
+     * @var \WeakReference<object>|null
+     */
+    protected ?\WeakReference $listenersOwner = null;
 
     /**
-     * Add an observer to the current object
+     * Add an observer to the current object. A listener already added (by the original of a clone) is not added twice.
      */
     public function addPropertyListener(PropertyListenerInterface $listener): void
     {
-        $this->listeners[] = $listener;
+        if (\in_array($listener, $this->listeners, true) === false) {
+            $this->listeners[] = $listener;
+        }
+        $this->listenersOwner = \WeakReference::create($this);
     }
 
     /**
@@ -55,34 +65,34 @@ trait NotifyProperty
     }
 
     /**
-     * Every property but the listeners. Names are mangled, so that the private properties of the parent classes are
-     * kept, and told apart from a property of the same name in a child class.
+     * Every property but the listeners (and their owner). Names are mangled, so that the private properties of the
+     * parent classes are kept, and told apart from a property of the same name in a child class.
      *
      * @return array<string, mixed>
      */
     public function __debugInfo(): ?array
     {
         $properties = get_mangled_object_vars($this);
-        unset($properties["\0*\0listeners"]);
+        unset($properties["\0*\0listeners"], $properties["\0*\0listenersOwner"]);
 
         return $properties;
     }
 
     /**
-     * Every property but the listeners, with mangled names, as serialize() writes them without __serialize():
-     * unserialize() restores them all, private properties of the parent classes included.
+     * Every property but the listeners (and their owner), with mangled names, as serialize() writes them without
+     * __serialize(): unserialize() restores them all, private properties of the parent classes included.
      * An entity defining __sleep() keeps only the properties it lists, as serialize() does: a bare name stands for a
      * property visible from the class of the entity, a private property of a parent class needs its mangled name
      * ("\0Parent\0name"), an uninitialized typed property is left out, and a property which does not exist is reported
      * by the warning of serialize(), raised as an E_USER_WARNING (PHP raises an E_WARNING, which userland code cannot
-     * trigger). The listeners are never kept.
+     * trigger). The listeners and their owner are never kept: an unserialized entity is not a clone.
      *
      * @return array<string, mixed>
      */
     public function __serialize(): array
     {
         $properties = get_mangled_object_vars($this);
-        unset($properties["\0*\0listeners"]);
+        unset($properties["\0*\0listeners"], $properties["\0*\0listenersOwner"]);
 
         // A magic method, not declared by any interface: method_exists() is the way PHP itself looks for it
         if (method_exists($this, '__sleep') === false) {
@@ -98,7 +108,9 @@ trait NotifyProperty
                 }
             }
 
-            if ($name !== 'listeners' && $this->sleepPropertyExists($name) === false) {
+            if (\in_array($name, ['listeners', 'listenersOwner'], true) === false
+                && $this->sleepPropertyExists($name) === false
+            ) {
                 trigger_error(
                     'serialize(): "' . $name . '" returned as member variable from __sleep() but does not exist',
                     E_USER_WARNING

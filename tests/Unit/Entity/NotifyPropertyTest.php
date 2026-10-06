@@ -71,6 +71,19 @@ class NotifyPropertyTest extends TestCase
         $notifyProperty->propertyChanged('Bouh', 'value', 'newValue');
     }
 
+    public function testAListenerAddedTwiceShouldBeNotifiedOnce()
+    {
+        $mockListener = $this->createMock(PropertyListenerInterface::class);
+        $mockListener->expects($this->once())->method('propertyChanged');
+
+        $entity = new Bouh();
+        $entity->addPropertyListener($mockListener);
+        // A clone keeps the listeners of its original
+        $clone = clone $entity;
+        $clone->addPropertyListener($mockListener);
+        $clone->propertyChanged('name', 'value', 'newValue');
+    }
+
     public function testSerializationWithoutListerners()
     {
         $mockListener = $this->createStub(PropertyListenerInterface::class);
@@ -163,10 +176,15 @@ class NotifyPropertyTest extends TestCase
     public function testSerializeShouldNeverKeepTheListenersListedBySleep(): void
     {
         $entity = new SleepingTrackedChild();
-        $entity->sleep = ['title', 'listeners'];
+        $entity->sleep = ['title', 'listeners', 'listenersOwner'];
         $entity->addPropertyListener($this->createStub(PropertyListenerInterface::class));
 
-        $this->assertSame(["\0" . SleepingTrackedChild::class . "\0title" => null], $entity->__serialize());
+        $types = $this->collectErrorTypes(function () use ($entity, &$serialized): void {
+            $serialized = $entity->__serialize();
+        });
+
+        $this->assertSame([], $types);
+        $this->assertSame(["\0" . SleepingTrackedChild::class . "\0title" => null], $serialized);
     }
 
     public function testSerializeShouldWarnAboutAPropertyListedBySleepWhichDoesNotExist(): void
@@ -232,6 +250,7 @@ class NotifyPropertyTest extends TestCase
         $debugInfo = $entity->__debugInfo();
 
         $this->assertArrayNotHasKey("\0*\0listeners", $debugInfo);
+        $this->assertArrayNotHasKey("\0*\0listenersOwner", $debugInfo);
         $this->assertSame('Xavier', $debugInfo["\0*\0name"]);
     }
 }
