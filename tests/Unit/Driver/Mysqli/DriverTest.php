@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
@@ -1022,8 +1023,10 @@ class DriverTest extends TestCase
         $mockDriver->method('query')->willReturnCallback(function (...$arguments) use (&$queryCalls) {
             $queryCalls[] = $arguments;
 
-            return false;
+            // The connection is lost: ping() reconnects
+            return $arguments[0] !== 'SELECT 1';
         });
+        $mockDriver->method('real_escape_string')->willReturnArgument(0);
         $mockDriver->method('real_connect')->willReturnCallback(function (...$arguments) use (&$realConnectCalls) {
             $realConnectCalls[] = $arguments;
 
@@ -1052,7 +1055,7 @@ class DriverTest extends TestCase
         $this->assertSame(1, self::countCalls($realConnectCalls, [$hostName, $userName, $password, null, $port]));
         // 1 call for ping()
         $this->assertSame(1, self::countCalls($realConnectCalls, [$hostName, $userName, $password, $database, $port]));
-        $this->assertSame(2, self::countCalls($queryCalls, ['SET time_zone = "' . $timezone . '";']));
+        $this->assertSame(2, self::countCalls($queryCalls, ["SET time_zone = '" . $timezone . "';"]));
     }
 
     public function testPingShouldNotSetTimezone()
@@ -1347,6 +1350,7 @@ class DriverTest extends TestCase
         $queryCalls = [];
         $mockDriver = $this->createMock(Mysqli::class);
         $mockDriver->method('real_connect')->willReturn(true);
+        $mockDriver->method('real_escape_string')->willReturnArgument(0);
         $mockDriver->expects($this->exactly(2))
             ->method('query')
             ->willReturnCallback(function (...$arguments) use (&$queryCalls) {
@@ -1358,10 +1362,113 @@ class DriverTest extends TestCase
         $driver = new Driver($mockDriver);
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
         $driver->setTimezone('timezone');
-        $this->assertSame(1, self::countCalls($queryCalls, ['SET time_zone = "timezone";']));
+        $this->assertSame(1, self::countCalls($queryCalls, ["SET time_zone = 'timezone';"]));
         $driver->setTimezone(null);
         $this->assertSame(1, self::countCalls($queryCalls, ['SET time_zone = DEFAULT;']));
         $driver->setTimezone(null);
         $this->assertCount(2, $queryCalls);
+    }
+
+    public function testSetTimezoneShouldSendAnEscapedSingleQuotedString()
+    {
+        $queryCalls = [];
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->method('real_connect')->willReturn(true);
+        $mockDriver->method('real_escape_string')->willReturnCallback(fn (string $value) => addslashes($value));
+        $mockDriver->method('query')->willReturnCallback(function (...$arguments) use (&$queryCalls) {
+            $queryCalls[] = $arguments;
+
+            return true;
+        });
+
+        $driver = new Driver($mockDriver);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setTimezone("Europe/Paris' -- ");
+
+        // A double-quoted string is an identifier under the sql_mode ANSI_QUOTES
+        $this->assertSame([["SET time_zone = 'Europe/Paris\\' -- ';"]], $queryCalls);
+    }
+
+    public function testSetTimezoneRejectedByTheServerShouldThrowAndNotBeRecorded()
+    {
+        $queryCalls = 0;
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->method('real_connect')->willReturn(true);
+        $mockDriver->method('real_escape_string')->willReturnArgument(0);
+        $mockDriver->method('query')->willReturnCallback(function () use (&$queryCalls) {
+            $queryCalls++;
+
+            return false;
+        });
+        $mockDriver->errno = 1298;
+        $mockDriver->error = "Unknown or incorrect time zone: 'Mars/Olympus'";
+
+        $driver = new Driver($mockDriver);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+
+        $exception = $this->assertThrows(
+            DriverException::class,
+            fn () => $driver->setTimezone('Mars/Olympus'),
+            "Can't set timezone Mars/Olympus (Unknown or incorrect time zone: 'Mars/Olympus')"
+        );
+        $this->assertSame(1298, $exception->getCode());
+        // Not recorded as the current timezone: tried again
+        $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Mars/Olympus'));
+        $this->assertSame(2, $queryCalls);
+    }
+
+    public function testSetTimezoneShouldConvertAMysqliExceptionToADriverException()
+    {
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->method('real_connect')->willReturn(true);
+        $mockDriver->method('real_escape_string')->willReturnArgument(0);
+        $mockDriver->method('query')->willThrowException(
+            new \mysqli_sql_exception("Unknown or incorrect time zone: 'Mars/Olympus'", 1298)
+        );
+
+        $driver = new Driver($mockDriver);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+
+        $exception = $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Mars/Olympus'));
+        $this->assertSame(1298, $exception->getCode());
+    }
+
+    public function testReconnectShouldForgetATimezoneRejectedByTheServer()
+    {
+        $lostConnection = $this->createStub(Mysqli::class);
+        $lostConnection->method('real_connect')->willReturn(true);
+        $lostConnection->method('query')
+            ->willThrowException(new \mysqli_sql_exception('MySQL server has gone away', 2006));
+
+        $setTimezoneCalls = [];
+        $newConnection = $this->createStub(Mysqli::class);
+        $newConnection->method('real_connect')->willReturn(true);
+        $newConnection->method('real_escape_string')->willReturnArgument(0);
+        $newConnection->method('query')->willReturnCallback(function (string $sql) use (&$setTimezoneCalls) {
+            if (str_starts_with($sql, 'SET time_zone')) {
+                $setTimezoneCalls[] = $sql;
+
+                return false;
+            }
+
+            return true;
+        });
+        $newConnection->error = 'Unknown or incorrect time zone';
+        $connections = [$this->unreachableServerConnection(), $newConnection];
+        NativeFunctionMock::override('mysqli_init', function () use (&$connections) {
+            return array_shift($connections);
+        });
+
+        $driver = new Driver($lostConnection);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $this->assertFalse($driver->ping());
+        // Recorded while the reconnection is pending, cannot be checked yet
+        $driver->setTimezone('Mars/Olympus');
+
+        $this->assertTrue($driver->ping());
+        $this->assertSame(["SET time_zone = 'Mars/Olympus';"], $setTimezoneCalls);
+        // The session kept the server default: setting the timezone again tries it, and reports the error
+        $this->assertThrows(DriverException::class, fn () => $driver->setTimezone('Mars/Olympus'));
+        $this->assertCount(2, $setTimezoneCalls);
     }
 }

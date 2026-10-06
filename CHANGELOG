@@ -71,6 +71,7 @@
     * Fix Serializer\BackedEnum::unserialize() on an int-backed enum: a value that is not an integer ('abc', '') threw a TypeError instead of a Serializer\RuntimeException, and '1.5' returned the case 1 with a deprecation; only integers and integer strings are accepted
     * Fix Serializer\Json::serialize() throwing with the JSON_PARTIAL_OUTPUT_ON_ERROR option: the partial output is returned
     * Fix Serializer\DateTime and Serializer\DateTimeImmutable reading a format without time (e.g. Y-m-d for a DATE column) with the current time of day: the fields missing from the format are reset (midnight)
+    * Fix setTimezone() (Mysqli and Pgsql) silently ignoring a timezone rejected by the server while recording it as current: it throws a DriverException with the database error and the timezone is not recorded; a timezone rejected when ping() / reconnect() applies it again is forgotten (the session keeps the server default) and the next setTimezone() reports it. Mysqli sends the timezone as a single-quoted, escaped string: double-quoted, it was read as an identifier under the sql_mode ANSI_QUOTES
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
