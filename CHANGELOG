@@ -81,6 +81,7 @@
     * Fix Hydrator::mapObjectTo() with a null joined entity (LEFT JOIN without match) depending on the order of the columns (since 3.x): when the columns of $from came after those of $to, the method received an entity whose properties were all null and the row got the $from key back, set to null; the method is now never called for a null entity, and $from is always removed from the row
     * Fix UnitOfWork::manage() adding its property listener on every call (each delete then insert of the same entity added one more, and every change was then notified once per listener); the listener is added once per entity, and the changes of an entity not managed (detached, or new) are no longer recorded
     * Fix UnitOfWork::pushDelete() of an entity never inserted (not managed and without primary key, or pushed with pushSave() before in the same process()) running "DELETE ... WHERE key IS NULL"; it is unqueued without query (an entity not managed but with its primary key is still deleted by that key)
+    * Fix HydratorAggregator losing every row (no group, and a PHP 8.5 "Using null as an array offset" deprecation) when the callable given to callableIdIs() returns null; it throws a HydratorException, a group identifier is required
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

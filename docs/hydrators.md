@@ -386,7 +386,7 @@ public function findWithBooks(): CollectionInterface
 ```
 
 * `callableIdIs(callable $callableForId)` receives a row hydrated by the default hydrator and returns the aggregation
-  key (here the user id).
+  key (here the user id). The key is required: `null` throws a `HydratorException`.
 * `callableDataIs(callable $callableForData)` returns the data to collect from each row (here the book).
 * `callableFinalizeAggregate(callable $callableFinalizeAggregate)` is optional. It receives the row and the collected
   data, and returns what the collection yields. Without it, the collection yields the row with the collected data
