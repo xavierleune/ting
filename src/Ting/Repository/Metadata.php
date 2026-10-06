@@ -115,7 +115,7 @@ class Metadata
      * Fields of type "datetime" without serializer, as given to addField(): their serializer depends on the type of
      * their property, resolved again when the entity is set
      *
-     * @var array<string, array<string, mixed>> property name => field parameters
+     * @phpstan-var array<string, Field> property name => field parameters
      */
     private array $dateTimeFieldsToResolve = [];
     public PropertyAccessor $propertyAccessor;
@@ -266,7 +266,7 @@ class Metadata
 
     /**
      * Add a field to metadata.
-     * @param array $params. Associative array with :
+     * @param Field $params Associative array with :
      *      fieldName : string : name of the property on the object
      *      columnName : string : name of the mysql column
      *      primary : boolean : is this field a primary - optional
@@ -278,23 +278,7 @@ class Metadata
      */
     public function addField(array $params): static
     {
-        if (isset($params['fieldName']) === false) {
-            throw new ConfigException('Field configuration must have "fieldName" property');
-        }
-
-        if (isset($params['columnName']) === false) {
-            throw new ConfigException('Field configuration must have "columnName" property');
-        }
-
-        if (isset($params['type']) === false) {
-            throw new ConfigException('Field configuration must have "type" property');
-        }
-
-        if (isset($params['mutable']) && is_bool($params['mutable']) === false) {
-            throw new ConfigException(
-                sprintf('The "mutable" option of field "%s" must be a boolean', $params['fieldName'])
-            );
-        }
+        $this->assertFieldIsValid($params);
 
         // Before the field is stored anywhere: primaries and autoincrement need the serializer too
         if (isset($params['serializer']) === false && $params['type'] === 'datetime') {
@@ -325,6 +309,32 @@ class Metadata
         $this->fields[$params['columnName']] = $params;
 
         return $this;
+    }
+
+    /**
+     * The configuration comes from the application: check it even though it is documented as a Field.
+     *
+     * @throws ConfigException
+     */
+    private function assertFieldIsValid(array $params): void
+    {
+        if (isset($params['fieldName']) === false) {
+            throw new ConfigException('Field configuration must have "fieldName" property');
+        }
+
+        if (isset($params['columnName']) === false) {
+            throw new ConfigException('Field configuration must have "columnName" property');
+        }
+
+        if (isset($params['type']) === false) {
+            throw new ConfigException('Field configuration must have "type" property');
+        }
+
+        if (isset($params['mutable']) && is_bool($params['mutable']) === false) {
+            throw new ConfigException(
+                sprintf('The "mutable" option of field "%s" must be a boolean', $params['fieldName'])
+            );
+        }
     }
 
     /**
