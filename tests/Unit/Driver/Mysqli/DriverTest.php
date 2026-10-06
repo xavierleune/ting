@@ -729,6 +729,36 @@ class DriverTest extends TestCase
         $this->assertSame('db2', $outerResult->getDatabase());
     }
 
+    public function testReconnectShouldDetachEveryStatementOfTheConnection()
+    {
+        $connection = function (): Mysqli {
+            $mysqli = $this->createStub(Mysqli::class);
+            $mysqli->error = '';
+            $mysqli->method('real_connect')->willReturn(true);
+            $mysqli->method('select_db')->willReturn(true);
+            $mysqli->method('prepare')->willReturnCallback(fn () => $this->createStub(MysqliStatement::class));
+
+            return $mysqli;
+        };
+        $driver = new Driver($connection());
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('db1');
+
+        $statement = $driver->prepare('SELECT 1');
+        // Closed by name (e.g. by the UnitOfWork, for the same SQL), but still held by a prepared query
+        $closedStatement = $driver->prepare('SELECT 2');
+        $driver->closeStatement(sha1('SELECT 2'));
+        $this->assertFalse($statement->isStale());
+
+        NativeFunctionMock::override('mysqli_init', $connection());
+        $this->assertTrue($driver->reconnect());
+
+        // Their mysqli_stmt belong to the replaced connection
+        $this->assertTrue($statement->isStale());
+        $this->assertTrue($closedStatement->isStale());
+        $this->assertFalse($driver->prepare('SELECT 1')->isStale());
+    }
+
     public function testCloseStatementShouldCloseTheStatementOfEveryDatabase()
     {
         $prepareCalls = 0;

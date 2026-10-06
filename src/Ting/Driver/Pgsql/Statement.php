@@ -96,6 +96,11 @@ class Statement implements StatementInterface
         $this->detached = true;
     }
 
+    public function isStale(): bool
+    {
+        return $this->detached;
+    }
+
     /**
      * Hand the result of each execution over, so that the driver reports its affected rows
      * @param \Closure(\PgSql\Result): void $resultHandler

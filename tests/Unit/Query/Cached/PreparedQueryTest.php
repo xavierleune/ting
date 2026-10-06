@@ -195,6 +195,26 @@ class PreparedQueryTest extends TestCase
         );
     }
 
+    public function testAStaleStatementShouldBePreparedAgain()
+    {
+        $log = new \ArrayObject();
+        $primary = new RecordingDriver('primary', $log);
+        $pool = $this->createStub(ConnectionPoolInterface::class);
+        $pool->method('primary')->willReturn($primary);
+        $query = new PreparedQuery('UPDATE t SET a = 1', new Connection($pool, 'main', 'db'));
+
+        $query->execute();
+        // e.g. the driver reconnected: same driver, new session
+        $primary->statements[0]->stale = true;
+        $query->execute();
+        $query->execute();
+
+        $this->assertSame(
+            ['prepare on primary', 'execute on primary', 'prepare on primary', 'execute on primary', 'execute on primary'],
+            $log->getArrayCopy()
+        );
+    }
+
     /**
      * @param \ArrayObject<int, string> $log
      */

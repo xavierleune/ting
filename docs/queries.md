@@ -196,7 +196,9 @@ public function renameAll(array $renames): void
 `query()`, `execute()`, `setParams()` and `selectPrimary()` behave as for `Query`: `query()` runs on a replica, unless
 `selectPrimary(true)` is set, and `execute()` on the primary. The statement is prepared on the connection the query runs
 on, and prepared again when that connection changes (a query read on a replica then executed, or read again after
-`selectPrimary(true)`). Without replica, the statement is prepared once.
+`selectPrimary(true)`). Without replica, the statement is prepared once. A prepared statement lives in the database
+session: when the driver reconnects or re-establishes a lost connection (`ping()`, `reconnect()`), the statement is
+prepared again on the next execution.
 
 ## Query builder
 

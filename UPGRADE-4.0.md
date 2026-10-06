@@ -453,6 +453,22 @@ interface QueryInterface
 }
 ```
 
+StatementInterface - New Required Method
+----------------------------------------
+
+If you have implemented custom statements (for a custom driver), you must implement:
+
+```php
+interface StatementInterface
+{
+    // New method in 4.0: true once the session the statement was prepared in is gone (reconnection, connection
+    // reset); prepared queries then prepare their statement again
+    public function isStale(): bool;
+}
+```
+
+A statement whose connection cannot be replaced can always return `false`.
+
 CollectionInterface and HydratorInterface
 -----------------------------------------
 

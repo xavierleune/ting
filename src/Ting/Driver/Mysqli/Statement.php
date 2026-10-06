@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -49,6 +50,11 @@ class Statement implements StatementInterface
     protected string $objectHash = '';
 
     /**
+     * The connection the statement was prepared on is gone (reconnection)
+     */
+    protected bool $detached = false;
+
+    /**
      * @param mysqli_stmt  $driverStatement natively typed object: tests stand in for mysqli_stmt, whose properties
      *                                      cannot be read without a server
      * @param list<string> $paramsOrder parameter names, in the order of the placeholders (a name can repeat)
@@ -69,6 +75,12 @@ class Statement implements StatementInterface
      */
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
     {
+        if ($this->detached) {
+            throw new QueryException(
+                'The prepared statement is no longer valid: the connection was reset, prepare it again'
+            );
+        }
+
         $types = '';
         $values = [];
 
@@ -114,6 +126,21 @@ class Statement implements StatementInterface
         }
 
         return true;
+    }
+
+    /**
+     * Mark the statement as belonging to a connection that was replaced: it can no longer be executed
+     *
+     * @internal
+     */
+    public function detach(): void
+    {
+        $this->detached = true;
+    }
+
+    public function isStale(): bool
+    {
+        return $this->detached;
     }
 
     public function setLogger(?DriverLoggerInterface $logger = null): void

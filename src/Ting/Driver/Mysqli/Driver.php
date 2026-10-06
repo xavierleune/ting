@@ -95,6 +95,13 @@ class Driver implements DriverInterface
     protected array $preparedQueries = [];
 
     /**
+     * Every statement prepared on the current connection, including those closed by name (closeStatement()) but
+     * still held, e.g. by a prepared query: all are detached when the connection is replaced
+     * @var \WeakMap<Statement, true>|null
+     */
+    private ?\WeakMap $connectionStatements = null;
+
+    /**
      * @var array<string,array<string,StatementInterface>> Old list of prepared queries, filled after a reconnect
      */
     protected array $oldPreparedQueries = [];
@@ -424,6 +431,8 @@ class Driver implements DriverInterface
         $statement->setLogger($this->logger);
 
         $this->preparedQueries[$statementName][$database] = $statement;
+        $this->connectionStatements ??= new \WeakMap();
+        $this->connectionStatements[$statement] = true;
 
         return $statement;
     }
@@ -676,6 +685,10 @@ class Driver implements DriverInterface
         $this->loseTransaction();
         $this->oldPreparedQueries = array_replace_recursive($this->oldPreparedQueries, $this->preparedQueries);
         $this->preparedQueries = [];
+        foreach ($this->connectionStatements ?? [] as $statement => $prepared) {
+            $statement->detach();
+        }
+        $this->connectionStatements = null;
         $this->reconnectionPending = true;
 
         try {
