@@ -160,6 +160,11 @@ class Result implements ResultInterface
      */
     public function getNumRows(): int|string
     {
+        // As the iteration: without result, there is no row
+        if ($this->result === null) {
+            return 0;
+        }
+
         return $this->result->num_rows;
     }
 

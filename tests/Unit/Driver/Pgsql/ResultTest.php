@@ -79,7 +79,8 @@ class ResultTest extends TestCase
             default => false,
         });
 
-        $result = new Result('result resource');
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
 
         $this->assertNull(
             $result->setQuery(
@@ -384,7 +385,8 @@ class ResultTest extends TestCase
 
         NativeFunctionMock::override('pg_field_table', fn ($result, $index) => 'table');
 
-        $result = new Result($mockPgsqlResult);
+        $result = new Result();
+        $result->setResult($mockPgsqlResult);
         $result->setQuery(
             'SELECT a,
                     CASE WHEN a = 1 THEN 1 ELSE 0 END,
@@ -395,7 +397,6 @@ class ResultTest extends TestCase
                     CASE WHEN a = 1 THEN 6 ELSE 0 END + 2
                     FROM table'
         );
-        $result->setResult($mockPgsqlResult);
         $result->next();
 
         $this->assertEquals(
@@ -458,6 +459,27 @@ class ResultTest extends TestCase
                 ]
             ],
             $result->current()
+        );
+    }
+
+    public function testWithoutResultShouldBeEmpty()
+    {
+        NativeFunctionMock::override('pg_num_rows', fn () => $this->fail('No result to count'));
+        NativeFunctionMock::override('pg_fetch_array', fn () => $this->fail('No result to fetch'));
+        $result = new Result();
+
+        $this->assertSame(0, $result->getNumRows());
+        $this->assertSame([], iterator_to_array($result));
+    }
+
+    public function testSetQueryBeforeSetResultShouldRaiseQueryException()
+    {
+        $result = new Result();
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $result->setQuery('SELECT id FROM t'),
+            'Result::setQuery() called before setResult(): the tables of the columns are read from the result'
         );
     }
 }

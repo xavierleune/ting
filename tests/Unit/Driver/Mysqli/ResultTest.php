@@ -116,4 +116,9 @@ class ResultTest extends TestCase
 
         $this->assertEquals(10, $result->getNumRows());
     }
+
+    public function testGetNumRowsWithoutResultShouldReturn0()
+    {
+        $this->assertSame(0, (new Result())->getNumRows());
+    }
 }

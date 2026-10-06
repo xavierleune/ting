@@ -114,6 +114,13 @@ class Result implements ResultInterface
      */
     public function setQuery(string $query): void
     {
+        $resultResource = $this->result;
+        if ($resultResource === null) {
+            throw new QueryException(
+                'Result::setQuery() called before setResult(): the tables of the columns are read from the result'
+            );
+        }
+
         $tableToAlias = [];
         $aliasToSchema = [];
         $fields = [];
@@ -262,7 +269,7 @@ class Result implements ResultInterface
 
             $stdClass->name = isset($match['alias']) === true ? $match['alias'] : $stdClass->orgname;
 
-            $table = pg_field_table($this->result, count($fields));
+            $table = pg_field_table($resultResource, count($fields));
             if ($table === false) {
                 $table = '';
             }
@@ -317,6 +324,11 @@ class Result implements ResultInterface
      */
     protected function dataSeek(int $offset): bool
     {
+        // As the iteration: without result, there is no row
+        if ($this->result === null) {
+            return false;
+        }
+
         return pg_result_seek($this->result, $offset);
     }
 
@@ -349,6 +361,10 @@ class Result implements ResultInterface
 
     public function getNumRows(): int
     {
+        if ($this->result === null) {
+            return 0;
+        }
+
         return pg_num_rows($this->result);
     }
 
@@ -385,7 +401,9 @@ class Result implements ResultInterface
 
     public function next(): void
     {
-        $this->iteratorCurrent = $this->format(pg_fetch_array($this->result, null, \PGSQL_NUM));
+        $this->iteratorCurrent = $this->result === null
+            ? null
+            : $this->format(pg_fetch_array($this->result, null, \PGSQL_NUM));
 
         $this->iteratorOffset++;
     }

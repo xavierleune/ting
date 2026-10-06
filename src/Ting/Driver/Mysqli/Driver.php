@@ -57,9 +57,9 @@ class Driver implements DriverInterface
 
     /**
      * Natively typed object: tests stand in for mysqli, whose properties cannot be read without a server
-     * @var mysqli|null driver connection
+     * @var mysqli driver connection
      */
-    protected ?object $connection = null;
+    protected object $connection;
 
     protected string $currentDatabase = '';
 
@@ -118,14 +118,11 @@ class Driver implements DriverInterface
 
     /**
      * @param mysqli|null $connection
+     * @throws DriverException when no connection is given and mysqli cannot initialize one
      */
     public function __construct(?object $connection = null, ?mysqli_driver $driver = null)
     {
-        if ($connection === null) {
-            $this->createConnection();
-        } else {
-            $this->connection = $connection;
-        }
+        $this->connection = $connection ?? $this->createConnection();
 
         $this->driver = $driver ?? new mysqli_driver();
     }
@@ -279,7 +276,7 @@ class Driver implements DriverInterface
         $this->assertNoReconnectionPending();
 
         // One pass: unescaping \: after the substitution would alter the values
-        $sql = preg_replace_callback(
+        $sql = $this->parseParameters(preg_replace_callback(
             '/\\\\:|' . $this->parameterMatching . '/',
             function (array $match) use ($params) {
                 if ($match[0] === '\\:') {
@@ -292,7 +289,7 @@ class Driver implements DriverInterface
                 return (string) $this->quoteValue($params[$match[1]]);
             },
             $sql
-        );
+        ));
 
         if ($this->logger !== null) {
             $this->logger->startQuery($sql, $params, $this->objectHash, $this->currentDatabase);
@@ -372,14 +369,14 @@ class Driver implements DriverInterface
             return $this->preparedQueries[$statementName][$database];
         }
         $paramsOrder = [];
-        $sql = preg_replace_callback(
+        $sql = $this->parseParameters(preg_replace_callback(
             '/' . $this->parameterMatching . '/',
             function (array $match) use (&$paramsOrder): string {
                 $paramsOrder[] = $match[1];
                 return '?';
             },
             $sql
-        );
+        ));
 
         $sql = str_replace('\:', ':', $sql);
 
@@ -611,13 +608,32 @@ class Driver implements DriverInterface
         }
     }
 
-    private function createConnection(): void
+    /**
+     * @return mysqli
+     * @throws DriverException
+     */
+    private function createConnection(): object
     {
         $connection = mysqli_init();
-        if ($connection !== false) {
-            $this->connection = $connection;
-            $this->connection->options(MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1);
+        if ($connection === false) {
+            throw new DriverException('Cannot initialize a mysqli connection');
         }
+        $connection->options(MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1);
+
+        return $connection;
+    }
+
+    /**
+     * @param string|null $sql the query with its parameters replaced, null when PCRE failed (e.g. backtrack limit)
+     * @throws QueryException
+     */
+    private function parseParameters(?string $sql): string
+    {
+        if ($sql === null) {
+            throw new QueryException('Cannot parse the parameters of the query: ' . preg_last_error_msg());
+        }
+
+        return $sql;
     }
 
     /**
@@ -641,7 +657,7 @@ class Driver implements DriverInterface
         $this->reconnectionPending = true;
 
         try {
-            $this->createConnection();
+            $this->connection = $this->createConnection();
             $connected = $this->connection->real_connect($config['hostname'], $config['username'], $config['password'], $this->currentDatabase, $config['port']);
             if ($connected === false) {
                 return false;

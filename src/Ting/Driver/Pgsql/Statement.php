@@ -132,10 +132,16 @@ class Statement implements StatementInterface
      */
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
     {
+        $connection = $this->connection;
         if ($this->detached) {
             throw new QueryException(
                 'The prepared statement ' . $this->statementName
                 . ' is no longer valid: the connection was reset, prepare it again'
+            );
+        }
+        if ($connection === null) {
+            throw new QueryException(
+                'The prepared statement ' . $this->statementName . ' has no connection: it must be prepared by the driver'
             );
         }
 
@@ -153,7 +159,7 @@ class Statement implements StatementInterface
         // Silenced: a failed execution raises a warning, which an error handler may turn into an exception, before
         // the QueryException below
         try {
-            $result = @pg_execute($this->connection, $this->statementName, $values);
+            $result = @pg_execute($connection, $this->statementName, $values);
         } finally {
             if ($this->logger !== null) {
                 $this->logger->stopStatementExecute($this->statementName);
@@ -161,7 +167,7 @@ class Statement implements StatementInterface
         }
 
         if ($result === false) {
-            throw new QueryException(pg_last_error($this->connection));
+            throw new QueryException(pg_last_error($connection));
         }
 
         if ($this->resultHandler !== null) {
@@ -177,13 +183,19 @@ class Statement implements StatementInterface
 
     /**
      * @param \PgSql\Result $resultResource
-     * @param CollectionInterface<mixed>|null $collection
+     * @param CollectionInterface<mixed> $collection
      * @throws QueryException
      *
      * @internal
      */
-    public function setCollectionWithResult(object $resultResource, ?CollectionInterface $collection = null): bool
+    public function setCollectionWithResult(object $resultResource, CollectionInterface $collection): bool
     {
+        if ($this->query === null) {
+            throw new QueryException(
+                'The prepared statement ' . $this->statementName . ' has no query: it must be prepared by the driver'
+            );
+        }
+
         $result = new Result();
         $result->setConnectionName($this->connectionName);
         $result->setDatabase($this->database);
