@@ -58,6 +58,8 @@ class Hydrator implements HydratorInterface
     protected array $objectDatabase     = [];
     /** @var array<string, string> alias => schema */
     protected array $objectSchema       = [];
+    /** @var array<string, true> classes the metadata to use are registered under (repositories) => true */
+    protected array $preferredRepositories = [];
     /** @var array<string, array{0: UnserializeInterface, 1: SerializerOptions}> virtual column => [unserializer, options] */
     protected array $unserializeAliases = [];
     /** @var WeakMap<NotifyPropertyInterface, bool> */
@@ -241,6 +243,24 @@ class Hydrator implements HydratorInterface
     }
 
     /**
+     * Hydrates the tables this repository maps with its metadata, whatever the database and the schema read: when
+     * several repositories map the same table (a full entity and a lighter projection), the table is otherwise
+     * hydrated with the metadata of the same database and schema, and a HydratorException is thrown when several
+     * repositories share them. Call it once per repository to prefer for the tables of the query.
+     * The reads of a repository (get(), getBy(), getQuery()..., getCollection()) prefer it already.
+     *
+     * @param string $repositoryClass a repository, or the class initializing metadata used for hydration only
+     *
+     * @return $this
+     */
+    public function preferRepository(string $repositoryClass): static
+    {
+        $this->preferredRepositories[$repositoryClass] = true;
+
+        return $this;
+    }
+
+    /**
      * @param Column $column
      *
      * @return string
@@ -332,7 +352,9 @@ class Hydrator implements HydratorInterface
                         $this->metadataList[$column['table']] = $metadata;
                         $result[$column['table']]             = $metadata->createEntity();
                         $tmpEntities[$column['table']]        = [];
-                    }
+                    },
+                    null,
+                    array_keys($this->preferredRepositories)
                 );
             }
 

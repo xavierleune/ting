@@ -69,7 +69,8 @@ abstract class Repository implements ResetInterface
      * @param MetadataRepository $metadataRepository
      * @param QueryFactory $queryFactory
      * @param CollectionFactory<mixed> $collectionFactory its hydrator, shared by the repositories, hydrates
-     *                                          the collections of the queries
+     *                                          the collections of the queries; the repository keeps a copy
+     *                                          hydrating the tables it maps with its own metadata
      * @param CacheInterface $cache
      * @param UnitOfWork $unitOfWork
      *
@@ -98,6 +99,9 @@ abstract class Repository implements ResetInterface
         );
         $this->connection = $this->metadata->getConnection($this->connectionPool);
         $this->metadataRepository->addMetadata($class, $this->metadata);
+        // Another repository can map the same table (a lighter projection): the reads of this one hydrate it with
+        // its own metadata
+        $this->collectionFactory = $collectionFactory->forRepository($class);
     }
 
 

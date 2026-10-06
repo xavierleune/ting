@@ -471,13 +471,15 @@ class MetadataRepositoryTest extends TestCase
     }
 
     /**
+     * @param list<string> $preferredRepositories
      * @return string|null the entity of the metadata found, null when the not found callback is called
      */
     private function entityFoundForTable(
         MetadataRepository $metadataRepository,
         string $database,
         string $schema,
-        string $table = 'T_CITY_CIT'
+        string $table = 'T_CITY_CIT',
+        array $preferredRepositories = []
     ): ?string {
         $entity = 'nothing called';
         $metadataRepository->findMetadataForTable(
@@ -490,7 +492,8 @@ class MetadataRepositoryTest extends TestCase
             },
             function () use (&$entity): void {
                 $entity = null;
-            }
+            },
+            $preferredRepositories
         );
 
         return $entity;
@@ -621,6 +624,82 @@ class MetadataRepositoryTest extends TestCase
             HydratorException::class,
             fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', 'MYSCHEMA')
         );
+    }
+
+    public function testFindMetadataForTableShouldThrowWhenSeveralRepositoriesShareTheDatabaseAndTheSchema(): void
+    {
+        // A full entity and a lighter projection of the same table
+        $definitions = [
+            ['User', 'bouh_world', ''],
+            ['UserLight', 'bouh_world', ''],
+            ['UserArchive', 'bouh_world_2', ''],
+        ];
+
+        // The last registered must not win
+        foreach ([$definitions, array_reverse($definitions)] as $registered) {
+            $metadataRepository = $this->metadataRepositoryFor($registered);
+
+            $exception = $this->assertThrows(
+                HydratorException::class,
+                fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', '')
+            );
+            $this->assertStringContainsString('User (database "bouh_world"', $exception->getMessage());
+            $this->assertStringContainsString('UserLight (database "bouh_world"', $exception->getMessage());
+            $this->assertStringNotContainsString('UserArchive', $exception->getMessage());
+            $this->assertStringContainsString('preferRepository()', $exception->getMessage());
+            $this->assertSame('UserArchiveEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world_2', ''));
+        }
+    }
+
+    public function testFindMetadataForTableShouldPreferTheRepositoriesGiven(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['User', 'bouh_world', ''],
+            ['UserLight', 'bouh_world', ''],
+        ]);
+
+        $found = fn (string $database, string $schema, array $preferred, string $table = 'T_CITY_CIT') =>
+            $this->entityFoundForTable($metadataRepository, $database, $schema, $table, $preferred);
+
+        $this->assertSame('UserEntity', $found('bouh_world', '', ['User']));
+        $this->assertSame('UserLightEntity', $found('bouh_world', '', ['Other', 'UserLight']));
+        // Whatever the database and the schema read
+        $this->assertSame('UserLightEntity', $found('bouh_world_3', 'mySchema', ['UserLight']));
+        // A preferred repository not mapping the table leaves the choice to the database and the schema
+        $this->assertThrows(HydratorException::class, fn () => $found('bouh_world', '', ['Other']));
+        $this->assertNull($found('bouh_world', '', ['User'], 'T_UNKNOWN'));
+    }
+
+    public function testFindMetadataForTableShouldApplyTheRulesToThePreferredRepositories(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', ''],
+            ['CitySecond', 'bouh_world_2', ''],
+            ['CityLight', 'bouh_world_2', ''],
+        ]);
+
+        $preferred = ['City', 'CitySecond'];
+        $this->assertSame(
+            'CitySecondEntity',
+            $this->entityFoundForTable($metadataRepository, 'bouh_world_2', '', preferredRepositories: $preferred)
+        );
+        $this->assertSame(
+            'CityEntity',
+            $this->entityFoundForTable($metadataRepository, 'bouh_world', '', preferredRepositories: $preferred)
+        );
+    }
+
+    public function testAddMetadataAgainShouldNotMakeTheRepositoryItsOwnCandidate(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([['City', 'bouh_world', '']]);
+
+        // A repository registers its metadata again when it is built
+        $metadataRepository->findMetadataForRepository(
+            'City',
+            fn (Metadata $metadata) => $metadataRepository->addMetadata('City', $metadata)
+        );
+
+        $this->assertSame('CityEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
     }
 
     public function testFindMetadataForAnUnknownEntityWithoutCallbackNotFoundShouldDoNothing()

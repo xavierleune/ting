@@ -54,6 +54,10 @@ use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
 use tests\fixtures\model\CityRepository;
+use tests\fixtures\model\SameTable\User;
+use tests\fixtures\model\SameTable\UserLight;
+use tests\fixtures\model\SameTable\UserLightRepository;
+use tests\fixtures\model\SameTable\UserRepository;
 
 class RepositoryTest extends TestCase
 {
@@ -92,6 +96,8 @@ class RepositoryTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
 
@@ -830,6 +836,93 @@ class RepositoryTest extends TestCase
             fn () => $cityRepository->getBy(['name' => 'Paris'], order: ['name' => 'UP']),
             'Invalid direction "UP" for property "name" in the order of Repository::getBy(): use "ASC" or "DESC"'
         );
+    }
+
+    /**
+     * Two repositories mapping the same table of the same database (a full entity and a lighter projection): each
+     * one hydrates its own reads with its own metadata, whatever the order in which they are built
+     */
+    public function testReadsShouldHydrateTheEntityOfTheRepositoryReadingWhenTwoRepositoriesShareATable()
+    {
+        $entities = [UserRepository::class => User::class, UserLightRepository::class => UserLight::class];
+        foreach ([array_keys($entities), array_reverse(array_keys($entities))] as $order) {
+            $services = $this->servicesReadingUsers();
+            $repositories = [];
+            foreach ($order as $repositoryClass) {
+                $repositories[$repositoryClass] = $services->repositoryFactory()->get($repositoryClass);
+            }
+
+            foreach ($entities as $repositoryClass => $entity) {
+                $repository = $repositories[$repositoryClass];
+                $message = $repositoryClass . ', built ' . implode(' then ', $order);
+
+                $this->assertInstanceOf($entity, $repository->get(1), $message);
+                $this->assertInstanceOf($entity, $repository->getOneBy(['name' => 'Ann']), $message);
+                foreach ([$repository->getBy(['name' => 'Ann']), $repository->getAll()] as $collection) {
+                    $this->assertCount(1, $collection, $message);
+                    $this->assertContainsOnlyInstancesOf($entity, iterator_to_array($collection), $message);
+                }
+
+                // Queries of the repository, with or without the collection it gives
+                $this->assertInstanceOf(
+                    $entity,
+                    $repository->getQuery('SELECT id, name, email FROM user')->query()->first()['user'],
+                    $message
+                );
+                $this->assertInstanceOf(
+                    $entity,
+                    $repository->getQuery('SELECT id, name, email FROM user')
+                        ->query($repository->getCollection())->first()['user'],
+                    $message
+                );
+            }
+        }
+    }
+
+    /**
+     * Services whose replica of the connection "main" answers any query with the row (1, 'Ann', 'ann@example.com')
+     * of the table "user" of the database "bouh_world"
+     */
+    private function servicesReadingUsers(): TingServices
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->error = '';
+        $mysqli->method('query')->willReturnCallback(function (): MysqliResult {
+            // mysqli_result counts its rows with the num_rows property
+            $result = new class ([[1, 'Ann', 'ann@example.com']]) extends MysqliResult {
+                public $num_rows = 1;
+            };
+            $result->setFieldsCallback(function (): array {
+                $fields = [];
+                $columns = ['id' => MYSQLI_TYPE_LONG, 'name' => MYSQLI_TYPE_VAR_STRING, 'email' => MYSQLI_TYPE_VAR_STRING];
+                foreach ($columns as $column => $type) {
+                    $field = new \stdClass();
+                    $field->name = $column;
+                    $field->orgname = $column;
+                    $field->table = 'user';
+                    $field->orgtable = 'user';
+                    $field->type = $type;
+                    $fields[] = $field;
+                }
+
+                return $fields;
+            });
+
+            return $result;
+        });
+        $driver = new Driver($mysqli);
+        $driver->setName('main');
+        $driver->setDatabase('bouh_world');
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn($driver);
+
+        $services = new TingServices($connectionPool);
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model\SameTable',
+            __DIR__ . '/../../fixtures/model/SameTable/*Repository.php'
+        );
+
+        return $services;
     }
 
     /**

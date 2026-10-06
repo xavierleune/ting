@@ -623,6 +623,14 @@ Hydrators and Transactions
   [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
   still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
   exact match (PostgreSQL results report lowercased schemas).
+* **Two repositories mapping the same table of the same database and schema** (a full entity and a lighter
+  projection, e.g. `UserRepository` / `User` and `UserLightRepository` / `UserLight`): in 3.x, the last repository
+  built (or the last metadata registered) hydrated the table for every read, so `UserRepository::get(1)` could return
+  a `UserLight`. The reads of a repository (`get()`, `getBy()`, `getOneBy()`, `getAll()`, its `getQuery()`... and
+  `getCollection()`) now hydrate the tables it maps with its own metadata. A hydrator used outside a repository
+  throws a `HydratorException` naming the candidates instead of taking the last one: call
+  `Hydrator::preferRepository(UserRepository::class)`, see
+  [Several repositories on the same table](docs/hydrators.md#several-repositories-on-the-same-table).
 * The array given to a `RelationMany` method is still indexed by an internal reference, but its format changed
   (`'book-1-'` in 3.x): use `array_values()` rather than relying on these keys.
 * `startTransaction()`, `commit()` and `rollback()` throw a `CCMBenchmark\Ting\Exceptions\TransactionException` when

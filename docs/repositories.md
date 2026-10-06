@@ -423,6 +423,10 @@ Methods of the repository build queries bound to its connection:
 | `getCachedPreparedQuery(string $sql)` | `CCMBenchmark\Ting\Query\Cached\PreparedQuery`              |
 | `getCollection(?HydratorInterface $hydrator = null)` | an empty `Collection` using that hydrator, to pass to `query()` |
 
+The rows of these queries, and of the reading methods above, hydrate the tables the repository maps with its own
+metadata: two repositories can map the same table (a full entity and a lighter projection), see
+[Several repositories on the same table](hydrators.md#several-repositories-on-the-same-table).
+
 Add them as methods of your repository:
 
 ```php

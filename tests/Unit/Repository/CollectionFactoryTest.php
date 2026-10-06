@@ -27,10 +27,16 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\Collection;
+use CCMBenchmark\Ting\Repository\HydratorSingleObject;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\model\SameTable\User;
+use tests\fixtures\model\SameTable\UserLight;
+use tests\fixtures\model\SameTable\UserLightRepository;
+use tests\fixtures\model\SameTable\UserRepository;
 
 class CollectionFactoryTest extends TestCase
 {
@@ -66,6 +72,65 @@ class CollectionFactoryTest extends TestCase
         $this->assertSame('b-Bouh', $stdClass->name);
         $stdClass = $collection->getIterator()->current()[0];
         $this->assertSame('a-Bouh', $stdClass->name);
+    }
+
+    public function testForRepositoryShouldHydrateTheTablesOfTheRepositoryWithItsMetadata()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model\SameTable',
+            __DIR__ . '/../../fixtures/model/SameTable/*Repository.php'
+        );
+        $sharedFactory = $services->collectionFactory();
+
+        $users = $sharedFactory->forRepository(UserRepository::class);
+        $lightUsers = $sharedFactory->forRepository(UserLightRepository::class);
+
+        $collection = $users->get();
+        $collection->set($this->createUserResult());
+        $this->assertInstanceOf(User::class, $collection->first()['user']);
+
+        $collection = $lightUsers->get(new HydratorSingleObject());
+        $collection->set($this->createUserResult());
+        $this->assertInstanceOf(UserLight::class, $collection->first());
+
+        // The shared factory is left as is: two repositories map the table of the same database
+        $collection = $sharedFactory->get();
+        $collection->set($this->createUserResult());
+        $exception = $this->assertThrows(HydratorException::class, fn () => $collection->first());
+        $this->assertStringStartsWith('Cannot choose the metadata of the table "user"', $exception->getMessage());
+
+        // A hydrator of your own, for a query run elsewhere
+        $hydrator = $services->hydrator()->preferRepository(UserLightRepository::class);
+        $collection = $sharedFactory->get($hydrator);
+        $collection->set($this->createUserResult());
+        $this->assertInstanceOf(UserLight::class, $collection->first()['user']);
+    }
+
+    private function createUserResult(): Result
+    {
+        $mysqliResult = new MysqliResult([[1, 'Ann', 'ann@example.com']]);
+        $mysqliResult->setFieldsCallback(function () {
+            $fields = [];
+            $columns = ['id' => MYSQLI_TYPE_LONG, 'name' => MYSQLI_TYPE_VAR_STRING, 'email' => MYSQLI_TYPE_VAR_STRING];
+            foreach ($columns as $column => $type) {
+                $field = new \stdClass();
+                $field->name     = $column;
+                $field->orgname  = $column;
+                $field->table    = 'user';
+                $field->orgtable = 'user';
+                $field->type     = $type;
+                $fields[] = $field;
+            }
+            return $fields;
+        });
+
+        $result = new Result();
+        $result->setResult($mysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        return $result;
     }
 
     /**

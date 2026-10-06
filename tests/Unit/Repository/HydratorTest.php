@@ -50,6 +50,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\Serializer\CountingJson;
+use tests\fixtures\model\BouhRepository;
 use tests\fixtures\model\City;
 use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\PrimaryOnMultiField;
@@ -571,6 +572,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
@@ -779,6 +782,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
@@ -839,6 +844,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
@@ -901,6 +908,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
@@ -953,6 +962,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
@@ -1050,6 +1061,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
@@ -1112,6 +1125,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->objectDatabaseIs('cit', 'bouh_world_2');
@@ -1452,6 +1467,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->objectDatabaseIs('cit', 'bouh_world_2');
@@ -1506,6 +1523,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $iterator = $hydrator->setResult($result)->getIterator();
@@ -1572,6 +1591,8 @@ class HydratorTest extends TestCase
         $result->setDatabase('bouh_world');
 
         $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->identityMap(true);
