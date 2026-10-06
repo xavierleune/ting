@@ -29,15 +29,18 @@ namespace CCMBenchmark\Ting\Tests\Unit;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
+use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\QueryFactory;
+use CCMBenchmark\Ting\Repository\Hydrator;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
 use tests\fixtures\model\Document;
@@ -939,6 +942,98 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAPartiallyReadEntityShouldNotWriteTheMutableFieldsNotRead()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        // SELECT doc_id, doc_title: the mutable payload and publishedAt keep their PHP default (null)
+        $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_title' => 'title']);
+
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $entity->setTitle('new');
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['UPDATE `T_DOCUMENT_DOC` SET `doc_title` = :v1_doc_title WHERE `doc_id` = :w1_doc_id'], $queries);
+        $this->assertSame([['v1_doc_title' => 'new', 'w1_doc_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAPartiallyJoinedEntityShouldWriteOnlyTheMutableFieldsRead()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        // A join selecting some columns of the joined entity: doc_published_at is not read
+        $entity = $this->hydrateDocument(
+            $unitOfWork,
+            $metadataRepository,
+            ['boo_name' => 'Sylvain', 'doc_id' => '1', 'doc_payload' => '{"tags":[]}']
+        );
+
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame([['v1_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAMutableFieldNotReadShouldBeWrittenOnceSetThroughItsSetter()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_title' => 'title']);
+
+        $entity->setPublishedAt(new \DateTime('2026-02-01 10:00:00'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $unitOfWork->pushSave($entity)->process();
+        // Known from now on: written by every save, as a mutable field read
+        $entity->getPublishedAt()->modify('+1 hour');
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(
+            [
+                ['v1_doc_published_at' => '2026-02-01 10:00:00', 'w1_doc_id' => 1],
+                ['v1_doc_published_at' => '2026-02-01 11:00:00', 'w1_doc_id' => 1],
+            ],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAnEntityReadWithEveryColumnShouldWriteItsMutableFields()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $entity = $this->hydrateDocument(
+            $unitOfWork,
+            $metadataRepository,
+            ['doc_id' => '1', 'doc_title' => 'title', 'doc_payload' => null, 'doc_published_at' => '2026-01-01 10:00:00']
+        );
+
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(
+            [['v1_doc_payload' => null, 'v2_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1]],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testDetachShouldForgetTheMutableFieldsNotRead()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_title' => 'title']);
+        $unitOfWork->detach($entity);
+
+        // Managed again by hand: its current values are taken as the stored ones
+        $entity->setPublishedAt(new \DateTime('2026-02-01 10:00:00'));
+        $unitOfWork->manage($entity);
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(
+            [['v1_doc_payload' => null, 'v2_doc_published_at' => '2026-02-01 10:00:00', 'w1_doc_id' => 1]],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAFailedPrepareShouldRethrowItsException()
     {
         $metadataRepository = new MetadataRepository($this->services->serializerFactory());
@@ -990,18 +1085,53 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * A Document hydrated from a row of the given columns (alias "doc"; the columns of Bouh, alias "bouh"): a partial
+     * read when some columns of T_DOCUMENT_DOC are missing
+     *
+     * @param array<string, string|null> $columns column name => raw value
+     */
+    private function hydrateDocument(UnitOfWork $unitOfWork, MetadataRepository $metadataRepository, array $columns): Document
+    {
+        $fields = [];
+        foreach (array_keys($columns) as $column) {
+            $field = new \stdClass();
+            $field->name     = $column;
+            $field->orgname  = $column;
+            [$field->table, $field->orgtable] = str_starts_with($column, 'doc_')
+                ? ['doc', 'T_DOCUMENT_DOC']
+                : ['bouh', 'T_BOUH_BOO'];
+            $field->type     = $column === 'doc_id' ? MYSQLI_TYPE_LONG : MYSQLI_TYPE_VAR_STRING;
+            $fields[] = $field;
+        }
+        $result = new Result();
+        $result->setResult((new MysqliResult([array_values($columns)]))->setFields($fields));
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($metadataRepository);
+        $hydrator->setUnitOfWork($unitOfWork);
+        $entity = $hydrator->setResult($result)->getIterator()->current()['doc'];
+        $this->assertInstanceOf(Document::class, $entity);
+
+        return $entity;
+    }
+
+    /**
      * Builds a UnitOfWork on Bouh, Event, Document and Slot whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query
      * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException
      * @param list<string>|null $closed  names of the closed statements
      * @param list<array<string, mixed>>|null $params parameters of each successfully executed query
+     * @param MetadataRepository|null $metadataRepository the metadata repository of the unit of work
      */
     private function createRecordingUnitOfWork(
         ?array &$queries,
         ?string &$failOn,
         ?array &$closed,
-        ?array &$params = null
+        ?array &$params = null,
+        ?MetadataRepository &$metadataRepository = null
     ): UnitOfWork {
         $queries = [];
         $closed = [];

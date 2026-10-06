@@ -104,6 +104,7 @@
     * Fix Pgsql Driver::reconnect() before connect() connecting with libpq's default settings (empty connection string): it throws a NeverConnectedException, like Mysqli
     * Fix the parameter names of the generated queries (get(), getBy(), getOneBy(), INSERT, UPDATE, DELETE) built from the raw column names (since 3.x): a column with a character outside [a-zA-Z0-9_-] (space, accent, dot...) made a placeholder the drivers could not resolve (missing parameter), an IN list on a column "a" (:a__1) collided with a column named "a__1", and an UPDATE lost the parameter of a numeric column name (array_merge() renumbered it). Parameters are now named <role><position>_<column> (v1_name for a written value, w1_id for a WHERE condition, w2_id__1 for an IN list), the column sanitized to [a-zA-Z0-9_]. Mysqli and Pgsql escapeField() double an embedded backtick / double quote
     * Add Driver\SequenceAwareDriverInterface (getInsertedIdForSequence()), implemented by the Pgsql driver: Metadata reads the id of an autoincrement field with a sequenceName through it, instead of checking method_exists()
+    * Fix the save of an entity read partially (a SELECT of some columns, a join selecting some columns of the joined entity) overwriting the mutable fields it did not read with their PHP default (NULL, or a constructor default such as new \DateTime()): a mutable field is now written only when its value is known (read, set through its setter, or inserted)
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

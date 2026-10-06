@@ -323,6 +323,11 @@ UnitOfWork
   `\DateTimeInterface`), `Serializer\Json` without the `assoc` unserialize option (objects), or a serializer of your
   own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
   trade-offs.
+* A mutable field is only written when its value is known: read from the database, set through its setter, or
+  inserted. An entity read partially (a query selecting some of its columns, a join selecting some columns of the
+  joined entity) does not write the mutable fields it did not read, so their PHP default (`null`, or a value set by
+  the constructor such as `new \DateTime()`) never overwrites the stored value. A value modified in place on such a
+  field, without its setter, is not written.
 * The other fields (scalars, `DateTimeImmutable`, enums, `json` decoded to arrays...) are updated when notified by
   `propertyChanged()`, as in 3.x: the same value given as old and new value, objects included, is not a change.
 * Optional, recommended: type your date properties `\DateTimeImmutable` (or `\DateTimeInterface`), and decode your

@@ -305,6 +305,7 @@ class Hydrator implements HydratorInterface
         // (a valid Entity is a entity with at less one property not null)
         $fromReferences = []; // Prevents from hydrating if an entity is already ref for a table
         $rowReferences  = []; // Identity map key of each table of the row, false without a complete primary key
+        $readColumns    = []; // Columns set on each entity created by this row
         foreach ($columns as $column) {
 
             // Bypass if an entity has already been hydrated with this column
@@ -372,6 +373,7 @@ class Hydrator implements HydratorInterface
                                 $entityColumn,
                                 null
                             );
+                            $readColumns[$column['table']][$entityColumn] = true;
                         }
                         unset($tmpEntities[$column['table']]);
                     }
@@ -383,6 +385,7 @@ class Hydrator implements HydratorInterface
                         $column['orgName'],
                         $column['value']
                     );
+                    $readColumns[$column['table']][$column['orgName']] = true;
                 }
 
                 // Table is not mapped or column is a virtual column
@@ -399,6 +402,15 @@ class Hydrator implements HydratorInterface
         // Virtual object
         if ($this->hasVirtualObject($result) === true) {
             $result[0] = $this->unserializeVirtualObjectProperty($result[0]);
+        }
+
+        // A mutable field whose column is not in the row holds a value that was not read (null, a default set by the
+        // constructor...): the unit of work must not write it
+        foreach ($readColumns as $table => $tableColumns) {
+            $notRead = $this->metadataList[$table]->getMutablePropertiesNotRead($tableColumns);
+            if ($notRead !== [] && $result[$table] instanceof NotifyPropertyInterface) {
+                $this->unitOfWork?->setMutablePropertiesNotRead($result[$table], $notRead);
+            }
         }
 
         foreach ($result as $table => $entity) {

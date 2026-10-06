@@ -143,6 +143,13 @@ So Ting splits the fields in two:
   whether they changed, so it writes them, with their current value, in the `UPDATE` of **every save** of a managed
   entity, together with the notified changes. No copy of their value is kept: hydration costs nothing more.
 
+A mutable field is only written when its value is **known**: read from the database, set through its setter, or
+written by the `INSERT` of the entity. An entity read **partially** (a query selecting some of its columns, a join
+selecting some columns of the joined entity) leaves the other fields with their PHP default (`null`, or a value set by
+the constructor, such as `new \DateTime()`): the mutable fields not read are left out of its `UPDATE`, so a save does
+not overwrite their column with that default. Once set through its setter (with a new value), such a field is known,
+and written by every save. A value modified in place without setter, on a field not read, is not written.
+
 The default comes from the serializer of the field: `Serializer\DateTime`, `Serializer\Json` without the `assoc`
 unserialize option and any serializer of your own are mutable; the serializers shipped with Ting for immutable values
 are not. A field of type `datetime` without serializer follows its property: typed `\DateTimeImmutable` or
@@ -157,7 +164,8 @@ Writing the mutable fields on every save has costs:
   trip, a row lock and the `BEFORE UPDATE` triggers; on PostgreSQL a new row version, written to the WAL, to vacuum
   later);
 * a concurrent write to such a column between your read and your save is **overwritten** with the value you read;
-* `UnitOfWork::isPropertyChanged()` is always `true` for a mutable field of a managed entity.
+* `UnitOfWork::isPropertyChanged()` is always `true` for a mutable field of a managed entity, unless the field was not
+  read (see above).
 
 Prefer immutable values: type your dates `\DateTimeImmutable`, decode JSON to arrays
 (`'serializer_options' => ['unserialize' => ['assoc' => true]]`), make your value objects `readonly`, and replace them
