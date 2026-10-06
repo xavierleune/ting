@@ -131,6 +131,39 @@ class CollectionFactoryTest extends TestCase
         $this->assertInstanceOf(UserLight::class, $collection->first()['user']);
     }
 
+    public function testAPreferenceOfTheHydratorShouldWinOverTheOneOfTheRepository()
+    {
+        $services = $this->servicesWithSameTableRepositories();
+        $users = $services->collectionFactory()->forRepository(UserRepository::class);
+
+        $collection = $users->get((new HydratorSingleObject())->preferRepository(UserLightRepository::class));
+        $collection->set($this->createUserResult());
+
+        $this->assertInstanceOf(UserLight::class, $collection->first());
+    }
+
+    /**
+     * A hydrator kept and given to the collections of several repositories (a service property) prefers the
+     * repository of each collection, not every repository it has been given to
+     */
+    public function testAHydratorGivenToSeveralRepositoriesShouldPreferTheLastOne()
+    {
+        $services = $this->servicesWithSameTableRepositories();
+        $sharedFactory = $services->collectionFactory();
+        $hydrator = new HydratorSingleObject();
+
+        foreach ([UserRepository::class => User::class, UserLightRepository::class => UserLight::class] as $repository => $entity) {
+            $collection = $sharedFactory->forRepository($repository)->get($hydrator);
+            $collection->set($this->createUserResult());
+            $this->assertInstanceOf($entity, $collection->first(), $repository);
+        }
+
+        // Given to the shared factory, it prefers none of them
+        $collection = $sharedFactory->get($hydrator);
+        $collection->set($this->createUserResult());
+        $this->assertThrows(HydratorException::class, fn () => $collection->first());
+    }
+
     private function servicesWithSameTableRepositories(): TingServices
     {
         $services = new TingServices();

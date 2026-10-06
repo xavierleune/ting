@@ -54,8 +54,8 @@ class CollectionFactory implements CollectionFactoryInterface
     }
 
     /**
-     * A factory of the collections read through a repository: their hydrator, when it is a Hydrator, hydrates the
-     * tables the repository maps with its metadata (Hydrator::preferRepository()). This factory is left as is.
+     * A factory of the collections read through a repository: their hydrator, when it is a Hydrator, prefers the
+     * metadata of the repository for the tables it maps (Hydrator::setQueryRepository()). This factory is left as is.
      *
      * @param string $repositoryClass a repository, or the class initializing metadata used for hydration only
      *
@@ -93,8 +93,9 @@ class CollectionFactory implements CollectionFactoryInterface
      */
     private function preferRepository(HydratorInterface $hydrator): HydratorInterface
     {
-        if ($this->repository !== null && $hydrator instanceof Hydrator) {
-            $hydrator->preferRepository($this->repository);
+        // A hydrator given to the collections of several factories prefers the repository of the last one only
+        if ($hydrator instanceof Hydrator) {
+            $hydrator->setQueryRepository($this->repository);
         }
 
         return $hydrator;

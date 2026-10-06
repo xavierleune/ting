@@ -60,6 +60,8 @@ class Hydrator implements HydratorInterface
     protected array $objectSchema       = [];
     /** @var array<string, true> classes the metadata to use are registered under (repositories) => true */
     protected array $preferredRepositories = [];
+    /** The repository running the query, preferred after $preferredRepositories, see setQueryRepository() */
+    protected ?string $queryRepository = null;
     /** @var array<string, array{0: UnserializeInterface, 1: SerializerOptions}> virtual column => [unserializer, options] */
     protected array $unserializeAliases = [];
     /** @var WeakMap<NotifyPropertyInterface, bool> */
@@ -68,7 +70,7 @@ class Hydrator implements HydratorInterface
     protected array $references         = [];
 
     /**
-     * @var array<string, Metadata<object>> alias => metadata of its table
+     * @var array<string, Metadata<object>> alias => metadata of its table in the current result
      */
     protected array $metadataList       = [];
 
@@ -115,6 +117,8 @@ class Hydrator implements HydratorInterface
     public function setResult(ResultInterface $result): static
     {
         $this->result = $result;
+        // An alias names another table, or the same one of another database, in another result
+        $this->metadataList = [];
         return $this;
     }
 
@@ -243,11 +247,13 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * Hydrates the tables this repository maps with its metadata, whatever the database and the schema read: when
-     * several repositories map the same table (a full entity and a lighter projection), the table is otherwise
-     * hydrated with the metadata of the same database and schema, and a HydratorException is thrown when several
-     * repositories share them. Call it once per repository to prefer for the tables of the query.
-     * The reads of a repository (get(), getBy(), getQuery()..., getCollection()) prefer it already.
+     * Hydrates the tables this repository maps with its metadata when several repositories map the same table (a
+     * full entity and a lighter projection): among the metadata of the database and the schema read (named by
+     * objectDatabaseIs() and objectSchemaIs()), or among every metadata of the table when none of them matches.
+     * Without preference, a HydratorException is thrown when the remaining metadata hydrate different entities.
+     * Call it once per repository to prefer for the tables of the query.
+     * The reads of a repository (get(), getBy(), getQuery()..., getCollection()) prefer it already: a repository
+     * given here wins over it.
      *
      * @param string $repositoryClass a repository, or the class initializing metadata used for hydration only
      *
@@ -256,6 +262,19 @@ class Hydrator implements HydratorInterface
     public function preferRepository(string $repositoryClass): static
     {
         $this->preferredRepositories[$repositoryClass] = true;
+
+        return $this;
+    }
+
+    /**
+     * The repository whose collection this hydrator hydrates: preferred after the repositories given to
+     * preferRepository(). Replaces the one set before; null for a collection read outside of a repository.
+     *
+     * @internal set by the collection factory of the repository
+     */
+    public function setQueryRepository(?string $repositoryClass): static
+    {
+        $this->queryRepository = $repositoryClass;
 
         return $this;
     }
@@ -357,7 +376,10 @@ class Hydrator implements HydratorInterface
                         $tmpEntities[$column['table']]        = [];
                     },
                     null,
-                    [array_keys($this->preferredRepositories)]
+                    [
+                        array_keys($this->preferredRepositories),
+                        $this->queryRepository !== null ? [$this->queryRepository] : [],
+                    ]
                 );
             }
 
