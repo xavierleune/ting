@@ -31,16 +31,24 @@ use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
+/**
+ * @template T type of the items of the collections built by the collection factory of the query
+ *
+ * @template-implements QueryInterface<T>
+ */
 class Query implements QueryInterface
 {
     protected bool $selectPrimary = false;
 
+    /**
+     * @var array<string, mixed> parameter name => value
+     */
     protected array $params = [];
 
     /**
      * @param string $sql
      * @param Connection $connection
-     * @param CollectionFactoryInterface $collectionFactory
+     * @param CollectionFactoryInterface<T>|null $collectionFactory
      */
     public function __construct(
         protected string $sql,
@@ -60,7 +68,7 @@ class Query implements QueryInterface
     }
 
     /**
-     * @param array $params
+     * @param array<string, mixed> $params parameter name => value
      * @return $this
      */
     public function setParams(array $params): static
@@ -72,8 +80,9 @@ class Query implements QueryInterface
 
     /**
      * Execute a reading query
-     * @param CollectionInterface $collection
-     * @return CollectionInterface
+     * @template U
+     * @param CollectionInterface<U>|null $collection null for a collection of the collection factory of the query
+     * @return ($collection is null ? CollectionInterface<T> : CollectionInterface<U>)
      * @throws Exception
      * @throws QueryException
      */

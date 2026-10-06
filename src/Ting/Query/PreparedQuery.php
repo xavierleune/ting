@@ -28,12 +28,20 @@ namespace CCMBenchmark\Ting\Query;
 
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 
+/**
+ * @template T type of the items of the collections built by the collection factory of the query
+ *
+ * @template-extends Query<T>
+ */
 class PreparedQuery extends Query
 {
     use PreparedStatementTrait;
 
     /**
      * Prepare then execute a reading query
+     * @template U
+     * @param CollectionInterface<U>|null $collection null for a collection of the collection factory of the query
+     * @return ($collection is null ? CollectionInterface<T> : CollectionInterface<U>)
      * @throws QueryException
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface
