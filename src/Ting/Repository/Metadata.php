@@ -371,8 +371,9 @@ class Metadata
 
     /**
      * A "datetime" field without serializer hydrates a \DateTimeImmutable when its property is typed
-     * \DateTimeImmutable or \DateTimeInterface (nullable or not), and a \DateTime otherwise: typed \DateTime, not
-     * typed, not found (written through a setter), typed otherwise, or entity not set yet.
+     * \DateTimeImmutable (nullable or not), and a \DateTime otherwise, as in 3.x: typed \DateTimeInterface (it can
+     * hold a \DateTime, which Serializer\DateTimeImmutable cannot write), typed \DateTime, not typed, typed with a
+     * union, not found (written through a setter), or entity not set yet.
      *
      * @return class-string<SerializerInterface>
      */
@@ -380,9 +381,7 @@ class Metadata
     {
         $type = $this->entity === null ? null : $this->getPropertyType($this->entity, $fieldName);
 
-        return $type === \DateTimeImmutable::class || $type === \DateTimeInterface::class
-            ? DateTimeImmutable::class
-            : DateTime::class;
+        return $type === \DateTimeImmutable::class ? DateTimeImmutable::class : DateTime::class;
     }
 
     /**
