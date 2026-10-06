@@ -338,6 +338,62 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame(3, $params[0]['w1_boo_id']);
     }
 
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAFailedDeleteOfAnEntityNotManagedShouldLeaveItNotManaged()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        // A foreign key, say
+        $failOn = 'DELETE';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $entity): void {
+            $unitOfWork->pushDelete($entity)->process();
+        });
+        $this->assertFalse($unitOfWork->isManaged($entity));
+
+        $failOn = null;
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testPushSaveShouldReplaceThePushDeleteOfAnEntityNotManaged()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushDelete($entity)->pushSave($entity);
+        $this->assertFalse($unitOfWork->isManaged($entity));
+        $this->assertTrue($unitOfWork->isNew($entity));
+        $unitOfWork->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertTrue($unitOfWork->isManaged($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAFailedDeleteOfAManagedEntityShouldKeepItManaged()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $failOn = 'DELETE';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $entity): void {
+            $unitOfWork->pushDelete($entity)->process();
+        });
+        $this->assertTrue($unitOfWork->isManaged($entity));
+
+        $failOn = null;
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
     public function testRemove()
     {
         $mockEntity = new Bouh();
