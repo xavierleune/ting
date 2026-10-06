@@ -28,6 +28,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Driver\Pgsql\Result as PgsqlResult;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Repository\Hydrator;
 use CCMBenchmark\Ting\Repository\Metadata;
@@ -1054,6 +1055,46 @@ class HydratorTest extends TestCase
 
             $this->assertInstanceOf(\tests\fixtures\model\CitySecond::class, $data['cit2']);
             $this->assertInstanceOf(City::class, $data['cit']);
+        }
+    }
+
+    public function testHydrateATableOfAnotherDatabaseShouldNotDependOnTheRegistrationOrder(): void
+    {
+        // T_CITY_CIT is City in bouh_world and CitySecond in bouh_world_2, the query runs from bouh_world_3
+        $repositories = [
+            CityRepository::class => CityRepository::class,
+            \tests\fixtures\model\CitySecondRepository::class => \tests\fixtures\model\CitySecondMetadataRepository::class,
+        ];
+
+        foreach ([$repositories, array_reverse($repositories, true)] as $registered) {
+            $services = new TingServices();
+            $services->metadataRepository()->batchLoadMetadataFromCache($registered);
+
+            $hydrate = function (?string $objectDatabase) use ($services): array {
+                $mockMysqliResult = new MysqliResult([[1, 'Paris']]);
+                $mockMysqliResult->setFields([
+                    $this->field('cit_id', 'cit_id', 'cit', 'T_CITY_CIT', MYSQLI_TYPE_LONG),
+                    $this->field('cit_name', 'cit_name', 'cit', 'T_CITY_CIT'),
+                ]);
+
+                $result = new Result();
+                $result->setResult($mockMysqliResult);
+                $result->setConnectionName('main');
+                $result->setDatabase('bouh_world_3');
+
+                $hydrator = new Hydrator();
+                $hydrator->setMetadataRepository($services->metadataRepository());
+                $hydrator->setUnitOfWork($services->unitOfWork());
+                if ($objectDatabase !== null) {
+                    $hydrator->objectDatabaseIs('cit', $objectDatabase);
+                }
+
+                return $hydrator->setResult($result)->getIterator()->current();
+            };
+
+            $this->assertThrows(HydratorException::class, fn () => $hydrate(null));
+            $this->assertInstanceOf(\tests\fixtures\model\CitySecond::class, $hydrate('bouh_world_2')['cit']);
+            $this->assertInstanceOf(City::class, $hydrate('bouh_world')['cit']);
         }
     }
 

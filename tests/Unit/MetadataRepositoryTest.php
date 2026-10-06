@@ -26,6 +26,7 @@
 
 namespace CCMBenchmark\Ting\Tests\Unit;
 
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Repository\Metadata;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
@@ -435,5 +436,181 @@ class MetadataRepositoryTest extends TestCase
         $this->assertTrue($outerCallbackFound);
         $this->assertNull($outerCallbackNotFound);
         $this->assertSame('tests\fixtures\model\Bouh2', $outerMetadata->getEntity());
+    }
+
+    /**
+     * Registers one metadata per [repository, database, schema] for the table T_CITY_CIT of the connection main,
+     * its entity being the repository name followed by "Entity"
+     *
+     * @param list<array{string, string, string}> $definitions
+     */
+    private function metadataRepositoryFor(array $definitions): MetadataRepository
+    {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+        foreach ($definitions as [$repository, $database, $schema]) {
+            $metadata = new Metadata($services->serializerFactory());
+            $metadata->setEntity($repository . 'Entity');
+            $metadata->setConnectionName('main');
+            $metadata->setDatabase($database);
+            $metadata->setSchema($schema);
+            $metadata->setTable('T_CITY_CIT');
+            $metadataRepository->addMetadata($repository, $metadata);
+        }
+
+        return $metadataRepository;
+    }
+
+    /**
+     * @return string|null the entity of the metadata found, null when the not found callback is called
+     */
+    private function entityFoundForTable(
+        MetadataRepository $metadataRepository,
+        string $database,
+        string $schema,
+        string $table = 'T_CITY_CIT'
+    ): ?string {
+        $entity = 'nothing called';
+        $metadataRepository->findMetadataForTable(
+            'main',
+            $database,
+            $schema,
+            $table,
+            function (Metadata $metadata) use (&$entity): void {
+                $entity = $metadata->getEntity();
+            },
+            function () use (&$entity): void {
+                $entity = null;
+            }
+        );
+
+        return $entity;
+    }
+
+    public function testFindMetadataForTableShouldPreferTheExactDatabaseAndSchema(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', ''],
+            ['CitySecond', 'bouh_world_2', ''],
+        ]);
+
+        $this->assertSame('CityEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
+        $this->assertSame('CitySecondEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world_2', ''));
+    }
+
+    public function testFindMetadataForTableShouldFallBackToTheOnlyCandidate(): void
+    {
+        // MySQL cross-database read (fields carry no database) or PostgreSQL query without schema
+        $metadataRepository = $this->metadataRepositoryFor([['CitySecond', 'bouh_world_2', 'mySchema']]);
+
+        $this->assertSame('CitySecondEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
+        $this->assertSame('CitySecondEntity', $this->entityFoundForTable($metadataRepository, 'other', 'other'));
+    }
+
+    public function testFindMetadataForTableShouldCallCallbackNotFoundWithoutCandidate(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', ''],
+            ['CitySecond', 'bouh_world_2', ''],
+        ]);
+
+        $this->assertNull($this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'T_UNKNOWN'));
+    }
+
+    public function testFindMetadataForTableShouldThrowWhenSeveralCandidatesMatch(): void
+    {
+        $definitions = [
+            ['City', 'bouh_world', ''],
+            ['CitySecond', 'bouh_world_2', ''],
+        ];
+
+        // The registration order must not choose the class
+        foreach ([$definitions, array_reverse($definitions)] as $registered) {
+            $metadataRepository = $this->metadataRepositoryFor($registered);
+
+            $exception = $this->assertThrows(
+                HydratorException::class,
+                fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world_3', '')
+            );
+            $this->assertStringContainsString('T_CITY_CIT', $exception->getMessage());
+            $this->assertStringContainsString('"main"', $exception->getMessage());
+            $this->assertStringContainsString('"bouh_world_3"', $exception->getMessage());
+            $this->assertStringContainsString('City (database "bouh_world"', $exception->getMessage());
+            $this->assertStringContainsString('CitySecond (database "bouh_world_2"', $exception->getMessage());
+            $this->assertStringContainsString('objectDatabaseIs()', $exception->getMessage());
+            $this->assertStringContainsString('objectSchemaIs()', $exception->getMessage());
+        }
+    }
+
+    public function testFindMetadataForTableShouldPickTheOnlyCandidateOfTheSameDatabase(): void
+    {
+        // PostgreSQL query without schema: the schema read is '', the database is the one of the connection
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', 'mySchema'],
+            ['CitySecond', 'bouh_world_2', 'mySchema'],
+        ]);
+
+        $this->assertSame('CityEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
+        $this->assertSame('CitySecondEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world_2', ''));
+    }
+
+    public function testFindMetadataForTableShouldThrowWhenSeveralCandidatesShareTheDatabase(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', 'schema1'],
+            ['CitySecond', 'bouh_world', 'schema2'],
+            ['CityThird', 'bouh_world_2', 'schema3'],
+        ]);
+
+        // The same schema in another database does not win over the candidates of the same database
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', 'schema3')
+        );
+    }
+
+    public function testFindMetadataForTableShouldPickTheOnlyCandidateOfTheSameSchema(): void
+    {
+        // MySQL cross-database read: the database read is the one of the repository running the query
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', 'schema1'],
+            ['CitySecond', 'bouh_world_2', 'schema2'],
+        ]);
+
+        $this->assertSame('CitySecondEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world_3', 'schema2'));
+        $this->assertSame('CitySecondEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world_3', 'SCHEMA2'));
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world_3', 'schema3')
+        );
+    }
+
+    public function testFindMetadataForTableShouldCompareSchemasCaseInsensitively(): void
+    {
+        // Pgsql\Result lowercases the schemas read in the query
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['City', 'bouh_world', ''],
+            ['CityMySchema', 'bouh_world', 'mySchema'],
+            ['CityOtherSchema', 'bouh_world', 'otherSchema'],
+        ]);
+
+        $this->assertSame('CityMySchemaEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', 'myschema'));
+        $this->assertSame('CityMySchemaEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', 'mySchema'));
+        $this->assertSame('CityEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
+    }
+
+    public function testFindMetadataForTableShouldPreferTheExactSchemaCase(): void
+    {
+        $metadataRepository = $this->metadataRepositoryFor([
+            ['CityLower', 'bouh_world', 'myschema'],
+            ['CityMixed', 'bouh_world', 'mySchema'],
+        ]);
+
+        $this->assertSame('CityLowerEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', 'myschema'));
+        $this->assertSame('CityMixedEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', 'mySchema'));
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', 'MYSCHEMA')
+        );
     }
 }
