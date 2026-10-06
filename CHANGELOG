@@ -122,6 +122,8 @@
     * Fix Serializer\Ip::unserialize() on a value which is not an integer: "abc" or "" threw a TypeError, "1.5" gave 0.0.0.1 with a deprecation, and a value beyond 32 bits wrapped; it throws a Serializer\RuntimeException unless the value is an integer from -2147483648 to 4294967295 (signed or unsigned 32 bits column)
     * Fix Serializer\Json ignoring the JSON_OBJECT_AS_ARRAY flag (assoc defaulted to false instead of null, as json_decode()) and, with JSON_THROW_ON_ERROR, letting a JsonException escape, or failing a valid value on the error left by a previous json_*() call: errors always throw a Serializer\RuntimeException; a json field decoded to arrays by JSON_OBJECT_AS_ARRAY is immutable by default
     * Fix Util\Debug::export() throwing a TypeError on an iterable with object keys (a WeakMap: the UnitOfWork, a repository holding it, an entity with a WeakMap property): such an iterable is exported as a list of ['key' => ..., 'value' => ...] pairs; an iterator over a generator (IteratorIterator...) or a NoRewindIterator is no longer consumed
+    * Fix cached queries accepting a negative TTL, with which the result was never cached: setTtl() throws a QueryException; its docblock now says that 0 applies the default lifetime of the pool
+
 
 
 
