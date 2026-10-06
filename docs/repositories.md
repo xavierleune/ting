@@ -491,15 +491,19 @@ $cityRepository->startTransaction();
 try {
     $cityRepository->save($city);
     $countryRepository->save($country);
-    $cityRepository->commit();
 } catch (\Throwable $e) {
     $cityRepository->rollback();
     throw $e;
 }
+$cityRepository->commit();
 ```
 
 Starting a transaction while another one is open on the same connection, or committing / rolling back without one,
-throws a `CCMBenchmark\Ting\Exceptions\TransactionException`.
+throws a `CCMBenchmark\Ting\Exceptions\TransactionException`. So does a `START TRANSACTION`, `COMMIT` or `ROLLBACK`
+refused by the database (its error is in the message), including the `COMMIT` of a PostgreSQL transaction aborted by a
+failed query, which the server answers with a `ROLLBACK`. A failed `commit()` or `rollback()` leaves no transaction
+open: don't call `rollback()` after a failed `commit()` (it would throw "Cannot rollback no transaction"), which is why
+`commit()` is outside the `try` above.
 
 ## Other methods
 
