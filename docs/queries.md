@@ -193,9 +193,10 @@ public function renameAll(array $renames): void
 }
 ```
 
-`query()`, `execute()`, `setParams()` and `selectPrimary()` behave as for `Query`. A reading prepared query is prepared
-on a replica, unless `selectPrimary(true)` was called before its first execution. Once prepared, a `PreparedQuery` must
-be used either for reading or for writing, not both.
+`query()`, `execute()`, `setParams()` and `selectPrimary()` behave as for `Query`: `query()` runs on a replica, unless
+`selectPrimary(true)` is set, and `execute()` on the primary. The statement is prepared on the connection the query runs
+on, and prepared again when that connection changes (a query read on a replica then executed, or read again after
+`selectPrimary(true)`). Without replica, the statement is prepared once.
 
 ## Query builder
 
