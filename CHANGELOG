@@ -132,6 +132,7 @@
 
 
 
+    * Fix the Pgsql column parser (since 3.x) on SELECT DISTINCT / ALL / DISTINCT ON (...) (the first column read as "DISTINCT", without table, so not hydrated), ARRAY[a, b] (split at its comma, the next values shifted), a quoted alias with a space (AS "the id", truncated) and IS [NOT] DISTINCT FROM (taken for the FROM clause, the next columns lost)
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

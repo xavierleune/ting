@@ -36,8 +36,8 @@ use CCMBenchmark\Ting\Driver\ResultInterface;
 class Result implements ResultInterface
 {
     public const SQL_TABLE_SEPARATOR = 'inner|join|left|right|full|cross|where|group|having|window|union|intersect|except|order|limit|offset|fetch|for|on|using|natural';
-    public const PARSE_RAW_COLUMN = '/^\s*(?:"?(?P<table>[a-z_][a-z0-9_$]*)"?\.)?"?(?P<column>[a-z_][a-z0-9_$]*)"?(?:\s+as\s+"?(?P<alias>["a-z_]["a-z0-9_$]*))?"?\s*$/i';
-    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?"?(?P<alias>[a-z_][a-z0-9_$]*)?"?\s*$/i';
+    public const PARSE_RAW_COLUMN = '/^\s*(?:"?(?P<table>[a-z_][a-z0-9_$]*)"?\.)?"?(?P<column>[a-z_][a-z0-9_$]*)"?(?:\s+as\s+(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*))?\s*$/i';
+    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?\s*$/i';
 
     /**
      * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$), a quoted identifier,
@@ -126,11 +126,18 @@ class Result implements ResultInterface
         $fields = [];
 
         $tokensWithCase = self::tokenize($query);
-        // String literals can't hold a table: blank them for the table search
-        $tableSearch = implode('', array_map(
-            static fn (string $token): string => self::isStringLiteral($token) ? "''" : $token,
-            $tokensWithCase
-        ));
+        $tokens = array_map(strtolower(...), $tokensWithCase);
+        $comparisonFroms = self::findComparisonFroms($tokens);
+
+        // String literals can't hold a table, nor the FROM of IS [NOT] DISTINCT FROM: blank them for the table search
+        $tableSearch = '';
+        foreach ($tokensWithCase as $index => $token) {
+            $tableSearch .= match (true) {
+                self::isStringLiteral($token) => "''",
+                isset($comparisonFroms[$index]) => ' ',
+                default => $token,
+            };
+        }
 
         preg_match_all(
             '/(?:join|from)\s+(?:"?(?<schema>[a-z_][a-z0-9_$]+)"?.)*?"?(?<table>[a-z_][a-z0-9_$]+)"?\s*(?:as)?\s*"?(?!\b('
@@ -151,9 +158,9 @@ class Result implements ResultInterface
             }
         }
 
-        $tokens = array_map(strtolower(...), $tokensWithCase);
-
         $startCapture = false;
+        // The tokens of the main SELECT before its first column: DISTINCT, ALL, DISTINCT ON (...)
+        $firstColumn = 0;
         $columnsMatches = [];
         $column = '';
         $scope  = 'column';
@@ -162,6 +169,10 @@ class Result implements ResultInterface
         $noAlias = false;
 
         foreach ($tokens as $index => $token) {
+            if ($index < $firstColumn) {
+                continue;
+            }
+
             if ($token === 'case' && $scope === 'column') {
                 $scope = 'condition';
                 $noAlias = true;
@@ -169,16 +180,18 @@ class Result implements ResultInterface
                 $scope = 'column';
             }
 
-            if ($token === '(') {
+            // Square brackets (ARRAY[a, b], subscripts) hold commas as parentheses do
+            if ($token === '(' || $token === '[') {
                 $brackets++;
             }
 
-            if ($token === ')') {
+            if ($token === ')' || $token === ']') {
                 $brackets--;
             }
 
             if ($startCapture) {
-                if ($brackets === 0 && ($token === ',' || $token === 'from' || $index === $totalTokens - 1)) {
+                $isMainFrom = $token === 'from' && !isset($comparisonFroms[$index]);
+                if ($brackets === 0 && ($token === ',' || $isMainFrom || $index === $totalTokens - 1)) {
                     $scope = 'column';
 
                     if ($index === $totalTokens - 1 && $token !== ';') {
@@ -240,7 +253,7 @@ class Result implements ResultInterface
 
                     $columnsMatches[] = $columnComponent;
                     $column = '';
-                    if ($token === 'from') {
+                    if ($isMainFrom) {
                         break;
                     }
                     continue;
@@ -256,6 +269,7 @@ class Result implements ResultInterface
             // The columns of the main SELECT: not those of a sub-query, nor of the CTEs of a WITH query
             if ($token === 'select' && $brackets === 0) {
                 $startCapture = true;
+                $firstColumn = self::findFirstColumn($tokens, $index);
             }
         }
 
@@ -312,6 +326,77 @@ class Result implements ResultInterface
                 : $token,
             $matches[0]
         );
+    }
+
+    /**
+     * Position of the first column of a select list: after its DISTINCT, ALL or DISTINCT ON (...)
+     *
+     * @param list<string> $tokens lowercase tokens
+     * @param int $select position of the SELECT
+     */
+    private static function findFirstColumn(array $tokens, int $select): int
+    {
+        $index = self::nextSignificant($tokens, $select);
+        if (($tokens[$index] ?? '') === 'all') {
+            return self::nextSignificant($tokens, $index);
+        }
+        if (($tokens[$index] ?? '') !== 'distinct') {
+            return $index;
+        }
+
+        $index = self::nextSignificant($tokens, $index);
+        if (($tokens[$index] ?? '') !== 'on') {
+            return $index;
+        }
+
+        // The expressions of DISTINCT ON, up to the closing parenthesis
+        $depth = 0;
+        for ($index = self::nextSignificant($tokens, $index); isset($tokens[$index]); $index++) {
+            if ($tokens[$index] === '(') {
+                $depth++;
+            } elseif ($tokens[$index] === ')' && --$depth === 0) {
+                return self::nextSignificant($tokens, $index);
+            }
+        }
+
+        return $index;
+    }
+
+    /**
+     * Position of the first token after $index that is not blank (a comment is a blank token)
+     *
+     * @param list<string> $tokens
+     */
+    private static function nextSignificant(array $tokens, int $index): int
+    {
+        do {
+            $index++;
+        } while (isset($tokens[$index]) && trim($tokens[$index]) === '');
+
+        return $index;
+    }
+
+    /**
+     * Positions of the FROM tokens of IS [NOT] DISTINCT FROM: a comparison, not the FROM clause
+     *
+     * @param list<string> $tokens lowercase tokens
+     * @return array<int, true>
+     */
+    private static function findComparisonFroms(array $tokens): array
+    {
+        $froms = [];
+        $previous = [];
+        foreach ($tokens as $index => $token) {
+            if (trim($token) === '') {
+                continue;
+            }
+            if ($token === 'from' && ($previous === ['is', 'distinct'] || $previous === ['not', 'distinct'])) {
+                $froms[$index] = true;
+            }
+            $previous = [$previous[1] ?? '', $token];
+        }
+
+        return $froms;
     }
 
     private static function isStringLiteral(string $token): bool
