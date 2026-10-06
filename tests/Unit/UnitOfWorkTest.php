@@ -50,6 +50,7 @@ use tests\fixtures\model\Document;
 use tests\fixtures\model\DocumentRepository;
 use tests\fixtures\model\Event;
 use tests\fixtures\model\EventRepository;
+use tests\fixtures\model\Order;
 use tests\fixtures\model\PrimaryOnMultiField;
 use tests\fixtures\model\Slot;
 use tests\fixtures\model\SlotRepository;
@@ -317,6 +318,8 @@ class UnitOfWorkTest extends TestCase
     public function testDeletingANewEntityQueuedForInsertShouldUnqueueItWithoutQuery()
     {
         $entity = new Bouh();
+        // Not managed: queued for its INSERT, whatever its id
+        $entity->setId(3);
         $entity->setName('never saved');
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
 
@@ -358,9 +361,9 @@ class UnitOfWorkTest extends TestCase
 
         $failOn = null;
         $entity->setName('name');
-        // Its row still exists: it is updated
+        // Not managed: saving it inserts it
         $unitOfWork->pushSave($entity)->process();
-        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -372,10 +375,10 @@ class UnitOfWorkTest extends TestCase
 
         $unitOfWork->pushDelete($entity)->pushSave($entity);
         $this->assertFalse($unitOfWork->isManaged($entity));
-        $this->assertFalse($unitOfWork->isNew($entity));
+        $this->assertTrue($unitOfWork->isNew($entity));
         $unitOfWork->process();
 
-        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
         $this->assertTrue($unitOfWork->isManaged($entity));
     }
 
@@ -389,7 +392,7 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->manage($entity);
 
         $unitOfWork->pushDelete($entity)->process();
-        // Its row is gone, its id is still set: it is not an existing row
+        // Detached by its deletion: inserted, its id replaced by the generated one
         $unitOfWork->pushSave($entity);
         $this->assertTrue($unitOfWork->isNew($entity));
         $unitOfWork->process();
@@ -397,11 +400,6 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame(['DELETE', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
         $this->assertSame(1, $entity->getId());
         $this->assertTrue($unitOfWork->isManaged($entity));
-
-        // Inserted again: an existing row from now on
-        $unitOfWork->detach($entity);
-        $unitOfWork->pushSave($entity)->process();
-        $this->assertSame('UPDATE', strtok($queries[2], ' '));
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -736,7 +734,7 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingACloneOfAManagedEntityShouldUpdateItsRowWithEveryField()
+    public function testSavingACloneOfAManagedEntityShouldUpdateItsRow()
     {
         $entity = new Bouh();
         $entity->setId(3);
@@ -750,6 +748,7 @@ class UnitOfWorkTest extends TestCase
         $clone->setName('copy');
         $unitOfWork->pushSave($clone);
         $this->assertFalse($unitOfWork->isNew($clone));
+        $this->assertTrue($unitOfWork->shouldBePersisted($clone));
         $unitOfWork->process();
 
         $this->assertSame(
@@ -763,36 +762,116 @@ class UnitOfWorkTest extends TestCase
         );
         $this->assertSame(3, $clone->getId());
         $this->assertTrue($unitOfWork->isManaged($clone));
+        $this->assertTrue($unitOfWork->isManaged($entity));
         $this->assertFalse($unitOfWork->shouldBePersisted($clone));
 
         // Managed from now on: only its changes are written
         $clone->setFirstname('other');
         $unitOfWork->pushSave($clone)->process();
+        // The original keeps its own changes
+        $entity->setName('original');
+        $unitOfWork->pushSave($entity)->process();
         $this->assertSame(
-            'UPDATE `T_BOUH_BOO` SET `boo_firstname` = :v1_boo_firstname WHERE `boo_id` = :w1_boo_id',
-            $queries[1]
+            [
+                ['v1_boo_firstname' => 'other', 'w1_boo_id' => 3],
+                ['v1_boo_name' => 'original', 'w1_boo_id' => 3],
+            ],
+            \array_slice($params, 1)
         );
+        // The clone shares the listeners of its original: managed, it is not listened to twice
+        $this->assertCount(1, (fn (): array => $this->listeners)->call($clone));
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingANewEntityWithItsIdShouldUpdateItsRow()
+    public function testSavingACloneAndItsOriginalShouldUpdateTheRowWithBoth()
     {
         $entity = new Bouh();
         $entity->setId(3);
         $entity->setName('name');
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
 
-        $unitOfWork->pushSave($entity);
-        $this->assertFalse($unitOfWork->isNew($entity));
-        $this->assertTrue($unitOfWork->shouldBePersisted($entity));
-        $unitOfWork->process();
+        $entity->setName('renamed');
+        $clone = clone $entity;
+        $clone->setFirstname('copy');
+        $unitOfWork->pushSave($clone)->pushSave($entity)->process();
 
-        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
         $this->assertSame(
-            [['v1_boo_firstname' => null, 'v2_boo_name' => 'name', 'v3_boo_roles' => '["USER"]', 'w1_boo_id' => 3]],
+            [
+                ['v1_boo_firstname' => 'copy', 'v2_boo_name' => 'renamed', 'v3_boo_roles' => '["USER"]', 'w1_boo_id' => 3],
+                ['v1_boo_name' => 'renamed', 'w1_boo_id' => 3],
+            ],
             $params
         );
+        $this->assertTrue($unitOfWork->isManaged($clone));
         $this->assertTrue($unitOfWork->isManaged($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingACloneOfACloneShouldUpdateTheRowOfTheirOriginal()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        // Both are copies of the row of $entity
+        $clone = clone (clone $entity);
+        $unitOfWork->pushSave($clone)->process();
+
+        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(3, $params[0]['w1_boo_id']);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingANewEntityWithItsIdShouldInsertIt()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entities = [];
+        // An id set by hand, or by a property default ("private int $id = 0;")
+        foreach ([3, 0] as $id) {
+            $entity = new Bouh();
+            $entity->setId($id);
+            $entity->setName('name');
+            $unitOfWork->pushSave($entity);
+            $this->assertTrue($unitOfWork->isNew($entity));
+            $entities[] = $entity;
+        }
+        $unitOfWork->process();
+
+        // The INSERT leaves out the autoincrement column, as in 3.x: the generated id replaces it
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame([1, 1], [$entities[0]->getId(), $entities[1]->getId()]);
+        $this->assertTrue($unitOfWork->isManaged($entities[0]));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingANewEntityShouldNotReadItsId()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $metadata = new Metadata($this->services->serializerFactory());
+        $metadata->setEntity(Order::class);
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setTable('T_ORDER_ORD');
+        $metadata->addField([
+            'primary'       => true,
+            'autoincrement' => true,
+            'fieldName'     => 'id',
+            'columnName'    => 'ord_id',
+            'type'          => 'int',
+            'getter'        => 'getId',
+        ]);
+        $metadata->addField(['fieldName' => 'reference', 'columnName' => 'ord_reference', 'type' => 'string']);
+        $metadataRepository->addMetadata('tests\fixtures\model\OrderRepository', $metadata);
+
+        // Its getter throws until the id is generated
+        $entity = new Order();
+        $entity->setReference('R1');
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(1, $entity->getId());
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -829,18 +908,20 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testAnIdSetToNullAfterThePushSaveShouldInsertTheEntity()
+    public function testTheIdOfACloneSetToNullAfterThePushSaveShouldInsertIt()
     {
         $entity = new Bouh();
         $entity->setId(3);
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
 
-        $unitOfWork->pushSave($entity);
-        $entity->setId(null);
+        $clone = clone $entity;
+        $unitOfWork->pushSave($clone);
+        $clone->setId(null);
         $unitOfWork->process();
 
         $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
-        $this->assertSame(1, $entity->getId());
+        $this->assertSame(1, $clone->getId());
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -874,7 +955,7 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingADetachedEntityShouldUpdateItsRow()
+    public function testSavingADetachedEntityShouldInsertIt()
     {
         $entity = new Bouh();
         $entity->setId(3);
@@ -884,48 +965,130 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->detach($entity);
 
         $entity->setName('other');
-        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushSave($entity);
+        $this->assertTrue($unitOfWork->isNew($entity));
+        $unitOfWork->process();
 
-        $this->assertSame(
-            ['UPDATE `T_BOUH_BOO` SET `boo_firstname` = :v1_boo_firstname, `boo_name` = :v2_boo_name, '
-                . '`boo_roles` = :v3_boo_roles WHERE `boo_id` = :w1_boo_id'],
-            $queries
-        );
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(1, $entity->getId());
         $this->assertTrue($unitOfWork->isManaged($entity));
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testAFailedUpdateOfAnEntityNotManagedShouldLeaveItNotManaged()
+    public function testSavingAgainAnEntityInsertedBeforeARollbackShouldInsertIt()
+    {
+        $entity = new Bouh();
+        $entity->setName('name');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushSave($entity)->process();
+        // The transaction is rolled back: the unit of work forgets the rows written, the entity keeps its id
+        $unitOfWork->detachAll();
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingACloneOfADetachedEntityShouldInsertIt()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $clone = clone $entity;
+        $unitOfWork->detach($entity);
+        $unitOfWork->pushSave($clone);
+        $this->assertTrue($unitOfWork->isNew($clone));
+        $unitOfWork->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingACloneOfAnEntityDeletedBeforeItShouldInsertIt()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $clone = clone $entity;
+        // Deleted by the same process(), before the clone is saved
+        $unitOfWork->pushDelete($entity)->pushSave($clone)->process();
+
+        $this->assertSame(['DELETE', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingACloneOfAFreedEntityShouldInsertIt()
+    {
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+
+        $clone = clone $entity;
+        unset($entity);
+        $unitOfWork->pushSave($clone)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingAnUnserializedEntityShouldInsertIt()
     {
         $entity = new Bouh();
         $entity->setId(3);
         $entity->setName('name');
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
 
-        $failOn = 'UPDATE';
-        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $entity): void {
-            $unitOfWork->pushSave($entity)->process();
-        });
-        $this->assertFalse($unitOfWork->isManaged($entity));
-        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+        // Read from a session or a cache, while the original is still managed
+        $copy = unserialize(serialize($entity));
+        $clone = unserialize(serialize(clone $entity));
+        $this->assertInstanceOf(Bouh::class, $copy);
+        $this->assertInstanceOf(Bouh::class, $clone);
+        $unitOfWork->pushSave($copy)->pushSave($clone)->process();
 
-        $failOn = null;
-        $unitOfWork->pushSave($entity)->process();
-        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
-        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingAnEntityNotManagedShouldWriteItsMutableFieldsThenManageIt()
+    public function testAFailedUpdateOfACloneShouldLeaveItNotManaged()
     {
-        $entity = new Document();
-        $entity->setId(1);
-        $entity->setTitle('title');
-        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = new Bouh();
+        $entity->setId(3);
+        $entity->setName('name');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+        $unitOfWork->manage($entity);
+        $clone = clone $entity;
 
-        $unitOfWork->pushSave($entity)->process();
-        $entity->setTitle('new');
-        $unitOfWork->pushSave($entity)->process();
+        $failOn = 'UPDATE';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $clone): void {
+            $unitOfWork->pushSave($clone)->process();
+        });
+        $this->assertFalse($unitOfWork->isManaged($clone));
+        $this->assertFalse($unitOfWork->shouldBePersisted($clone));
+
+        $failOn = null;
+        $unitOfWork->pushSave($clone)->process();
+        $this->assertSame(['UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertTrue($unitOfWork->isManaged($clone));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testSavingACloneShouldWriteItsMutableFieldsThenManageIt()
+    {
+        $entity = $this->createDocument();
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $unitOfWork->manage($entity);
+
+        $clone = clone $entity;
+        $unitOfWork->pushSave($clone)->process();
+        $clone->setTitle('new');
+        $unitOfWork->pushSave($clone)->process();
 
         $this->assertSame(
             [
@@ -940,19 +1103,30 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
-    public function testSavingACloneOfAPartiallyReadEntityShouldWriteItsFieldsNotRead()
+    public function testSavingACloneOfAPartiallyReadEntityShouldNotWriteTheFieldsNotRead()
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
-        $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_title' => 'title']);
+        // SELECT doc_id, doc_payload: the title and publishedAt hold their PHP default (null)
+        $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_payload' => '{"tags":[]}']);
 
-        // Documented limit: the columns not read are recorded for the entity read only
         $clone = clone $entity;
         $unitOfWork->pushSave($clone)->process();
+        // Still not read by the clone, once managed
+        $unitOfWork->pushSave($clone)->process();
+        // Set on the copy: written
+        $other = clone $entity;
+        $other->setTitle('title');
+        $unitOfWork->pushSave($other)->process();
 
         $this->assertSame(
-            [['v1_doc_title' => 'title', 'v2_doc_payload' => null, 'v3_doc_published_at' => null, 'w1_doc_id' => 1]],
+            [
+                ['v1_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1],
+                ['v1_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1],
+                ['v1_doc_title' => 'title', 'v2_doc_payload' => '{"tags":[]}', 'w1_doc_id' => 1],
+            ],
             $params
         );
+        $this->assertFalse($unitOfWork->isPropertyChanged($clone, 'publishedAt'));
     }
 
     #[AllowMockObjectsWithoutExpectations]
@@ -1516,14 +1690,16 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushDelete($entity, $bouhMetadata)->process();
         $this->assertSame(['INSERT main', 'UPDATE main', 'DELETE main'], $tables());
 
-        // Not managed, with its id: an existing row of the table of the metadata given
+        // Not managed, with its id: inserted into the table of the metadata given; the clone of a managed entity
+        // updates its row there
         $queries = [];
         $entity = new Bouh();
         $entity->setId(3);
         $unitOfWork->pushSave($entity, $bouhMetadata)->process();
+        $unitOfWork->pushSave(clone $entity, $bouhMetadata)->process();
         $unitOfWork->detach($entity);
         $unitOfWork->pushDelete($entity, $bouhMetadata)->process();
-        $this->assertSame(['UPDATE main', 'DELETE main'], $tables());
+        $this->assertSame(['INSERT main', 'UPDATE main', 'DELETE main'], $tables());
 
         // Without metadata, those of the entity: the repository registered last
         $queries = [];

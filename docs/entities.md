@@ -269,13 +269,13 @@ The conversion between the PHP value and the column is done by a serializer decl
 
 ## Debugging and serialization
 
-The `NotifyProperty` trait stores the listeners (the unit of work) in a `$listeners` property. To keep it out of the
-way:
+The `NotifyProperty` trait stores the listeners (the unit of work) in a `$listeners` property, and a weak reference to
+the object they were added to in a `$listenersOwner` property: `clone` copies it, so that the unit of work recognizes
+the clone of a managed entity (see [Saving a clone](unit-of-work.md#saving-a-clone)). To keep them out of the way:
 
 * `var_dump()` and other debug tools only show the entity's own properties (`__debugInfo()`);
-* `serialize()` leaves the listeners out (`__serialize()`), so an entity can be stored in a session or a cache. Every
-  other property is kept, including the private properties of a parent class. An
-  unserialized entity is a new object, not managed by the unit of work: saving it updates its row with every column
-  when its `autoincrement` id is set, and inserts it otherwise (see
-  [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)), unless you
+* `serialize()` leaves them out (`__serialize()`), so an entity can be stored in a session or a cache. Every other
+  property is kept, including the private properties of a parent class. An entity defining its own `__serialize()`
+  must leave them out too: a `WeakReference` cannot be serialized. An unserialized entity is a new object, not managed
+  by the unit of work, and not a clone: saving it inserts it, unless you
   [manage it](unit-of-work.md#managing-an-entity-yourself) first.

@@ -28,6 +28,7 @@ namespace CCMBenchmark\Ting;
 
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Entity\NotifyProperty;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 use CCMBenchmark\Ting\Entity\PropertyListenerInterface;
 use CCMBenchmark\Ting\Query\QueryFactoryInterface;
@@ -57,13 +58,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected WeakMap $mutablePrimaryValues;
     /**
-     * Mutable properties whose value is not known: left out of a partial read (a SELECT of some columns, a join), they
-     * hold a PHP default (null, a value set by the constructor...), not the stored value. They are not written until
-     * set through their setter. Only the entities read partially are listed, with property names only.
+     * Properties whose value is not known: left out of a partial read (a SELECT of some columns, a join), they hold a
+     * PHP default (null, a value set by the constructor...), not the stored value. They are not written until set
+     * through their setter. Only the entities read partially are listed, with property names only.
      *
      * @var WeakMap<NotifyPropertyInterface, array<string, true>> property name => true
      */
-    protected WeakMap $mutablePropertiesNotRead;
+    protected WeakMap $propertiesNotRead;
     /**
      * Entities this unit of work listens to: a listener can't be removed from an entity, so it stays registered once
      * the entity is detached (its notifications are then ignored), and is not added again when it is managed again
@@ -72,19 +73,18 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected WeakMap $listenedEntities;
     /**
-     * Entities whose row has been deleted by process(): their primary key is still set, but saving them inserts them
-     * again. Forgotten once they are managed again.
-     *
-     * @var WeakMap<NotifyPropertyInterface, true>
-     */
-    protected WeakMap $entitiesDeleted;
-    /**
      * @var array<string, array{state: self::STATE_*, entity: NotifyPropertyInterface, metadata?: Metadata<object>|null}>
      *      by object hash; the metadata given to pushSave() or pushDelete() to write the entity with
      */
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
+    /**
+     * NotifyProperty::$listenersOwner, by entity class: null for a class which does not use the trait
+     *
+     * @var array<class-string, \ReflectionProperty|null>
+     */
+    private static array $listenersOwnerProperties = [];
 
     /**
      * @param ConnectionPool        $connectionPool
@@ -99,28 +99,27 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->entities = new WeakMap();
         $this->entitiesChanged = new WeakMap();
         $this->mutablePrimaryValues = new WeakMap();
-        $this->mutablePropertiesNotRead = new WeakMap();
+        $this->propertiesNotRead = new WeakMap();
         $this->listenedEntities = new WeakMap();
-        $this->entitiesDeleted = new WeakMap();
     }
 
     /**
-     * Record the mutable properties left out of the partial read of an entity: their value is not known, so they are
-     * not written until set through their setter. Replaces the properties recorded before; none to forget them.
+     * Record the properties left out of the partial read of an entity: their value is not known, so they are not
+     * written until set through their setter. Replaces the properties recorded before; none to forget them.
      *
-     * @param list<string> $properties
+     * @param array<string, true> $properties property name => true
      *
      * @internal called by the hydrators
      */
-    public function setMutablePropertiesNotRead(NotifyPropertyInterface $entity, array $properties): void
+    public function setPropertiesNotRead(NotifyPropertyInterface $entity, array $properties): void
     {
         if ($properties === []) {
-            $this->mutablePropertiesNotRead->offsetUnset($entity);
+            $this->propertiesNotRead->offsetUnset($entity);
 
             return;
         }
 
-        $this->mutablePropertiesNotRead[$entity] = array_fill_keys($properties, true);
+        $this->propertiesNotRead[$entity] = $properties;
     }
 
     /**
@@ -131,11 +130,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     public function manage(NotifyPropertyInterface $entity): void
     {
-        if (isset($this->entities[$entity]) === false) {
-            $this->entities[$entity] = true;
-            // Its row exists again
-            $this->entitiesDeleted->offsetUnset($entity);
-        }
+        $this->entities[$entity] = true;
 
         if (isset($this->mutablePrimaryValues[$entity]) === false) {
             $this->metadataRepository->findMetadataForEntity(
@@ -190,11 +185,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     /**
      * Flag the entity to be persisted (insert or update) on next process.
      *
-     * A managed entity is updated with its changes. An entity not managed (a clone of a managed one, a detached one,
-     * one built by hand or read from a cache) is taken as an existing row when its metadata has an autoincrement
-     * primary key and its whole primary key is set: it is updated by that key with every readable field, as nothing
-     * tells which ones changed, then managed. Otherwise, as an entity deleted by process(), it is new: inserted, then
-     * managed. Until then, it is not managed.
+     * A managed entity is updated with its changes. An entity not managed is new: inserted (its autoincrement
+     * property, if set, is left out of the INSERT then overwritten by the generated id), then managed. Except a clone
+     * of an entity managed by this unit of work (see getManagedOriginal()): it is a copy of a row, updated by its
+     * primary key, then managed. Until then, it is not managed.
      *
      * @param Metadata<object>|null $metadata the metadata to write the entity with (internal: given by
      *                                        Repository::save()), those registered for its class otherwise
@@ -203,9 +197,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $state = self::STATE_MANAGED;
 
-        if (isset($this->entities[$entity]) === false
-            && (isset($this->entitiesDeleted[$entity]) || $this->isExistingRow($entity, $metadata) === false)
-        ) {
+        if (isset($this->entities[$entity]) === false && $this->getManagedOriginal($entity) === null) {
             $state = self::STATE_NEW;
         }
 
@@ -236,11 +228,11 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             return;
         }
 
-        if (isset($this->mutablePropertiesNotRead[$entity][$propertyName])) {
+        if (isset($this->propertiesNotRead[$entity][$propertyName])) {
             // Set through its setter: its value is known from now on
-            $notRead = $this->mutablePropertiesNotRead[$entity];
+            $notRead = $this->propertiesNotRead[$entity];
             unset($notRead[$propertyName]);
-            $this->setMutablePropertiesNotRead($entity, array_keys($notRead));
+            $this->setPropertiesNotRead($entity, $notRead);
         }
 
         if (isset($this->entitiesChanged[$entity]) === false) {
@@ -266,7 +258,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             return true;
         }
 
-        if (isset($this->entities[$entity]) === false || isset($this->mutablePropertiesNotRead[$entity][$propertyName])) {
+        if (isset($this->entities[$entity]) === false || isset($this->propertiesNotRead[$entity][$propertyName])) {
             return false;
         }
 
@@ -285,7 +277,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Stop watching changes on the entity. Saved again, it is saved as any entity not managed (see pushSave()).
+     * Stop watching changes on the entity. Pushing it again with pushSave() would insert it.
      *
      * @param NotifyPropertyInterface $entity
      */
@@ -294,7 +286,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
         $this->entitiesChanged->offsetUnset($entity);
         $this->mutablePrimaryValues->offsetUnset($entity);
-        $this->mutablePropertiesNotRead->offsetUnset($entity);
+        $this->propertiesNotRead->offsetUnset($entity);
         $this->entities->offsetUnset($entity);
     }
 
@@ -305,8 +297,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $this->entitiesChanged = new WeakMap();
         $this->mutablePrimaryValues = new WeakMap();
-        $this->mutablePropertiesNotRead = new WeakMap();
-        $this->entitiesDeleted = new WeakMap();
+        $this->propertiesNotRead = new WeakMap();
         $this->entitiesShouldBePersisted = [];
         $this->entities = new WeakMap();
     }
@@ -325,8 +316,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      *
      * An entity never inserted (queued for its INSERT, or not managed and without primary key) has no row: it is
      * unqueued, no query is run. An entity not managed but with its primary key is deleted by that key: it does not
-     * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, saves it as any
-     * entity not managed (see pushSave()). Once deleted, an entity is detached and saving it inserts it again.
+     * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, inserts it.
      *
      * @param Metadata<object>|null $metadata the metadata to delete the entity with (internal: given by
      *                                        Repository::delete()), those registered for its class otherwise
@@ -370,26 +360,51 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * @return bool true when the entity not managed is taken as an existing row: its primary key is generated by the
-     *              database (autoincrement) and set. False without metadata: process() then reports the missing
-     *              repository.
-     * @param Metadata<object>|null $metadata
+     * The entity managed by this unit of work that $entity is a clone of. NotifyProperty keeps a reference to the
+     * object its listeners were added to (by manage()): clone copies it, so in a clone it still points to the
+     * original. Read by reflection: the reference is internal to the trait, and NotifyPropertyInterface does not
+     * expose it (adding a method would break its implementations).
+     *
+     * @return NotifyPropertyInterface|null null when $entity is not a clone, its original is not managed (detached,
+     *                                      freed, managed by another unit of work), or it does not use NotifyProperty
+     *                                      (an unserialized entity has no reference)
      */
-    private function isExistingRow(NotifyPropertyInterface $entity, ?Metadata $metadata): bool
+    private function getManagedOriginal(NotifyPropertyInterface $entity): ?NotifyPropertyInterface
     {
-        $isExistingRow = false;
-        $this->findMetadataToWrite(
-            $entity,
-            $metadata,
-            function (Metadata $metadata) use ($entity, &$isExistingRow): void {
-                $isExistingRow = $metadata->hasAutoincrement() && $this->isPrimaryKeySet($entity, $metadata);
-            },
-            static function (): void {
-                // Without metadata, process() throws
-            }
-        );
+        $class = $entity::class;
+        if (\array_key_exists($class, self::$listenersOwnerProperties) === false) {
+            self::$listenersOwnerProperties[$class] = \in_array(NotifyProperty::class, $this->getTraits($class), true)
+                ? new \ReflectionProperty($class, 'listenersOwner')
+                : null;
+        }
 
-        return $isExistingRow;
+        $owner = self::$listenersOwnerProperties[$class]?->getValue($entity);
+        $original = $owner instanceof \WeakReference ? $owner->get() : null;
+
+        return $original !== $entity && $original instanceof NotifyPropertyInterface && isset($this->entities[$original])
+            ? $original
+            : null;
+    }
+
+    /**
+     * @param class-string $class
+     * @return list<string> the traits used by the class, its parents and their traits
+     */
+    private function getTraits(string $class): array
+    {
+        $traits = [];
+        foreach ([$class, ...array_values(class_parents($class))] as $name) {
+            $toVisit = array_values(class_uses($name));
+            while ($toVisit !== []) {
+                $trait = array_pop($toVisit);
+                if (\in_array($trait, $traits, true) === false) {
+                    $traits[] = $trait;
+                    array_push($toVisit, ...array_values(class_uses($trait)));
+                }
+            }
+        }
+
+        return $traits;
     }
 
     /**
@@ -445,7 +460,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                             if (isset($this->entities[$details['entity']])) {
                                 $this->processManaged($details['entity']);
                             } else {
-                                $this->processNotManaged($details['entity']);
+                                $this->processClone($details['entity']);
                             }
                             break;
 
@@ -528,25 +543,29 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Update the row of an entity not managed, by its primary key, with every readable field: no change is tracked for
-     * it. Then the entity is managed, as if just read. Inserted instead when its primary key is no longer set.
+     * Update the row of a clone of a managed entity, by its primary key, with every readable field: its changes are
+     * not tracked. The fields its original did not read are left out, unless the clone holds another value. Then the
+     * clone is managed, as if just read. Inserted instead when its original is no longer managed (detached or deleted
+     * since pushSave()) or its primary key is no longer set.
      *
      * @throws Exception
      * @throws QueryException
      */
-    private function processNotManaged(NotifyPropertyInterface $entity): void
+    private function processClone(NotifyPropertyInterface $entity): void
     {
         $this->findMetadataToWrite(
             $entity,
             $this->entitiesShouldBePersisted[spl_object_hash($entity)]['metadata'] ?? null,
             function (Metadata $metadata) use ($entity): void {
-                if ($this->isPrimaryKeySet($entity, $metadata) === false) {
-                    // Unset since pushSave(): no row to update
+                $original = $this->getManagedOriginal($entity);
+                if ($original === null || $this->isPrimaryKeySet($entity, $metadata) === false) {
                     $this->processNew($entity);
 
                     return;
                 }
 
+                $originalNotRead = $this->propertiesNotRead[$original] ?? [];
+                $notRead = [];
                 $properties = [];
                 foreach ($metadata->getFields() as $field) {
                     $property = $field['fieldName'];
@@ -557,6 +576,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                     }
 
                     $value = $metadata->getEntityPropertyByFieldName($entity, $property);
+                    if (isset($originalNotRead[$property])
+                        && $metadata->getEntityPropertyByFieldName($original, $property) === $value
+                    ) {
+                        // Not read: the value of the original, not the stored one
+                        $notRead[$property] = true;
+                        continue;
+                    }
+
                     $properties[$property] = [$value, $value];
                 }
 
@@ -570,10 +597,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 }
 
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
-                // Every value written is known, the primary key is the one stored
-                $this->mutablePrimaryValues->offsetUnset($entity);
-                $this->mutablePropertiesNotRead->offsetUnset($entity);
-                $this->entitiesChanged->offsetUnset($entity);
+                $this->setPropertiesNotRead($entity, $notRead);
                 $this->manage($entity);
             },
             function () use ($entity): void {
@@ -624,7 +648,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         }
 
         $sourceValues = $this->mutablePrimaryValues[$entity] ?? [];
-        $notRead = $this->mutablePropertiesNotRead[$entity] ?? [];
+        $notRead = $this->propertiesNotRead[$entity] ?? [];
         foreach ($metadata->getMutableProperties() as $property) {
             if (($withMutableFields === false && array_key_exists($property, $sourceValues) === false)
                 || isset($notRead[$property])
@@ -671,7 +695,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
                 $this->mutablePrimaryValues->offsetUnset($entity);
                 // Every value written is known
-                $this->mutablePropertiesNotRead->offsetUnset($entity);
+                $this->propertiesNotRead->offsetUnset($entity);
                 $this->manage($entity);
 
                 try {
@@ -717,8 +741,6 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
                 $this->detach($entity);
-                // Its primary key is still set, but there is no row to update anymore
-                $this->entitiesDeleted[$entity] = true;
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
