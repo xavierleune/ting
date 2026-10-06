@@ -5,7 +5,7 @@
  * Ting - PHP Datamapper
  * ==========================================
  *
- * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -23,32 +23,11 @@
  *
  **********************************************************************/
 
-namespace CCMBenchmark\Ting\Driver;
-
-use Iterator;
+namespace tests\fixtures\Fake;
 
 /**
- * @template T
- *
- * @template-extends Iterator<int, T>
+ * Opaque result handle for the Pgsql driver in tests (\PgSql\Result is final and only built by a server).
  */
-interface ResultInterface extends Iterator
+class PgsqlResult
 {
-    public function setConnectionName(string $connectionName): static;
-
-    public function setDatabase(string $database): static;
-
-    /**
-     * @param T|null $result
-     */
-    public function setResult(mixed $result): static;
-
-    public function getConnectionName(): ?string;
-
-    public function getDatabase(): ?string;
-
-    /**
-     * PgSQL will return int and Mysqli will return int or string when value is higher than PHP_INT_MAX
-     */
-    public function getNumRows(): mixed;
 }

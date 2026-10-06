@@ -37,22 +37,22 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     /**
      * @var array
      */
-    protected $connectionConfig = [];
+    protected array $connectionConfig = [];
 
     /**
      * @var array
      */
-    protected $databaseOptions = [];
+    protected array $databaseOptions = [];
 
     /**
      * @var array
      */
-    protected $connectionReplicas = [];
+    protected array $connectionReplicas = [];
 
     /**
      * @var array<string, DriverInterface>
      */
-    protected $connections = [];
+    protected array $connections = [];
 
     public function __construct(protected ?DriverLoggerInterface $logger = null)
     {

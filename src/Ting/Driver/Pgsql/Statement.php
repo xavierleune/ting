@@ -34,9 +34,10 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 class Statement implements StatementInterface
 {
     /**
+     * Natively typed object: PgSql\Connection is final and only built by a server, tests stand in for it
      * @var \PgSql\Connection|null
      */
-    protected $connection = null;
+    protected ?object $connection = null;
     protected ?string $query = null;
 
     protected ?DriverLoggerInterface $logger = null;
@@ -56,7 +57,7 @@ class Statement implements StatementInterface
      * @param string              $statementName
      */
     public function __construct(
-        protected $statementName,
+        protected string $statementName,
         protected array $paramsOrder,
         protected string $connectionName,
         protected string $database
@@ -69,7 +70,7 @@ class Statement implements StatementInterface
      *
      * @internal
      */
-    public function setConnection($connection): static
+    public function setConnection(object $connection): static
     {
         $this->connection = $connection;
 
@@ -178,7 +179,7 @@ class Statement implements StatementInterface
      *
      * @internal
      */
-    public function setCollectionWithResult($resultResource, ?CollectionInterface $collection = null): bool
+    public function setCollectionWithResult(object $resultResource, ?CollectionInterface $collection = null): bool
     {
         $result = new Result();
         $result->setConnectionName($this->connectionName);

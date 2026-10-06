@@ -31,13 +31,15 @@ class Result implements ResultInterface
 {
     protected ?string $connectionName = null;
     protected ?string $database = null;
-    /** @var \mysqli_result|null */
-    protected $result = null;
+    /**
+     * Natively typed object: tests stand in for mysqli_result, whose properties cannot be read without a server
+     * @var \mysqli_result|null
+     */
+    protected ?object $result = null;
     /** @var array<int, object{name: string, orgname: string, table: string, orgtable: string, def: string, db: string, catalog: string, max_length: int, length: int, charsetnr: string, flags: int, type: int, decimals: int}> $fields  */
     protected array $fields = [];
     protected int $iteratorOffset = 0;
-    /** @var array|null */
-    protected $iteratorCurrent = null;
+    protected ?array $iteratorCurrent = null;
 
     public function setConnectionName(string $connectionName): static
     {

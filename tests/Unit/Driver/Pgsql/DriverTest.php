@@ -38,6 +38,7 @@ use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use tests\fixtures\Fake\Pgsql;
+use tests\fixtures\Fake\PgsqlResult;
 use tests\fixtures\FakeLogger\FakeDriverLogger;
 
 class DriverTest extends TestCase
@@ -120,7 +121,7 @@ class DriverTest extends TestCase
     {
         $called = false;
 
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_close', true);
 
         $driver = new Driver();
@@ -137,7 +138,7 @@ class DriverTest extends TestCase
     public function testSetCharset()
     {
         $mockDriver = new Pgsql();
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override(
             'pg_set_client_encoding',
             function ($connection, $charset) use (&$outerCharset): void {
@@ -156,7 +157,7 @@ class DriverTest extends TestCase
     {
         $mockDriver = new Pgsql();
         $called = 0;
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_set_client_encoding', function () use (&$called): void {
             $called++;
         });
@@ -172,7 +173,7 @@ class DriverTest extends TestCase
     public function testSetCharsetWithInvalidCharsetShouldThrowAnException()
     {
         $mockDriver = new Pgsql();
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_set_client_encoding', -1);
         NativeFunctionMock::override(
             'pg_last_error',
@@ -273,7 +274,7 @@ class DriverTest extends TestCase
         $outerCount = 0;
         NativeFunctionMock::override('pg_connect', function ($dsn) use (&$outerCount) {
             $outerCount++;
-            return true;
+            return new Pgsql();
         });
 
         $driver = new Driver();
@@ -286,7 +287,7 @@ class DriverTest extends TestCase
 
     public function testsetDatabaseShouldReturnSelf()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
 
         $driver = new Driver();
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
@@ -309,7 +310,7 @@ class DriverTest extends TestCase
 
     public function testIfIsErrorShouldCallCallable()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_last_error', 'unknown error');
 
         $called = false;
@@ -326,8 +327,8 @@ class DriverTest extends TestCase
 
     public function testPrepareShouldRaiseQueryException()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
         NativeFunctionMock::override('pg_prepare', false);
         NativeFunctionMock::override('pg_last_error', 'unknown error');
 
@@ -345,8 +346,8 @@ class DriverTest extends TestCase
 
     public function testPrepareShouldNotTransformEscapedColon()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
         NativeFunctionMock::override('pg_prepare', function ($resource, $statementName, $sql) use (&$outerSql): void {
             $outerSql = $sql;
         });
@@ -364,8 +365,8 @@ class DriverTest extends TestCase
 
     public function testPrepareShouldHandleMultipleNamedPatternWithSameName()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
         NativeFunctionMock::override('pg_prepare', function ($resource, $statementName, $sql) use (&$outerSql): void {
             $outerSql = $sql;
         });
@@ -386,7 +387,7 @@ class DriverTest extends TestCase
 
     public function testEscapeFieldShouldReturnEscapedField()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
 
         $driver = new Driver();
 
@@ -395,7 +396,7 @@ class DriverTest extends TestCase
 
     public function testStartTransactionShouldExecuteQueryBegin()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function ($connection, $query) use (&$outerQuery): void {
             $outerQuery = $query;
         });
@@ -409,7 +410,7 @@ class DriverTest extends TestCase
 
     public function testStartTransactionShouldRaiseException()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function ($connection, $query) use (&$outerQuery): void {
             $outerQuery = $query;
         });
@@ -429,7 +430,7 @@ class DriverTest extends TestCase
 
     public function testCommitShouldExecuteQueryCommit()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function ($connection, $query) use (&$outerQuery): void {
             $outerQuery = $query;
         });
@@ -463,7 +464,7 @@ class DriverTest extends TestCase
 
     public function testRollbackShouldExecuteQueryRollback()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function ($connection, $query) use (&$outerQuery): void {
             $outerQuery = $query;
         });
@@ -495,7 +496,7 @@ class DriverTest extends TestCase
 
     public function testStartTransactionFailureShouldRaiseTransactionException()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', false);
         NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
 
@@ -518,8 +519,8 @@ class DriverTest extends TestCase
 
     public function testCommitOfAnAbortedTransactionShouldRaiseTransactionException()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
         // PostgreSQL answers ROLLBACK, without error, to the COMMIT of a transaction aborted by a failed query
         NativeFunctionMock::override('pg_result_status', function ($result, $mode) {
             return $mode === \PGSQL_STATUS_STRING ? 'ROLLBACK' : \PGSQL_COMMAND_OK;
@@ -542,7 +543,7 @@ class DriverTest extends TestCase
 
     public function testCommitFailureShouldRaiseTransactionExceptionAndCloseTheTransaction()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', fn ($connection, $query) => $query === 'BEGIN');
         NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
 
@@ -562,7 +563,7 @@ class DriverTest extends TestCase
 
     public function testRollbackFailureShouldRaiseTransactionExceptionAndCloseTheTransaction()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', fn ($connection, $query) => $query === 'BEGIN');
         NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
 
@@ -592,13 +593,14 @@ class DriverTest extends TestCase
 
     public function testGetAffectedRowsShouldReturnTheCountOfTheLastPreparedQuery()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_prepare', true);
-        NativeFunctionMock::override('pg_query', true);
-        NativeFunctionMock::override('pg_query_params', 'query result');
-        NativeFunctionMock::override('pg_execute', 'statement result');
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
+        $statementResult = new PgsqlResult();
+        NativeFunctionMock::override('pg_execute', $statementResult);
         NativeFunctionMock::override('pg_result_status', \PGSQL_COMMAND_OK);
-        NativeFunctionMock::override('pg_affected_rows', fn ($result) => $result === 'statement result' ? 3 : 1);
+        NativeFunctionMock::override('pg_affected_rows', fn ($result) => $result === $statementResult ? 3 : 1);
 
         $driver = new Driver();
         $driver->setDatabase('myDatabase');
@@ -615,7 +617,7 @@ class DriverTest extends TestCase
 
     public function testgetInsertedIdShouldReturnInsertedId()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function ($connection, $query) use (&$outerQuery): void {
             $outerQuery = $query;
         });
@@ -630,7 +632,7 @@ class DriverTest extends TestCase
 
     public function testgetInsertedIdForSequenceShouldReturnInsertedIdForSequence()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override(
             'pg_query_params',
             function ($connection, $query, $params) use (&$outerQuery, &$outerParams): void {
@@ -651,7 +653,7 @@ class DriverTest extends TestCase
 
     public function testgetInsertedIdForSequenceWithWrongSequenceShouldThrowAnException()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query_params', false);
         NativeFunctionMock::override('pg_last_error', 'A PGSQL error');
 
@@ -669,7 +671,7 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldCallPGQueryParams()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         $count = 0;
         $outerSql = '';
         $outerValues = '';
@@ -708,8 +710,8 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldRaiseExceptionIfValueNotDefined()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
         NativeFunctionMock::override('pg_result_status', \PGSQL_TUPLES_OK);
         NativeFunctionMock::override('pg_fetch_assoc', null);
 
@@ -723,7 +725,7 @@ class DriverTest extends TestCase
 
     public function testExecuteWithoutParametersShouldCallPGQuery()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         $pgQueryCalled = false;
         NativeFunctionMock::override('pg_query', function () use (&$pgQueryCalled): void {
             $pgQueryCalled = true;
@@ -741,8 +743,8 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldCallSetOnCollection()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
         NativeFunctionMock::override('pg_fetch_array', 'data');
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_num_fields', 1);
@@ -760,10 +762,10 @@ class DriverTest extends TestCase
 
     public function testDriverWithoutNameShouldExecuteAndPrepare()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
         NativeFunctionMock::override('pg_prepare', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
         NativeFunctionMock::override('pg_fetch_array', 'data');
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_num_fields', 1);
@@ -783,8 +785,8 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldReturnArray()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
         NativeFunctionMock::override('pg_fetch_assoc', ['Bouh' => 'Hop']);
         NativeFunctionMock::override('pg_result_status', \PGSQL_TUPLES_OK);
 
@@ -801,7 +803,7 @@ class DriverTest extends TestCase
     {
         $outerSql = true;
         $outerValues = [];
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override(
             'pg_query_params',
             function ($connection, $sql, $values) use (&$outerSql, &$outerValues): void {
@@ -830,7 +832,7 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldRaiseExceptionWhenErrorHappensWithQuery()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query_params', false);
         NativeFunctionMock::override('pg_fetch_array', 'data');
         NativeFunctionMock::override('pg_result_seek', true);
@@ -854,8 +856,8 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldLogQuery()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
         NativeFunctionMock::override('pg_fetch_array', 'data');
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_field_table', 'myTable');
@@ -874,8 +876,8 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldLogTheOriginalQuery()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query_params', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', new PgsqlResult());
         NativeFunctionMock::override('pg_result_status', \PGSQL_TUPLES_OK);
         NativeFunctionMock::override('pg_fetch_assoc', null);
 
@@ -895,7 +897,7 @@ class DriverTest extends TestCase
 
     public function testExecuteShouldStopTheQueryLogWhenTheQueryFails()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query_params', false);
         NativeFunctionMock::override('pg_last_error', 'unknown error');
 
@@ -914,9 +916,9 @@ class DriverTest extends TestCase
 
     public function testPrepareShouldLogQuery()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_prepare', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
         NativeFunctionMock::override('pg_fetch_array', 'data');
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_field_table', 'myTable');
@@ -934,9 +936,9 @@ class DriverTest extends TestCase
 
     public function testPrepareCalledTwiceShouldReturnTheSameObject()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_prepare', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
 
         $driver = new Driver();
         $driver->setName('foo');
@@ -959,7 +961,7 @@ class DriverTest extends TestCase
 
     public function testPingShouldCallPingIfConnected()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
         NativeFunctionMock::override('pg_get_pid', 42);
 
@@ -972,7 +974,7 @@ class DriverTest extends TestCase
 
     public function testPingShouldCallPingWithCharset()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
         NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override(
@@ -998,7 +1000,7 @@ class DriverTest extends TestCase
     {
         $called = 0;
         $outerArgs = [];
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
         NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override('pg_query', function () use (&$called, &$outerArgs) {
@@ -1156,8 +1158,8 @@ class DriverTest extends TestCase
 
     public function testTimezone()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
 
         $driver = new Driver();
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
@@ -1168,8 +1170,8 @@ class DriverTest extends TestCase
 
     public function testDefaultTimezone()
     {
-        NativeFunctionMock::override('pg_connect', true);
-        NativeFunctionMock::override('pg_query', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', new PgsqlResult());
 
         $driver = new Driver();
         $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
@@ -1180,7 +1182,7 @@ class DriverTest extends TestCase
 
     public function testSetTimezoneThenDefaultTimezone()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         $outerArgs = [];
         NativeFunctionMock::override('pg_query', function () use (&$outerArgs) {
             $outerArgs[] = func_get_args();
@@ -1200,7 +1202,7 @@ class DriverTest extends TestCase
     public function testSetTimezoneRejectedByTheServerShouldThrowAndNotBeRecorded()
     {
         $queryCalls = 0;
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function () use (&$queryCalls) {
             $queryCalls++;
 
@@ -1226,7 +1228,7 @@ class DriverTest extends TestCase
     {
         $rejected = false;
         $queryCalls = 0;
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_ping', true);
         NativeFunctionMock::override('pg_get_pid', 42);
         NativeFunctionMock::override('pg_query', function () use (&$rejected, &$queryCalls) {
@@ -1279,7 +1281,7 @@ class DriverTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('failingQueryProvider')]
     public function testAFailedQueryShouldRaiseTingExceptionAndNotAWarning(string $function, \Closure $query, string $exception)
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_last_error', 'ERROR:  syntax error');
         self::failWithWarning($function);
 
@@ -1291,14 +1293,14 @@ class DriverTest extends TestCase
 
     public function testTransactionCommandsFailingShouldRaiseTransactionExceptionAndNotAWarning()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
 
         $driver = new Driver();
         $driver->setDatabase('myDatabase');
 
         foreach (['commit', 'rollback'] as $command) {
-            NativeFunctionMock::override('pg_query', true);
+            NativeFunctionMock::override('pg_query', new PgsqlResult());
             $driver->startTransaction();
             self::failWithWarning('pg_query');
             $this->assertThrows(
@@ -1323,7 +1325,7 @@ class DriverTest extends TestCase
 
     public function testAFailedQueryShouldStopTheLogEvenWithWarningsConvertedToExceptions()
     {
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_last_error', 'ERROR:  syntax error');
         self::failWithWarning('pg_query');
         self::failWithWarning('pg_prepare');
@@ -1371,7 +1373,7 @@ class DriverTest extends TestCase
     {
         $rejected = false;
         $queryCalls = 0;
-        NativeFunctionMock::override('pg_connect', true);
+        NativeFunctionMock::override('pg_connect', new Pgsql());
         NativeFunctionMock::override('pg_query', function () use (&$rejected, &$queryCalls) {
             $queryCalls++;
 

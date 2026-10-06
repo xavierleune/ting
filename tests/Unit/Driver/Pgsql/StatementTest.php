@@ -32,6 +32,8 @@ use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use tests\fixtures\Fake\Pgsql;
+use tests\fixtures\Fake\PgsqlResult;
 use tests\fixtures\FakeLogger\FakeDriverLogger;
 
 class StatementTest extends TestCase
@@ -42,7 +44,7 @@ class StatementTest extends TestCase
             'pg_execute',
             function ($connection, $statementName, $values) use (&$outerConnection) {
                 $outerConnection = $connection;
-                return [];
+                return new PgsqlResult();
             }
         );
 
@@ -61,11 +63,12 @@ class StatementTest extends TestCase
             'connectionName',
             'database'
         );
-        $statement->setConnection('Awesome connection resource');
+        $connection = new Pgsql();
+        $statement->setConnection($connection);
         $statement->setQuery('SELECT firstname FROM Bouh');
         $statement->execute([], $collection);
 
-        $this->assertSame('Awesome connection resource', $outerConnection);
+        $this->assertSame($connection, $outerConnection);
     }
 
     public function testExecuteShouldCallDriverExecuteWithParameters()
@@ -76,7 +79,7 @@ class StatementTest extends TestCase
             'pg_execute',
             function ($connection, $statementName, $values) use (&$outerValues) {
                 $outerValues = $values;
-                return [];
+                return new PgsqlResult();
             }
         );
         NativeFunctionMock::override('pg_result_seek', 0);
@@ -113,16 +116,7 @@ class StatementTest extends TestCase
         $result     = new Result();
         $result->setConnectionName('connectionName');
         $result->setDatabase('database');
-        $result->setResult([
-            [
-                'prenom' => 'Sylvain',
-                'nom'    => 'Robez-Masson'
-            ],
-            [
-                'prenom' => 'Xavier',
-                'nom'    => 'Leune'
-            ]
-        ]);
+        $result->setResult(new PgsqlResult());
         NativeFunctionMock::override('pg_query', true);
 
         $collection
@@ -218,7 +212,7 @@ class StatementTest extends TestCase
 
         $this->withErrorsAsExceptions(function (): void {
             $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
-            $statement->setConnection('connection');
+            $statement->setConnection(new Pgsql());
             $statement = null; // runs the destructor
         });
         $this->addToAssertionCount(1);
@@ -226,7 +220,7 @@ class StatementTest extends TestCase
 
     public function testExecuteShouldRaiseExceptionIfValueNotDefined()
     {
-        NativeFunctionMock::override('pg_execute', true);
+        NativeFunctionMock::override('pg_execute', new PgsqlResult());
         NativeFunctionMock::override('pg_query', true);
 
         $statement = new Statement('MyStatementName', ['id' => 1], 'connectionName', 'database');
@@ -261,7 +255,7 @@ class StatementTest extends TestCase
         $thrown = null;
         try {
             $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
-            $statement->setConnection('closed connection');
+            $statement->setConnection(new Pgsql());
             $statement = null; // runs the destructor
         } catch (\Throwable $throwable) {
             $thrown = $throwable;
@@ -278,14 +272,14 @@ class StatementTest extends TestCase
 
             return true;
         });
-        NativeFunctionMock::override('pg_execute', function () use (&$calls): bool {
+        NativeFunctionMock::override('pg_execute', function () use (&$calls): PgsqlResult {
             $calls++;
 
-            return true;
+            return new PgsqlResult();
         });
 
         $statement = new Statement('MyStatementName', [], 'connectionName', 'database');
-        $statement->setConnection('reset connection');
+        $statement->setConnection(new Pgsql());
         $statement->detach();
 
         $this->assertThrows(
@@ -303,7 +297,7 @@ class StatementTest extends TestCase
 
     public function testExecuteShouldReturnTrueIfNoError()
     {
-        NativeFunctionMock::override('pg_execute', true);
+        NativeFunctionMock::override('pg_execute', new PgsqlResult());
         NativeFunctionMock::override('pg_query', true);
 
         $statement = new Statement(
@@ -318,7 +312,7 @@ class StatementTest extends TestCase
 
     public function testExecuteShouldLogQuery()
     {
-        NativeFunctionMock::override('pg_execute', []);
+        NativeFunctionMock::override('pg_execute', new PgsqlResult());
         NativeFunctionMock::override('pg_result_seek', 0);
         NativeFunctionMock::override('pg_fetch_array', false);
         NativeFunctionMock::override('pg_query', true);

@@ -60,13 +60,15 @@ class Result implements ResultInterface
 
     protected ?string $connectionName = null;
     protected ?string $database = null;
-    /** @var \PgSql\Result|null */
-    protected $result = null;
+    /**
+     * Natively typed object: PgSql\Result is final and only built by a server, tests stand in for it
+     * @var \PgSql\Result|null
+     */
+    protected ?object $result = null;
     /** @var array<int, stdClass> $fields  */
     protected array $fields = [];
     protected int $iteratorOffset = 0;
-    /** @var array|null */
-    protected $iteratorCurrent = null;
+    protected ?array $iteratorCurrent = null;
 
     public function setConnectionName(string $connectionName): static
     {

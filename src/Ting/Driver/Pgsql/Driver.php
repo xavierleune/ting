@@ -53,9 +53,10 @@ class Driver implements DriverInterface
     protected ?string $currentTimezone = null;
 
     /**
+     * Natively typed object: PgSql\Connection is final and only built by a server, tests stand in for it
      * @var Connection|null
      */
-    protected $connection = null;
+    protected ?object $connection = null;
 
     use LostTransactionTrait;
 
@@ -69,9 +70,10 @@ class Driver implements DriverInterface
     protected string $objectHash = '';
 
     /**
+     * Natively typed object, as $connection
      * @var \PgSql\Result|null
      */
-    protected $result = null;
+    protected ?object $result = null;
 
     /**
      * @var array<string, StatementInterface>
@@ -84,10 +86,7 @@ class Driver implements DriverInterface
      */
     protected array $forgottenPreparedQueries = [];
 
-    /**
-     * @var string
-     */
-    protected $dsn;
+    protected string $dsn = '';
 
     /**
      * A connection is bound to its database. Serialized, the values cannot be mixed up (a separator could appear in
@@ -264,7 +263,7 @@ class Driver implements DriverInterface
      *
      * @internal
      */
-    protected function setCollectionWithResult($sql, CollectionInterface $collection): CollectionInterface
+    protected function setCollectionWithResult(string $sql, CollectionInterface $collection): CollectionInterface
     {
         $result = new Result();
         $result->setConnectionName($this->name);
@@ -317,7 +316,7 @@ class Driver implements DriverInterface
         $statement
             ->setConnection($this->connection)
             ->setQuery($sql)
-            ->setResultHandler(static function ($result) use ($driver): void {
+            ->setResultHandler(static function (object $result) use ($driver): void {
                 $driver = $driver->get();
                 if ($driver !== null) {
                     $driver->result = $result;
