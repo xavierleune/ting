@@ -30,6 +30,9 @@ use stdClass;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\ResultInterface;
 
+/**
+ * @phpstan-import-type Row from ResultInterface
+ */
 class Result implements ResultInterface
 {
     public const SQL_TABLE_SEPARATOR = 'inner|join|left|right|full|cross|where|group|having|window|union|intersect|except|order|limit|offset|fetch|for|on|using|natural';
@@ -68,6 +71,7 @@ class Result implements ResultInterface
     /** @var array<int, stdClass> $fields  */
     protected array $fields = [];
     protected int $iteratorOffset = 0;
+    /** @var Row|null */
     protected ?array $iteratorCurrent = null;
 
     public function setConnectionName(string $connectionName): static
@@ -318,6 +322,9 @@ class Result implements ResultInterface
 
     /**
      * Format data
+     *
+     * @param array<int|string, string|null>|false $data a row fetched as a numeric array
+     * @return Row|null
      */
     protected function format(array|false $data): ?array
     {
@@ -363,6 +370,9 @@ class Result implements ResultInterface
         $this->next();
     }
 
+    /**
+     * @return Row|null
+     */
     public function current(): mixed
     {
         return $this->iteratorCurrent;

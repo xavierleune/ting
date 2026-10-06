@@ -62,6 +62,9 @@ class Statement implements StatementInterface
     }
 
     /**
+     * @param array<string, mixed> $params parameter name => value
+     * @param CollectionInterface<mixed>|null $collection filled with the result set
+     * @return bool|CollectionInterface<mixed> true: the collection given is filled
      * @throws QueryException
      */
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
@@ -123,7 +126,7 @@ class Statement implements StatementInterface
 
     /**
      * @param mysqli_result $resultData
-     * @param CollectionInterface $collection
+     * @param CollectionInterface<mixed> $collection
      * @return bool
      *
      * @internal

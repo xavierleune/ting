@@ -69,6 +69,8 @@ class Cache implements CacheInterface
 
     /**
      * Logs an operation with $this->logger if provided
+     *
+     * @param list<string>|string $operation impacted keys
      */
     protected function log(string $type, array|string $operation): void
     {
@@ -93,6 +95,8 @@ class Cache implements CacheInterface
      * {@inheritdoc}
      *
      * Logged as a read, flagged as a miss when $callback has to compute (and store) the value
+     *
+     * @param array<mixed>|null $metadata
      */
     public function get(string $key, callable $callback, ?float $beta = null, ?array &$metadata = null): mixed
     {

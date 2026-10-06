@@ -25,15 +25,22 @@
 
 namespace CCMBenchmark\Ting\Logger;
 
+/**
+ * @phpstan-import-type ConnectionParameters from \CCMBenchmark\Ting\Driver\DriverInterface
+ */
 interface DriverLoggerInterface
 {
     /**
      * Add an opened connection to the list
+     *
+     * @param ConnectionParameters $connectionConfig
      */
     public function addConnection(string $name, string $connection, array $connectionConfig): void;
 
     /**
      * Logs a SQL Query
+     *
+     * @param array<string, mixed> $params parameter name => value
      */
     public function startQuery(string $sql, array $params, string $connection, string $database): void;
 
@@ -44,6 +51,8 @@ interface DriverLoggerInterface
 
     /**
      * Log the parameters applied to a statement when executed
+     *
+     * @param array<string, mixed> $params parameter name => value
      */
     public function startStatementExecute(string $statement, array $params = []): void;
 

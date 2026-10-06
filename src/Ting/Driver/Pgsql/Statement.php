@@ -55,6 +55,7 @@ class Statement implements StatementInterface
 
     /**
      * @param string              $statementName
+     * @param array<int|string, int> $paramsOrder position of each parameter by name (an integer for a numeric name)
      */
     public function __construct(
         protected string $statementName,
@@ -124,8 +125,9 @@ class Statement implements StatementInterface
 
     /**
      * Execute the actual statement with the given parameters
-     * @param array               $params
-     * @param CollectionInterface $collection
+     * @param array<string, mixed> $params parameter name => value
+     * @param CollectionInterface<mixed>|null $collection filled with the result set
+     * @return bool|CollectionInterface<mixed> true: the collection given is filled
      * @throws QueryException
      */
     public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
@@ -175,6 +177,7 @@ class Statement implements StatementInterface
 
     /**
      * @param \PgSql\Result $resultResource
+     * @param CollectionInterface<mixed>|null $collection
      * @throws QueryException
      *
      * @internal

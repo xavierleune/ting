@@ -28,9 +28,19 @@ namespace CCMBenchmark\Ting\Driver;
 use Iterator;
 
 /**
- * @template T
+ * Rows of a result set: one Column per column of the query, in the order of the query
  *
- * @template-extends Iterator<int, T>
+ * @phpstan-type Column array{
+ *     name: string,
+ *     orgName: string,
+ *     table: string,
+ *     orgTable: string,
+ *     schema?: string,
+ *     value: mixed
+ * }
+ * @phpstan-type Row list<Column>
+ *
+ * @template-extends Iterator<int, Row>
  */
 interface ResultInterface extends Iterator
 {
@@ -39,7 +49,7 @@ interface ResultInterface extends Iterator
     public function setDatabase(string $database): static;
 
     /**
-     * @param T|null $result
+     * @param mixed $result the result of the driver (mysqli_result, PgSql\Result, the rows of a cached result...)
      */
     public function setResult(mixed $result): static;
 

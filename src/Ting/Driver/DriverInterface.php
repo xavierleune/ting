@@ -28,6 +28,9 @@ namespace CCMBenchmark\Ting\Driver;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 
+/**
+ * @phpstan-type ConnectionParameters array{host: string, port: int, user: string|null, password: string|null}
+ */
 interface DriverInterface
 {
     public function connect(string $hostname, ?string $username, ?string $password, int $port): static;
@@ -42,7 +45,12 @@ interface DriverInterface
     public function setCharset(string $charset): void;
 
     /**
-     * @return ($collection is CollectionInterface ? CollectionInterface : bool|array|int|string)
+     * @template T
+     * @param array<string, mixed> $params parameter name => value
+     * @param CollectionInterface<T>|null $collection filled with the result set
+     * @return ($collection is null ? bool|int|array<int|string, mixed>|null : CollectionInterface<T>|true) without
+     *         collection: the first row, false (PgSQL) or null (MySQL) without row, the status (PgSQL) or true
+     *         (MySQL) without result set. With a collection: the collection, true without result set (MySQL)
      * @throws QueryException
      */
     public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): mixed;
@@ -81,6 +89,9 @@ interface DriverInterface
 
     public function setLogger(?DriverLoggerInterface $logger = null): static;
 
+    /**
+     * @param ConnectionParameters $connectionConfig
+     */
     public static function getConnectionKey(array $connectionConfig, string $database): string;
 
     /**

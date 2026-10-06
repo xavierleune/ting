@@ -27,6 +27,9 @@ namespace CCMBenchmark\Ting\Driver\Mysqli;
 
 use CCMBenchmark\Ting\Driver\ResultInterface;
 
+/**
+ * @phpstan-import-type Row from ResultInterface
+ */
 class Result implements ResultInterface
 {
     protected ?string $connectionName = null;
@@ -39,6 +42,7 @@ class Result implements ResultInterface
     /** @var array<int, object{name: string, orgname: string, table: string, orgtable: string, def: string, db: string, catalog: string, max_length: int, length: int, charsetnr: string, flags: int, type: int, decimals: int}> $fields  */
     protected array $fields = [];
     protected int $iteratorOffset = 0;
+    /** @var Row|null */
     protected ?array $iteratorCurrent = null;
 
     public function setConnectionName(string $connectionName): static
@@ -87,8 +91,8 @@ class Result implements ResultInterface
 
     /**
      * Format output
-     * @param $data
-     * @return array|null
+     * @param array<mixed>|null|false $data a row fetched as a numeric array
+     * @return Row|null
      */
     protected function format(array|null|false $data): ?array
     {
@@ -178,6 +182,8 @@ class Result implements ResultInterface
 
     /**
      * Return current row
+     *
+     * @return Row|null
      */
     public function current(): mixed
     {

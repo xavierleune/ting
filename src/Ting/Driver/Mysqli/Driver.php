@@ -44,6 +44,9 @@ use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use mysqli_sql_exception;
 
+/**
+ * @phpstan-import-type ConnectionParameters from DriverInterface
+ */
 class Driver implements DriverInterface
 {
     private const RECONNECTION_PENDING = 'the connection was lost and could not be reopened, ping() retries it';
@@ -108,6 +111,8 @@ class Driver implements DriverInterface
 
     /**
      * Data used to open a connection.
+     *
+     * @var array{}|array{hostname: string, username: string|null, password: string|null, port: int}
      */
     private array $connectionConfig = [];
 
@@ -128,6 +133,8 @@ class Driver implements DriverInterface
     /**
      * One driver serves every database of a server: the database is not part of the key. Serialized, the values
      * cannot be mixed up (a separator could appear in any of them), and null stays distinct from ''
+     *
+     * @param ConnectionParameters $connectionConfig
      */
     public static function getConnectionKey(array $connectionConfig, string $database): string
     {
@@ -259,9 +266,12 @@ class Driver implements DriverInterface
     }
 
     /**
+     * @template T
      * @param string $sql
-     * @param array $params
-     * @param CollectionInterface $collection
+     * @param array<string, mixed> $params parameter name => value
+     * @param CollectionInterface<T>|null $collection
+     * @return ($collection is null ? array<int|string, mixed>|bool|null : CollectionInterface<T>|true) without
+     *         collection: the first row, null without row, true without result set
      * @throws QueryException
      */
     public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): bool|CollectionInterface|array|null
@@ -331,9 +341,10 @@ class Driver implements DriverInterface
     }
 
     /**
+     * @template T
      * @param mysqli_result $resultData
-     * @param CollectionInterface $collection
-     * @return CollectionInterface
+     * @param CollectionInterface<T> $collection
+     * @return CollectionInterface<T>
      */
     protected function setCollectionWithResult(object $resultData,CollectionInterface $collection): CollectionInterface
     {

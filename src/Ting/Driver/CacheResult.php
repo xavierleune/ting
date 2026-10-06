@@ -28,12 +28,16 @@ namespace CCMBenchmark\Ting\Driver;
 use Countable;
 use Iterator;
 
+/**
+ * @phpstan-import-type Row from ResultInterface
+ */
 class CacheResult implements ResultInterface
 {
     protected ?string $connectionName = null;
 
     protected ?string $database = null;
 
+    /** @var Iterator<int, Row>|null */
     protected ?Iterator $result = null;
 
     /**
@@ -57,7 +61,7 @@ class CacheResult implements ResultInterface
     }
 
     /**
-     * @param Iterator $result
+     * @param Iterator<int, Row> $result the rows of the cached collection
      * @return $this
      */
     public function setResult($result): static
@@ -88,6 +92,8 @@ class CacheResult implements ResultInterface
 
     /**
      * Return current row
+     *
+     * @return Row|null
      */
     public function current(): mixed
     {

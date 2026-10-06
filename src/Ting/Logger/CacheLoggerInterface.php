@@ -36,7 +36,7 @@ interface CacheLoggerInterface
      * Log an operation
      *
      * @param $operation string one of defined constant starting with OPERATION_
-     * @param $keys array|string impacted keys by the operation
+     * @param list<string>|string $keys impacted keys by the operation
      * @return void
      */
     public function startOperation(string $operation, array|string $keys): void;
