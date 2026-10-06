@@ -133,6 +133,7 @@
     * BC Fix saving a clone of a managed entity (or a detached entity, one read from a cache, one built with its id) inserting a new row: an entity not managed whose autoincrement primary key is set was inserted with a new generated id, its id ignored then overwritten; it is now an existing row, updated by its primary key with every readable mapped field, then managed (isNew() is false for it). To duplicate a row, set the autoincrement property of the copy to null before saving it. An entity deleted by process() is still inserted again by its next save
     * Fix SphinxQL Driver::escapeField() called without field (the default null of the interface) throwing a TypeError: it returns the field as a string
     * Fix PostgreSQL booleans on a `bool` field without serializer (since 3.x): 'f' was hydrated as true, and a PHP false sent by the Pgsql driver as '' (pg_query_params / pg_execute), which PostgreSQL rejects for a boolean; 'f' is read as false, and the Pgsql driver sends a PHP boolean as '1' / '0'
+    * Fix the Pgsql column parser (since 3.x) on quoted identifiers holding another character than [a-z0-9_$] (a colon, a space, an accent, a dash, ""): such a column, table or schema, even in the SQL Ting generates (getAll(), getBy()...), was not hydrated; quoted identifiers are unescaped ("a""b" is a"b), aliases included
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1
