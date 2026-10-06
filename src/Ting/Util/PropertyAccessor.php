@@ -62,7 +62,7 @@ class PropertyAccessor
     public function isWritable(object|array $objectOrArray, PropertyPathInterface|string $propertyPath, ?string $setter): bool
     {
         if ($setter !== null) {
-            return method_exists($objectOrArray, $setter);
+            return \is_object($objectOrArray) && method_exists($objectOrArray, $setter);
         }
         return $this->propertyAccessor->isWritable($objectOrArray, $propertyPath);
     }
@@ -70,12 +70,11 @@ class PropertyAccessor
     public function isReadable(object|array $objectOrArray, PropertyPathInterface|string $propertyPath, ?string $getter): bool
     {
         if ($getter !== null) {
-            if (method_exists($objectOrArray, $getter) === false) {
+            if (\is_object($objectOrArray) === false || method_exists($objectOrArray, $getter) === false) {
                 return false;
             }
             // Like a conventional getter, a custom getter can't read a typed property not initialized yet
-            return \is_object($objectOrArray) === false
-                || \is_string($propertyPath) === false
+            return \is_string($propertyPath) === false
                 || $this->isUninitialized($objectOrArray, $propertyPath) === false;
         }
         return $this->propertyAccessor->isReadable($objectOrArray, $propertyPath);

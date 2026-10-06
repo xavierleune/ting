@@ -36,9 +36,3 @@ parameters:
 			count: 1
 			path: src/Ting/Repository/Metadata.php
 
-		-
-			message: '#^Parameter \#1 \$object_or_class of function method_exists expects object\|string, array\|object given\.$#'
-			identifier: argument.type
-			count: 2
-			path: src/Ting/Util/PropertyAccessor.php
-
