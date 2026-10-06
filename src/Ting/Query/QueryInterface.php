@@ -31,14 +31,15 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
 /**
- * @template T
+ * @template T type of the items of the collections built by the collection factory of the query
  */
 interface QueryInterface
 {
     /**
      * Execute a reading query (SELECT, SHOW, etc.)
-     * @param CollectionInterface<T>|null $collection
-     * @return CollectionInterface<T>
+     * @template U
+     * @param CollectionInterface<U>|null $collection null for a collection of the collection factory of the query
+     * @return ($collection is null ? CollectionInterface<T> : CollectionInterface<U>)
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface;
 
@@ -48,7 +49,7 @@ interface QueryInterface
     public function execute(): mixed;
 
     /**
-     * @param array $params
+     * @param array<string, mixed> $params parameter name => value
      */
     public function setParams(array $params): static;
 

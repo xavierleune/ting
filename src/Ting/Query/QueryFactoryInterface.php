@@ -32,26 +32,30 @@ use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 interface QueryFactoryInterface
 {
     /**
+     * @template T = mixed type of the items of the collections built by $collectionFactory
      * @param string $sql
      * @param Connection $connection
-     * @param CollectionFactoryInterface $collectionFactory
+     * @param CollectionFactoryInterface<T>|null $collectionFactory
+     * @return QueryInterface<T>
      */
     public function get(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): QueryInterface;
 
     /**
+     * @template T = mixed type of the items of the collections built by $collectionFactory
      * @param string $sql
      * @param Connection $connection
-     * @param CollectionFactoryInterface $collectionFactory
-     * @return PreparedQuery
+     * @param CollectionFactoryInterface<T>|null $collectionFactory
+     * @return PreparedQuery<T>
      */
     public function getPrepared(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): PreparedQuery;
 
     /**
+     * @template T = mixed type of the items of the collections built by $collectionFactory
      * @param string $sql
      * @param Connection $connection
      * @param CacheInterface $cache
-     * @param CollectionFactoryInterface $collectionFactory
-     * @return Cached\Query
+     * @param CollectionFactoryInterface<T>|null $collectionFactory
+     * @return Cached\Query<T>
      */
     public function getCached(
         string $sql,
@@ -61,11 +65,12 @@ interface QueryFactoryInterface
     ): \CCMBenchmark\Ting\Query\Cached\Query;
 
     /**
+     * @template T = mixed type of the items of the collections built by $collectionFactory
      * @param string $sql
      * @param Connection $connection
      * @param CacheInterface $cache
-     * @param CollectionFactoryInterface $collectionFactory
-     * @return Cached\PreparedQuery
+     * @param CollectionFactoryInterface<T>|null $collectionFactory
+     * @return Cached\PreparedQuery<T>
      */
     public function getCachedPrepared(
         string $sql,

@@ -33,6 +33,8 @@ use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 class Generator
 {
     /**
+     * @param list<string> $fields column names of the table
+     *
      * @internal
      */
     public function __construct(
@@ -59,7 +61,7 @@ class Generator
     }
 
     /**
-     * @param array           $fields
+     * @param list<string>    $fields escaped column names
      * @param DriverInterface $driver
      * @return string
      */
@@ -82,6 +84,10 @@ class Generator
     }
 
     /**
+     * @template T
+     * @param CollectionFactoryInterface<T> $collectionFactory
+     * @return QueryInterface<T>
+     *
      * @internal
      */
     public function getAll(
@@ -106,6 +112,11 @@ class Generator
     /**
      * Returns a Query, allowing to fetch an object by an associative array (column => value).
      *
+     * @template T
+     * @param array<string, mixed> $primariesValue column name => value
+     * @param CollectionFactoryInterface<T> $collectionFactory
+     * @return QueryInterface<T>
+     *
      * @internal
      */
     public function getOneByCriteria(
@@ -129,9 +140,9 @@ class Generator
     }
 
     /**
-     * @param array           $criteria
+     * @param array<string, mixed> $criteria column name => value
      * @param DriverInterface $driver
-     * @return array
+     * @return array{0: string, 1: array<string, mixed>} the SQL and its parameters
      */
     protected function getSqlAndParamsByCriteria(array $criteria, DriverInterface $driver): array
     {
@@ -147,8 +158,11 @@ class Generator
     }
 
     /**
-     * @param array<string, mixed>       $criteria
-     * @param array<string, string>      $order
+     * @template T
+     * @param array<string, mixed>       $criteria column name => value
+     * @param CollectionFactoryInterface<T> $collectionFactory
+     * @param array<string, string>      $order column name => direction
+     * @return QueryInterface<T>
      */
     public function getByCriteria(
         array $criteria,
@@ -175,7 +189,8 @@ class Generator
     /**
      * Returns a PreparedQuery to insert an object in database.
      *
-     * @param array $values associative array : columnName => value
+     * @param array<string, mixed> $values associative array : columnName => value
+     * @return PreparedQuery<mixed> a writing query: no collection factory
      *
      * @internal
      */
@@ -197,8 +212,9 @@ class Generator
     /**
      * Returns a prepared query to update values in database.
      *
-     * @param array $values         associative array : columnName => value
-     * @param array $primariesValue
+     * @param array<string, mixed> $values         associative array : columnName => value
+     * @param array<string, mixed> $primariesValue columnName => value
+     * @return PreparedQuery<mixed> a writing query: no collection factory
      *
      * @internal
      */
@@ -228,7 +244,8 @@ class Generator
     }
 
     /**
-     * @param array $primariesKeyValue
+     * @param array<string, mixed> $primariesKeyValue columnName => value
+     * @return PreparedQuery<mixed> a writing query: no collection factory
      *
      * @internal
      */
@@ -253,10 +270,10 @@ class Generator
     /**
      * Protect every fields provided, using the driver provided.
      *
-     * @param array           $fields
+     * @param list<string>    $fields
      * @param DriverInterface $driver
      *
-     * @return array
+     * @return list<string>
      */
     protected function escapeFields(array $fields, DriverInterface $driver): array
     {
@@ -267,10 +284,10 @@ class Generator
     }
 
     /**
-     * @param array $fields fields names
-     * @param array $values each values can be a value or an array
+     * @param list<string> $fields escaped fields names, in the order of $values
+     * @param array<string, mixed> $values column name => value, each values can be a value or an array
      *
-     * @return array
+     * @return array{0: list<string>, 1: array<string, mixed>} the conditions and their parameters
      */
     protected function generateConditionAndParams(array $fields, array $values): array
     {
@@ -308,7 +325,7 @@ class Generator
     /**
      * @param string          $sql
      * @param DriverInterface $driver
-     * @param array           $order
+     * @param array<string, string> $order column name => direction
      * @param int             $limit
      * @return void
      */
@@ -326,7 +343,7 @@ class Generator
     /**
      * Generate Order params to add to query
      *
-     * @param array             $orderList
+     * @param array<string, string> $orderList column name => direction
      * @param DriverInterface   $driver
      * @return string
      */

@@ -30,14 +30,20 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Query\PreparedStatementTrait;
 use CCMBenchmark\Ting\Query\QueryException;
 
+/**
+ * @template T type of the items of the collections built by the collection factory of the query
+ *
+ * @template-extends Query<T>
+ */
 class PreparedQuery extends Query
 {
     use PreparedStatementTrait;
 
     /**
      * Prepare and execute the read query.
-     * @param CollectionInterface $collection
-     * @return CollectionInterface
+     * @template U
+     * @param CollectionInterface<U>|null $collection null for a collection of the collection factory of the query
+     * @return ($collection is null ? CollectionInterface<T> : CollectionInterface<U>)
      * @throws QueryException
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface
@@ -48,10 +54,12 @@ class PreparedQuery extends Query
             $collection = $this->collectionFactory->get();
         }
 
-        return $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
+        $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
             $this->prepareQuery();
             $this->statement->execute($this->params, $collection);
         });
+
+        return $collection;
     }
 
     /**

@@ -32,6 +32,11 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 
+/**
+ * @template T type of the items of the collections built by the collection factory of the query
+ *
+ * @template-extends \CCMBenchmark\Ting\Query\Query<T>
+ */
 class Query extends \CCMBenchmark\Ting\Query\Query
 {
     protected ?CacheInterface $cache = null;
@@ -88,8 +93,9 @@ class Query extends \CCMBenchmark\Ting\Query\Query
 
     /**
      * Check if query is in cache or execute the query and store the result
-     * @param CollectionInterface $collection
-     * @return CollectionInterface
+     * @template U
+     * @param CollectionInterface<U>|null $collection null for a collection of the collection factory of the query
+     * @return ($collection is null ? CollectionInterface<T> : CollectionInterface<U>)
      * @throws Exception
      * @throws QueryException
      */
@@ -101,15 +107,20 @@ class Query extends \CCMBenchmark\Ting\Query\Query
             $collection = $this->collectionFactory->get();
         }
 
-        return $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
+        $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
             parent::query($collection);
         });
+
+        return $collection;
     }
 
     /**
      * Fill the collection from cache, or run $execute to fill it and store the result
      *
-     * @param \Closure(CollectionInterface): void $execute runs the actual query into the collection
+     * @template U
+     * @param CollectionInterface<U> $collection
+     * @param \Closure(CollectionInterface<U>): void $execute runs the actual query into the collection
+     * @return CollectionInterface<U>
      * @throws QueryException
      */
     protected function queryThroughCache(CollectionInterface $collection, \Closure $execute): CollectionInterface
