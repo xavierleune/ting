@@ -63,7 +63,7 @@ class BackedEnum implements SerializerInterface
         if (is_int($serialized)) {
             return $serialized;
         }
-        if (is_string($serialized) && preg_match('/^([+-]?)0*(\d+)$/', $serialized, $matches) === 1) {
+        if (is_string($serialized) && preg_match('/\A([+-]?)0*(\d+)\z/', $serialized, $matches) === 1) {
             // false beyond PHP_INT_MAX / PHP_INT_MIN
             $value = filter_var(($matches[1] === '-' ? '-' : '') . $matches[2], FILTER_VALIDATE_INT);
             if ($value !== false) {

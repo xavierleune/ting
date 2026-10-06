@@ -78,7 +78,8 @@ class BackedEnumTest extends TestCase
     {
         $serializer = new BackedEnum();
 
-        foreach (['abc', '', '1.5', ' 3', '3 ', '-', '1e0', '9223372036854775808', 1.0, true] as $value) {
+        foreach (['abc', '', '1.5', ' 3', '3 ', "3\n", '-', '1e0', '9223372036854775808', 1.0, true] as $value) {
+            $thrown = null;
             $types = $this->collectErrorTypes(
                 static fn () => $serializer->unserialize($value, ['enum' => PriorityEnum::class]),
                 $thrown
