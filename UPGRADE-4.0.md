@@ -292,12 +292,24 @@ UnitOfWork
 * The `UnitOfWork::generateUid()` method has been removed.
 * The `UnitOfWork::generateUUID()` method has been removed (was deprecated in 3.x).
 * If you need unique identifiers, use PHP's built-in functions like `uniqid()` or `spl_object_hash()` directly.
-* Changes are detected against the database values: a notified property is updated when its value, serialized by the
-  serializer of its field, differs from the one read from (or last written to) the database. A `DateTime` modified in
-  place then given to its setter is now updated; one replaced by an equal instance no longer is.
-  `NotifyProperty::propertyChanged()` therefore notifies the listeners when the old and new values are the same object
-  (a custom `PropertyListenerInterface` receives these calls too). The values given to `propertyChanged()` are no
-  longer used to build the `UPDATE`.
+* **Mutable fields are written on every save.** A field is mutable when its PHP value can be modified in place
+  (`$entity->getPublishedAt()->modify('+1 day')`, `$entity->getPayload()->tag = 'x'`): such a change calls no setter,
+  so it is never notified. Ting 3 silently lost it; Ting 4 includes every mutable field in the `UPDATE` of each
+  `pushSave()` of a managed entity, with its current value, together with the notified changes of the other fields.
+  Consequence: saving a managed entity that has a mutable field always runs an `UPDATE`, even without change, and
+  `UnitOfWork::isPropertyChanged()` is always `true` for such a field. By default, a field is mutable when its
+  serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable` or
+  `\DateTimeInterface`), `Serializer\Json` without the `assoc` unserialize option (objects), or a serializer of your
+  own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
+  trade-offs.
+* The other fields (scalars, `DateTimeImmutable`, enums, `json` decoded to arrays...) are updated when notified by
+  `propertyChanged()`, as in 3.x: the same value given as old and new value, objects included, is not a change.
+* Optional, recommended: type your date properties `\DateTimeImmutable` (or `\DateTimeInterface`), and decode your
+  JSON columns to arrays (`'serializer_options' => ['unserialize' => ['assoc' => true]]`). A `datetime` field then
+  hydrates a `\DateTimeImmutable`, with the same `Y-m-d H:i:s` format, and is no longer written on every save.
+  A property typed `\DateTime`, or not typed, keeps hydrating a `\DateTime`.
+* A primary key that is mutable (e.g. a `\DateTime`) and modified in place still targets its row: its database value
+  is kept when the entity becomes managed, and refreshed by each `UPDATE`.
 
 Query and Driver Methods
 -------------------------
