@@ -52,8 +52,9 @@ class MetadataRepository
     protected array $entityToRepository = [];
 
     /**
-     * @var array<string, array<string, string>> Fast array access to RepositoryClassName: "connection#table" =>
-     *      "schema#database" => repository
+     * @var array<string, array<string, string>> Every class the metadata of a table are registered under:
+     *      "connection#table" => repository => "schema#database". Several repositories can map the same table of
+     *      the same database and schema (a full entity and a lighter projection)
      */
     private array $tableWithConnectionToMetadata = [];
 
@@ -65,13 +66,16 @@ class MetadataRepository
 
     /**
      * Finds the metadata of a table read in a result. Several metadata can share a table on a connection (one per
-     * database or schema): the result tells the database and the schema of the table, but not always reliably
-     * (Mysqli fields carry no database, Pgsql\Result lowercases the schemas, a query without schema has none).
-     * In this order, the metadata found is:
-     * - the one of the same schema and database (the schema compared case-insensitively when no exact match),
-     * - the only one registered for the table,
+     * database or schema, or several on the same one): the result tells the database and the schema of the table,
+     * but not always reliably (Mysqli fields carry no database, Pgsql\Result lowercases the schemas, a query without
+     * schema has none).
+     * The candidates are the preferred repositories mapping the table when there is one (the repository running
+     * the query, see Hydrator::preferRepository()), every metadata of the table otherwise. In this order, the
+     * metadata found is:
+     * - the only one of the same schema and database (the schema compared case-insensitively when no exact match),
+     * - the only one of the candidates,
      * - the only one of the same database, or when none shares it, the only one of the same schema.
-     * Otherwise, the choice is ambiguous and a HydratorException is thrown.
+     * Otherwise, the choice is ambiguous and a HydratorException is thrown: the last registered never wins.
      *
      * @param string   $connectionName
      * @param string   $database
@@ -79,6 +83,8 @@ class MetadataRepository
      * @param string   $table
      * @param Closure $callbackFound called with applicable Metadata if applicable
      * @param Closure $callbackNotFound called if unknown table - no parameter
+     * @param list<string> $preferredRepositories the classes the metadata to use are registered under, when they
+     *                                            map the table
      *
      * @throws HydratorException when several metadata could be the one of the table
      *
@@ -90,7 +96,8 @@ class MetadataRepository
         string $schema,
         string $table,
         Closure $callbackFound,
-        ?Closure $callbackNotFound = null
+        ?Closure $callbackNotFound = null,
+        array $preferredRepositories = []
     ): void {
 
         $connectionKey = $connectionName . '#' . $table;
@@ -103,14 +110,28 @@ class MetadataRepository
         }
 
         $repositories = $this->tableWithConnectionToMetadata[$connectionKey];
-        $repository = $repositories[$schema . '#' . $database]
-            ?? $this->findSingleCandidate($connectionName, $database, $schema, $table, $repositories);
+        $preferred = array_intersect_key($repositories, array_flip($preferredRepositories));
+        if ($preferred !== []) {
+            $repositories = $preferred;
+        }
+
+        // Several exact matches: the same table of the same database and schema, mapped by several repositories
+        $exactMatches = array_keys($repositories, $schema . '#' . $database, true);
+        $repository = count($exactMatches) === 1
+            ? $exactMatches[0]
+            : $this->findSingleCandidate(
+                $connectionName,
+                $database,
+                $schema,
+                $table,
+                $exactMatches !== [] ? $exactMatches : array_keys($repositories)
+            );
 
         $callbackFound($this->metadataList[$repository]);
     }
 
     /**
-     * @param array<string, string> $repositories the repositories registered for the table, by "schema#database"
+     * @param list<string> $candidates the repositories the metadata of the table can be registered under
      *
      * @throws HydratorException
      */
@@ -119,9 +140,8 @@ class MetadataRepository
         string $database,
         string $schema,
         string $table,
-        array $repositories
+        array $candidates
     ): string {
-        $candidates = array_values(array_unique($repositories));
         if (count($candidates) === 1) {
             return $candidates[0];
         }
@@ -163,7 +183,8 @@ class MetadataRepository
         throw new HydratorException(sprintf(
             'Cannot choose the metadata of the table "%s" read on the connection "%s" from the database "%s" and '
             . 'the schema "%s": it can be %s. Name the database or the schema of its alias with '
-            . 'Hydrator::objectDatabaseIs() or Hydrator::objectSchemaIs().',
+            . 'Hydrator::objectDatabaseIs() or Hydrator::objectSchemaIs(), or the repository whose metadata to use '
+            . 'with Hydrator::preferRepository().',
             $table,
             $connectionName,
             $database,
@@ -238,15 +259,9 @@ class MetadataRepository
     {
         $metadata->propertyAccessor->setCacheItemPool($this->cacheItemPool);
         $this->metadataList[$repositoryClass] = $metadata;
-        $metadataTable = $metadata->getTable();
-        $metadataConnection = $metadata->getConnectionName();
-        if (isset($this->tableWithConnectionToMetadata[$metadataConnection . '#' . $metadataTable]) === false) {
-            $this->tableWithConnectionToMetadata[$metadataConnection . '#' . $metadataTable] = [];
-        }
-
-        $this->tableWithConnectionToMetadata
-            [$metadataConnection . '#' . $metadataTable]
-            [$metadata->getSchema() . '#' . $metadata->getDatabase()] = $repositoryClass;
+        // By repository: registered again (a repository registers its metadata when built), it is not duplicated
+        $this->tableWithConnectionToMetadata[$metadata->getConnectionName() . '#' . $metadata->getTable()]
+            [$repositoryClass] = $metadata->getSchema() . '#' . $metadata->getDatabase();
         $entity = $metadata->getEntity();
         if ($entity !== null) {
             $this->entityToRepository[$entity] = $repositoryClass;

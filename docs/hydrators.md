@@ -336,16 +336,38 @@ $hydrator->objectSchemaIs('b', 'my_schema');
 It takes precedence over the schema written in the query.
 
 These settings matter when several metadata share a table on the connection (one per database or schema). The
-hydrator takes the metadata of the same database and schema as the table read; without one, it takes:
+hydrator takes the only metadata of the same database and schema as the table read; without one, it takes:
 
 1. the only metadata registered for the table, whatever its database or schema (a cross-database MySQL read: the
    result doesn't tell the database of each table, the hydrator only knows the one of the connection);
 2. else the only metadata of the same database, or when none shares the database, the only one of the same schema.
 
 Otherwise it can't choose and throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming the table and the
-candidate repositories: set `objectDatabaseIs()` or `objectSchemaIs()` on the alias. Schemas are compared
-case-insensitively when no exact match, as PostgreSQL results report lowercased schemas (`mySchema` is read
-`myschema`).
+candidate repositories: set `objectDatabaseIs()` or `objectSchemaIs()` on the alias, or `preferRepository()` (see
+below). Schemas are compared case-insensitively when no exact match, as PostgreSQL results report lowercased schemas
+(`mySchema` is read `myschema`).
+
+### Several repositories on the same table
+
+Two repositories can map the same table of the same database and schema: a full entity and a lighter projection
+(`UserRepository` hydrating `User`, `UserLightRepository` hydrating `UserLight`, both on `user`). The reads of a
+repository hydrate the tables it maps with its own metadata: `get()`, `getBy()`, `getOneBy()`, `getAll()`, the
+queries of `getQuery()`, `getPreparedQuery()`, `getCachedQuery()`, `getCachedPreparedQuery()` and the collections of
+`getCollection()`, whatever the hydrator, as long as it extends `Hydrator`.
+
+A hydrator used elsewhere (a query built from the `QueryFactory`, a `CollectionFactory` of your own) has no
+repository to prefer: the database and the schema of the table do not tell the candidates apart, so it throws the
+`HydratorException` above rather than taking the last repository built. Name the repository whose metadata hydrate
+the tables it maps with `preferRepository(string $repositoryClass)`, once per repository to prefer:
+
+```php
+$hydrator = new HydratorSingleObject();
+$hydrator->preferRepository(UserLightRepository::class);
+```
+
+It applies to every alias of a table the repository maps, whatever the database and the schema read; among several
+preferred repositories mapping the table, the rules above choose. A table no preferred repository maps is looked up
+as usual.
 
 ### Identity map
 

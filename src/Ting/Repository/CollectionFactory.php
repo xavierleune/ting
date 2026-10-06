@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -36,6 +37,11 @@ use CCMBenchmark\Ting\UnitOfWork;
 class CollectionFactory implements CollectionFactoryInterface
 {
     /**
+     * The repository whose metadata hydrate the tables it maps, see forRepository()
+     */
+    private ?string $repository = null;
+
+    /**
      * @param HydratorInterface<T> $hydrator
      */
     public function __construct(
@@ -48,6 +54,22 @@ class CollectionFactory implements CollectionFactoryInterface
     }
 
     /**
+     * A factory of the collections read through a repository: their hydrator, when it is a Hydrator, hydrates the
+     * tables the repository maps with its metadata (Hydrator::preferRepository()). This factory is left as is.
+     *
+     * @param string $repositoryClass a repository, or the class initializing metadata used for hydration only
+     *
+     * @internal
+     */
+    public function forRepository(string $repositoryClass): static
+    {
+        $factory = clone $this;
+        $factory->repository = $repositoryClass;
+
+        return $factory;
+    }
+
+    /**
      * @template U
      * @param HydratorInterface<U>|null $hydrator null for a clone of the hydrator of the factory
      * @return ($hydrator is null ? Collection<T> : Collection<U>)
@@ -55,12 +77,26 @@ class CollectionFactory implements CollectionFactoryInterface
     public function get(?HydratorInterface $hydrator = null): Collection
     {
         if (!$hydrator instanceof HydratorInterface) {
-            return new Collection(clone $this->hydrator);
+            return new Collection($this->preferRepository(clone $this->hydrator));
         }
 
         $hydrator->setMetadataRepository($this->metadataRepository);
         $hydrator->setUnitOfWork($this->unitOfWork);
 
-        return new Collection($hydrator);
+        return new Collection($this->preferRepository($hydrator));
+    }
+
+    /**
+     * @template H of HydratorInterface<mixed>
+     * @param H $hydrator
+     * @return H
+     */
+    private function preferRepository(HydratorInterface $hydrator): HydratorInterface
+    {
+        if ($this->repository !== null && $hydrator instanceof Hydrator) {
+            $hydrator->preferRepository($this->repository);
+        }
+
+        return $hydrator;
     }
 }
