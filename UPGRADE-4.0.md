@@ -255,6 +255,9 @@ Util\Debug
 * `Debug::export()` and `Debug::dump()` describe objects as arrays (`['__CLASS__' => ..., 'property' => ...]`)
   instead of cloned objects: typed properties can't hold the exported values. Property listeners are still left out,
   and uninitialized properties are skipped.
+* A date is exported as `['__CLASS__' => ..., 'date' => '2026-01-02T03:04:05.000000+01:00', 'timezone' => ...]`,
+  other internal objects with the properties `var_dump()` shows. Virtual hooked properties are skipped, and
+  generators are not iterated (exported as `['__CLASS__' => 'Generator']`).
 * For a quick look at an entity, `var_dump($entity)` is enough: `NotifyProperty::__debugInfo()` hides the listeners.
 
 Generator
