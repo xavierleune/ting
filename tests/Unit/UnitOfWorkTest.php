@@ -668,6 +668,44 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityInsertedWhoseIdCannotBeWrittenBackShouldBeManaged()
+    {
+        $entity = new Bouh();
+        $entity->setName('name');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+
+        $failOn = 'getInsertedId';
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $entity): void {
+            $unitOfWork->pushSave($entity)->process();
+        }, 'Forced failure of getInsertedId()');
+        // The row exists: saving the entity again must not insert a second one
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+
+        $failOn = null;
+        $entity->setName('other');
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        // Without its id: the UPDATE targets no row, but no duplicate is inserted
+        $this->assertSame('UPDATE `T_BOUH_BOO` SET `boo_name` = :v1_boo_name WHERE `boo_id` IS NULL', $queries[1]);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testWritingBackTheIdOfAnInsertedEntityShouldNotBeAChange()
+    {
+        $entity = new Bouh();
+        $entity->setName('name');
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed);
+
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(1, $entity->getId());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAFailedQueryShouldNotBeReplayedByTheNextProcess()
     {
         $failing = new Bouh();
@@ -1177,7 +1215,8 @@ class UnitOfWorkTest extends TestCase
      * Builds a UnitOfWork on Bouh, Event, Document and Slot whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query
-     * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException
+     * @param string|null       $failOn  executing a query whose SQL contains it throws a QueryException, and
+     *                                   getInsertedId() too with 'getInsertedId'
      * @param list<string>|null $closed  names of the closed statements
      * @param list<array<string, mixed>>|null $params parameters of each successfully executed query
      * @param MetadataRepository|null $metadataRepository the metadata repository of the unit of work
@@ -1203,7 +1242,13 @@ class UnitOfWorkTest extends TestCase
 
         $connectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
         $driver = $this->getMockBuilder(Driver::class)->onlyMethods(['getInsertedId', 'closeStatement'])->getMock();
-        $driver->method('getInsertedId')->willReturn(1);
+        $driver->method('getInsertedId')->willReturnCallback(function () use (&$failOn): int {
+            if ($failOn === 'getInsertedId') {
+                throw new QueryException('Forced failure of getInsertedId()');
+            }
+
+            return 1;
+        });
         $driver->method('closeStatement')->willReturnCallback(function (string $statement) use (&$closed): void {
             $closed[] = $statement;
         });
