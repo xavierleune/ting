@@ -134,6 +134,7 @@
 
     * Fix the Pgsql column parser (since 3.x) on SELECT DISTINCT / ALL / DISTINCT ON (...) (the first column read as "DISTINCT", without table, so not hydrated), ARRAY[a, b] (split at its comma, the next values shifted), a quoted alias with a space (AS "the id", truncated) and IS [NOT] DISTINCT FROM (taken for the FROM clause, the next columns lost)
     * Fix the INSERT of an entity without any value (only an autoincrement field, or no field initialized) with PostgreSQL (since 3.x): INSERT INTO t () VALUES () is MySQL syntax; Add Driver\DefaultValuesInsertDriverInterface, implemented by the Pgsql driver, which gives INSERT INTO t DEFAULT VALUES
+    * Fix a column name holding a colon after a non-word character ("x :y") breaking every generated query on Mysqli and Pgsql (since 3.x): its :y was taken for a placeholder; Mysqli and Pgsql escapeField() escape the colon (\:), which the drivers unescape as in any SQL they are given
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

@@ -918,6 +918,10 @@ not covered by the backward compatibility promise for any other code: they may c
   PostgreSQL driver does (`INSERT INTO t DEFAULT VALUES`). A custom driver for a database refusing the MySQL syntax
   should implement it.
 
+* The Mysqli and Pgsql `escapeField()` escape a colon in the name (`` `x \:y` ``, `"x \:y"`), so that the drivers do not
+  take it for a placeholder; they remove the escape, as in any SQL they are given. Their result is meant for SQL run
+  through a Ting driver, not through mysqli / pgsql directly.
+
 * Built-in serializers now declare native return types on `serialize()` / `unserialize()`: `Serializer\DateTime`,
   `DateTimeImmutable`, `DateTimeZone`, `Json`, `Ip`, `Uuid`, `BackedEnum` (`unserialize()`),
   `Driver\Mysqli\Serializer\Boolean` and `Driver\Pgsql\Serializer\Boolean`. A subclass overriding one of these methods
