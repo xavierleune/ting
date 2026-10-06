@@ -58,14 +58,14 @@ $city = $cityRepository->get(3, forcePrimary: true);
 ```
 
 * Ting 3.14 already offers the new names and deprecates the old ones: you can migrate on 3.x first, fix the
-  deprecations, then upgrade to 4.0. Named arguments are the exception: on 3.14 / 3.15 the parameters are still
-  called `$forceMaster` (repository methods) and `$value` (`selectPrimary()`), so `forcePrimary:` and `usePrimary:`
-  only work once on 4.0. Rename them when switching to 4.0, or pass these arguments positionally.
+  deprecations, then upgrade to 4.0.
+* Named arguments must be renamed too, otherwise PHP throws an `Error` (unknown named parameter): `forceMaster:`
+  becomes `forcePrimary:`, and the `value:` of `selectMaster()` / `selectPrimary()` becomes `usePrimary:`. They are
+  the exception to the migration on 3.x: on 3.14 / 3.15 the parameters are still called `$forceMaster` (repository
+  methods) and `$value` (`selectPrimary()`), so `forcePrimary:` and `usePrimary:` only work once on 4.0. Rename them
+  when switching to 4.0, or pass these arguments positionally.
 * `ConnectionPool::setConfig()` throws a `CCMBenchmark\Ting\Exceptions\ConfigException` when a connection still uses
   the `master` or `slaves` key (e.g. `Connection "main": the "master" key was renamed "primary" in Ting 4.0`).
-* Named arguments must be renamed as well: `forceMaster:` becomes `forcePrimary:`, and the `value:` of
-  `selectMaster()` / `selectPrimary()` becomes `usePrimary:`, otherwise PHP throws an `Error` (unknown named
-  parameter).
 * As before, a replica falls back to the primary when no replica is configured.
 * The `port` key is now required for the primary and every replica: without it, PHP warns `Undefined array key "port"`
   and the driver throws a `TypeError` (`connect()` takes an `int $port`). 3.x only warned, and connected to the

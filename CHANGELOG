@@ -124,14 +124,6 @@
     * Fix Serializer\Json ignoring the JSON_OBJECT_AS_ARRAY flag (assoc defaulted to false instead of null, as json_decode()) and, with JSON_THROW_ON_ERROR, letting a JsonException escape, or failing a valid value on the error left by a previous json_*() call: errors always throw a Serializer\RuntimeException; a json field decoded to arrays by JSON_OBJECT_AS_ARRAY is immutable by default
     * Fix Util\Debug::export() throwing a TypeError on an iterable with object keys (a WeakMap: the UnitOfWork, a repository holding it, an entity with a WeakMap property): such an iterable is exported as a list of ['key' => ..., 'value' => ...] pairs; an iterator over a generator (IteratorIterator...) or a NoRewindIterator is no longer consumed
     * Fix cached queries accepting a negative TTL, with which the result was never cached: setTtl() throws a QueryException; its docblock now says that 0 applies the default lifetime of the pool
-
-
-
-
-
-
-
-
     * Fix the Pgsql column parser (since 3.x) on SELECT DISTINCT / ALL / DISTINCT ON (...) (the first column read as "DISTINCT", without table, so not hydrated), ARRAY[a, b] (split at its comma, the next values shifted), a quoted alias with a space (AS "the id", truncated) and IS [NOT] DISTINCT FROM (taken for the FROM clause, the next columns lost)
     * Fix the INSERT of an entity without any value (only an autoincrement field, or no field initialized) with PostgreSQL (since 3.x): INSERT INTO t () VALUES () is MySQL syntax; Add Driver\DefaultValuesInsertDriverInterface, implemented by the Pgsql driver, which gives INSERT INTO t DEFAULT VALUES
     * Fix a column name holding a colon after a non-word character ("x :y") breaking every generated query on Mysqli and Pgsql (since 3.x): its :y was taken for a placeholder; Mysqli and Pgsql escapeField() escape the colon (\:), which the drivers unescape as in any SQL they are given
