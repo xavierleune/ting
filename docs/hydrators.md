@@ -203,7 +203,7 @@ Rules, the same as the native `fetch_object()` functions:
 
 * each column is written to the property named after the column or its alias, whatever its visibility, so alias the
   columns to match the property names; a column without matching property creates a dynamic property (deprecated
-  since PHP 8.2);
+  since PHP 8.2). A static property is never written: a column named like it is handled as one without property;
 * properties are set **before** the constructor is called, and the constructor receives no argument: give the class
   no constructor, or one without required parameters;
 * Ting serializers are not applied: values are typed by the driver as for entities (with MySQL, integers and floats,
