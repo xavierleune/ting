@@ -132,13 +132,22 @@ class Result implements ResultInterface
         $tokensWithCase = self::tokenize($query);
         $tokens = array_map(strtolower(...), $tokensWithCase);
         $comparisonFroms = self::findComparisonFroms($tokens);
+        $selectDepth = self::findMainSelectDepth($tokens);
 
-        // String literals can't hold a table, nor the FROM of IS [NOT] DISTINCT FROM: blank them for the table search
+        // String literals can't hold a table, nor the FROM of IS [NOT] DISTINCT FROM: blank them for the table search.
+        // The parenthesis closing a parenthesized SELECT ends its FROM clause, as a space would: one is added
         $tableSearch = '';
+        $depth = 0;
         foreach ($tokensWithCase as $index => $token) {
+            $depth += match ($token) {
+                '(', '[' => 1,
+                ')', ']' => -1,
+                default => 0,
+            };
             $tableSearch .= match (true) {
                 self::isStringLiteral($token) => "''",
                 isset($comparisonFroms[$index]) => ' ',
+                $token === ')' && $depth < $selectDepth => ' )',
                 default => $token,
             };
         }
@@ -193,10 +202,15 @@ class Result implements ResultInterface
 
             if ($startCapture) {
                 $isMainFrom = $token === 'from' && !isset($comparisonFroms[$index]);
-                if ($brackets === 0 && ($token === ',' || $isMainFrom || $index === $totalTokens - 1)) {
+                // The parenthesis closing a parenthesized main SELECT ends its last column
+                $isClosed = $brackets < $selectDepth;
+                if (
+                    $isClosed
+                    || ($brackets === $selectDepth && ($token === ',' || $isMainFrom || $index === $totalTokens - 1))
+                ) {
                     $scope = 'column';
 
-                    if ($index === $totalTokens - 1 && $token !== ';') {
+                    if (!$isClosed && $index === $totalTokens - 1 && $token !== ';') {
                         $column .= $tokensWithCase[$index];
                     }
 
@@ -255,7 +269,7 @@ class Result implements ResultInterface
 
                     $columnsMatches[] = $columnComponent;
                     $column = '';
-                    if ($isMainFrom) {
+                    if ($isMainFrom || $isClosed) {
                         break;
                     }
                     continue;
@@ -269,7 +283,7 @@ class Result implements ResultInterface
             }
 
             // The columns of the main SELECT: not those of a sub-query, nor of the CTEs of a WITH query
-            if ($token === 'select' && $brackets === 0) {
+            if ($token === 'select' && $brackets === $selectDepth) {
                 $startCapture = true;
                 $firstColumn = self::findFirstColumn($tokens, $index);
             }
@@ -326,6 +340,37 @@ class Result implements ResultInterface
                 : $token,
             $matches[0]
         );
+    }
+
+    /**
+     * Depth of the parentheses around the main SELECT: 0, unless the query starts with parentheses and has no SELECT
+     * outside of any parentheses, as (SELECT ...) UNION ALL (SELECT ...): its columns are those of the first SELECT
+     *
+     * @param list<string> $tokens lowercase tokens
+     */
+    private static function findMainSelectDepth(array $tokens): int
+    {
+        $depth = 0;
+        foreach ($tokens as $token) {
+            if ($token === '(' || $token === '[') {
+                $depth++;
+            } elseif ($token === ')' || $token === ']') {
+                $depth--;
+            } elseif ($token === 'select' && $depth === 0) {
+                return 0;
+            }
+        }
+
+        $leading = 0;
+        foreach ($tokens as $token) {
+            if ($token === '(') {
+                $leading++;
+            } elseif (trim($token) !== '') {
+                return $token === 'select' ? $leading : 0;
+            }
+        }
+
+        return 0;
     }
 
     /**
