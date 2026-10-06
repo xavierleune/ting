@@ -26,55 +26,11 @@
 
 namespace CCMBenchmark\Ting\Query;
 
-use CCMBenchmark\Ting\Driver\StatementInterface;
-use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 
 class PreparedQuery extends Query
 {
-    protected bool $prepared = false;
-
-    protected ?StatementInterface $statement = null;
-
-    /**
-     * Prepare a reading query (SELECT, SHOW, ...)
-     * @return $this
-     * @throws Exception
-     * @throws QueryException
-     */
-    public function prepareQuery(): static
-    {
-        if ($this->prepared === true) {
-            return $this;
-        }
-
-        if ($this->selectPrimary === true) {
-            $this->statement = $this->connection->primary()->prepare($this->sql);
-        } else {
-            $this->statement = $this->connection->replica()->prepare($this->sql);
-        }
-        $this->prepared  = true;
-
-        return $this;
-    }
-
-    /**
-     * Prepare a writing query (UPDATE, INSERT, DELETE, ...)
-     * @return $this
-     * @throws Exception
-     * @throws QueryException
-     */
-    public function prepareExecute(): static
-    {
-        if ($this->prepared === true) {
-            return $this;
-        }
-
-        $this->statement = $this->connection->primary()->prepare($this->sql);
-        $this->prepared  = true;
-
-        return $this;
-    }
+    use PreparedStatementTrait;
 
     /**
      * Prepare then execute a reading query

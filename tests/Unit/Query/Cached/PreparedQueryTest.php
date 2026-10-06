@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Tests\Unit\Query\Cached;
 
 use CCMBenchmark\Ting\Connection;
+use CCMBenchmark\Ting\ConnectionPoolInterface;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Query\Cached\PreparedQuery;
@@ -40,6 +41,7 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use tests\fixtures\Fake\MysqliStatement;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\FakeDriver\RecordingDriver;
 
 class PreparedQueryTest extends TestCase
 {
@@ -163,6 +165,54 @@ class PreparedQueryTest extends TestCase
 
         $query = new PreparedQuery('SELECT', $connection);
         $query->selectPrimary(true)->prepareQuery();
+    }
+
+    public function testExecuteAfterQueryShouldPrepareAgainOnThePrimary()
+    {
+        $log = new \ArrayObject();
+        $query = $this->cachedQueryWithReplica('UPDATE t SET a = 1', $log);
+
+        $query->query();
+        $query->execute();
+
+        $this->assertSame(
+            ['prepare on replica', 'execute on replica', 'prepare on primary', 'execute on primary'],
+            $log->getArrayCopy()
+        );
+    }
+
+    public function testSelectPrimaryAfterQueryShouldPrepareAgainOnThePrimary()
+    {
+        $log = new \ArrayObject();
+        $query = $this->cachedQueryWithReplica('SELECT 1', $log);
+
+        $query->query();
+        $query->selectPrimary(true)->query();
+
+        $this->assertSame(
+            ['prepare on replica', 'execute on replica', 'prepare on primary', 'execute on primary'],
+            $log->getArrayCopy()
+        );
+    }
+
+    /**
+     * @param \ArrayObject<int, string> $log
+     */
+    private function cachedQueryWithReplica(string $sql, \ArrayObject $log): PreparedQuery
+    {
+        $pool = $this->createStub(ConnectionPoolInterface::class);
+        $pool->method('primary')->willReturn(new RecordingDriver('primary', $log));
+        $pool->method('replica')->willReturn(new RecordingDriver('replica', $log));
+
+        $services = new TingServices();
+        $cache = $services->cache();
+        $cache->setCache(new ArrayAdapter());
+        $query = new PreparedQuery($sql, new Connection($pool, 'main', 'db'), $services->collectionFactory());
+        $query->setCache($cache);
+        // Forced: the database is read on every query(), the cache is only written
+        $query->setTtl(10)->setCacheKey('myCacheKey')->setForce(true);
+
+        return $query;
     }
 
     public function testExecuteShouldCallStatementExecute()
