@@ -541,16 +541,20 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
 
-                $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
-
-                $this->entitiesChanged->offsetUnset($entity);
+                // The row exists: the entity is managed before its generated id is written back, so that it is not
+                // inserted a second time if that fails (the error is rethrown, the entity stays managed)
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
-
                 $this->mutablePrimaryValues->offsetUnset($entity);
                 // Every value written is known
                 $this->mutablePropertiesNotRead->offsetUnset($entity);
-                $this->keepMutablePrimaryValues($entity, $metadata);
                 $this->manage($entity);
+
+                try {
+                    $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
+                } finally {
+                    // The INSERT wrote every value: no change left, and the generated id is not one
+                    $this->entitiesChanged->offsetUnset($entity);
+                }
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');

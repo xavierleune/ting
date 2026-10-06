@@ -44,7 +44,9 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
 
 * **new entity**: every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
   properties. The generated key is then set on the entity, replacing any value set before (through its setter, see
-  [field options](repositories.md#field-options)) and the entity becomes managed.
+  [field options](repositories.md#field-options)) and the entity becomes managed. It becomes managed as soon as the
+  `INSERT` has run: if reading or setting the generated key fails (a setter that throws, say), the error is rethrown
+  but the entity is not inserted again by its next save.
 * **managed entity**: the properties reported by `propertyChanged()` since the last write (and not set back to their
   old value) are updated, together with every [mutable field](entities.md#mutable-values) (a `\DateTime`, a JSON
   object...), whether it changed or not, except a mutable field left out of a partial read and not set since. If the
