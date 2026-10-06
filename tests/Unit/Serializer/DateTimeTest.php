@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Serializer;
 use CCMBenchmark\Ting\Serializer\DateTime;
 use CCMBenchmark\Ting\Serializer\RuntimeException;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class DateTimeTest extends TestCase
 {
@@ -64,18 +65,96 @@ class DateTimeTest extends TestCase
         $this->assertIsObject($serializer->unserialize('2008-08-04', ['unSerializeUseFormat' => false]));
     }
 
-    public function testUnserializeShouldFallBackToPhpParsingWhenTheFormatDoesNotMatch()
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}> value, format of the check, expected
+     */
+    public static function provideDatabaseValues(): array
+    {
+        return [
+            'MySQL DATETIME / PostgreSQL timestamp' => [
+                '2024-01-31 10:00:00', 'Y-m-d H:i:s.u', '2024-01-31 10:00:00.000000',
+            ],
+            'microseconds' => ['2024-01-31 10:00:00.123456', 'Y-m-d H:i:s.u', '2024-01-31 10:00:00.123456'],
+            'fewer fractional digits' => ['2024-01-31 10:00:00.5', 'Y-m-d H:i:s.u', '2024-01-31 10:00:00.500000'],
+            'PostgreSQL timestamptz' => [
+                '2024-01-31 10:00:00+01', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.000000 +01:00',
+            ],
+            'timestamptz, half-hour offset' => [
+                '2024-01-31 10:00:00-03:30', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.000000 -03:30',
+            ],
+            'offset without colon' => [
+                '2024-01-31 10:00:00+0100', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.000000 +01:00',
+            ],
+            'timestamptz with microseconds' => [
+                '2024-01-31 10:00:00.123456+01', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.123456 +01:00',
+            ],
+            'UTC as Z' => ['2024-01-31 10:00:00Z', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.000000 +00:00'],
+            'DATE, at midnight' => ['2024-01-31', 'Y-m-d H:i:s.u', '2024-01-31 00:00:00.000000'],
+            'ATOM' => ['2024-01-31T10:00:00+01:00', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.000000 +01:00'],
+            'RFC 3339 with a fraction' => [
+                '2024-01-31T10:00:00.25Z', 'Y-m-d H:i:s.u P', '2024-01-31 10:00:00.250000 +00:00',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideDatabaseValues')]
+    public function testUnserializeShouldFallBackToTheDatabaseFormatsWhenTheFormatDoesNotMatch(
+        string $value,
+        string $checkFormat,
+        string $expected
+    ) {
+        $serializer = new DateTime();
+
+        $this->assertSame($expected, $serializer->unserialize($value, ['format' => 'd/m/Y H:i'])->format($checkFormat));
+    }
+
+    public function testUnserializeShouldReadADatabaseDatetimeWithAnotherFormat()
     {
         $serializer = new DateTime();
 
         $this->assertSame(
-            '2024-01-31T10:00:00+01:00',
-            $serializer->unserialize('2024-01-31T10:00:00+01:00')->format(\DateTimeInterface::ATOM)
+            '2024-01-31 10:00:00',
+            $serializer->unserialize('2024-01-31 10:00:00', ['format' => \DateTimeInterface::ATOM])
+                ->format('Y-m-d H:i:s')
         );
-        // PostgreSQL timestamptz
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function provideNonDatabaseValues(): array
+    {
+        return [
+            'now' => ['now'],
+            'tomorrow' => ['tomorrow'],
+            'relative' => ['+1 day'],
+            'US-style date' => ['05/06/2024'],
+            'empty string' => [''],
+            'ISO without offset' => ['2024-01-31T10:00:00'],
+            'time zone name' => ['2024-01-31 10:00:00 Europe/Paris'],
+            'time zone abbreviation' => ['2024-01-31 10:00:00 CET'],
+            'minutes only' => ['2024-01-31 10:00'],
+            'trailing text' => ['2024-01-31 10:00:00 bouh'],
+        ];
+    }
+
+    #[DataProvider('provideNonDatabaseValues')]
+    public function testUnserializeShouldRejectWhatADatabaseDoesNotReturn(string $value)
+    {
+        $serializer = new DateTime();
+
+        $this->assertThrows(RuntimeException::class, function () use ($serializer, $value): void {
+            $serializer->unserialize($value);
+        });
+    }
+
+    public function testUnserializeWithoutFormatShouldUseThePhpParser()
+    {
+        $serializer = new DateTime();
+
         $this->assertSame(
-            '2024-01-31T10:00:00+01:00',
-            $serializer->unserialize('2024-01-31 10:00:00+01')->format(\DateTimeInterface::ATOM)
+            (new \DateTimeImmutable('tomorrow'))->format('Y-m-d H:i:s'),
+            $serializer->unserialize('tomorrow', ['unSerializeUseFormat' => false])->format('Y-m-d H:i:s')
         );
     }
 
