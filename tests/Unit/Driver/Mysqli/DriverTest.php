@@ -959,6 +959,44 @@ class DriverTest extends TestCase
         $driver->prepare('Empty query');
     }
 
+    public function testAFailedPrepareShouldStopTheLog()
+    {
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->error = 'You have an error in your SQL syntax';
+        $mockDriver->errno = 1064;
+        $mockDriver->method('prepare')->willReturn(false);
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startPrepare');
+        $mockLogger->expects($this->once())->method('stopPrepare')->with(sha1('SELEC 1'));
+
+        $driver = new Driver($mockDriver);
+        $driver->setLogger($mockLogger);
+
+        $this->assertThrows(QueryException::class, fn () => $driver->prepare('SELEC 1'));
+    }
+
+    public function testQueriesThrowingAMysqliExceptionShouldStopTheLog()
+    {
+        // Under the report mode MYSQLI_REPORT_ERROR, mysqli throws instead of returning false
+        $exception = new \mysqli_sql_exception('You have an error in your SQL syntax', 1064);
+        $mockDriver = $this->createStub(Mysqli::class);
+        $mockDriver->method('prepare')->willThrowException($exception);
+        $mockDriver->method('query')->willThrowException($exception);
+
+        $mockLogger = $this->createMock(FakeDriverLogger::class);
+        $mockLogger->expects($this->once())->method('startPrepare');
+        $mockLogger->expects($this->once())->method('stopPrepare');
+        $mockLogger->expects($this->once())->method('startQuery');
+        $mockLogger->expects($this->once())->method('stopQuery');
+
+        $driver = new Driver($mockDriver);
+        $driver->setLogger($mockLogger);
+
+        $this->assertThrows(\mysqli_sql_exception::class, fn () => $driver->prepare('SELEC 1'));
+        $this->assertThrows(\mysqli_sql_exception::class, fn () => $driver->execute('SELEC 1'));
+    }
+
     public function testCloseStatementShouldRaiseExceptionOnNonExistentStatement()
     {
         $mockDriver = $this->createStub(Mysqli::class);
@@ -1301,6 +1339,9 @@ class DriverTest extends TestCase
         $this->assertThrows(TransactionException::class, function () use ($driver): void {
             $driver->startTransaction();
         });
+        // The unopened mysqli throws an \Error on insert_id and affected_rows
+        $this->assertThrows(QueryException::class, fn () => $driver->getInsertedId());
+        $this->assertThrows(QueryException::class, fn () => $driver->getAffectedRows());
     }
 
     public function testCloseAfterAFailedReconnectShouldNotTouchTheUnopenedConnection()

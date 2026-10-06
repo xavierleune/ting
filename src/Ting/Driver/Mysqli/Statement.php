@@ -90,9 +90,13 @@ class Statement implements StatementInterface
         if ($this->logger !== null) {
             $this->logger->startStatementExecute($this->objectHash, $params);
         }
-        $this->driverStatement->execute();
-        if ($this->logger !== null) {
-            $this->logger->stopStatementExecute($this->objectHash);
+        try {
+            $this->driverStatement->execute();
+        } finally {
+            // Also when mysqli throws (report mode MYSQLI_REPORT_ERROR)
+            if ($this->logger !== null) {
+                $this->logger->stopStatementExecute($this->objectHash);
+            }
         }
 
         if ($this->driverStatement->errno > 0) {
