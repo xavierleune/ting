@@ -262,7 +262,8 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
 ```
 
 * Cached queries keep the same API (`setTtl()`, `setCacheKey()`, `setForce()`), and `setForce(true)` still recomputes
-  and stores the result. Concurrent misses on the same key are now protected against cache stampede by Symfony.
+  and stores the result. Concurrent misses on the same key are now protected against cache stampede by Symfony,
+  between the processes of a same host with its default lock (see [Cache](docs/cache.md#how-it-works)).
   Two behaviours change with Symfony pools:
   * a TTL of `0` stores the item without expiration of its own (`expiresAfter(null)`), so the pool's default lifetime
     applies: a pool created with a default lifetime expires these items, unlike doctrine/cache;

@@ -17,8 +17,10 @@ read with different hydrators.
 
 `CollectionInterface::isFromCache()` tells whether a collection was filled from the cache.
 
-Concurrent misses on the same key are protected against cache stampede by Symfony: only one process computes the
-value while the others wait for it.
+Concurrent misses on the same key are protected against cache stampede by the pools of `symfony/cache`: by default,
+their lock (Symfony's `LockRegistry`, made of local file locks) only coordinates the processes of a same host. On a
+host, one process computes the value while the others wait for it; each host still computes it once, so a key missing
+from a shared pool (Redis, Memcached) is computed by as many processes as there are hosts.
 
 ## Setting up the cache
 
