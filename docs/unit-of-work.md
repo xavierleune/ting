@@ -95,7 +95,7 @@ and leaves no transaction open, so a `rollback()` after it would throw too and h
 
 | Method                                                              | Returns `true` when                                        |
 |---------------------------------------------------------------------|------------------------------------------------------------|
-| `isManaged(NotifyPropertyInterface $entity)`                        | the entity is managed or queued                            |
+| `isManaged(NotifyPropertyInterface $entity)`                        | the entity is managed: hydrated by Ting, inserted, or passed to `manage()`, and not detached since. A new entity queued by `pushSave()` is not managed until its `INSERT` has run, and `pushDelete()` of an entity not managed does not make it managed |
 | `isNew(NotifyPropertyInterface $entity)`                            | the entity is queued for an `INSERT`                       |
 | `shouldBePersisted(NotifyPropertyInterface $entity)`                | the entity is queued (save or delete)                      |
 | `shouldBeRemoved(NotifyPropertyInterface $entity)`                  | the entity is queued for a `DELETE`                        |

@@ -110,9 +110,11 @@ $cityRepository = $repositoryFactory->get(CityRepository::class);
 ### Options
 
 The second argument of `initMetadata()` receives options passed to `batchLoadMetadata()` (or
-`batchLoadMetadataFromCache()`): the `default` key applies to every repository, a key named after the repository class
-(as built from the namespace and file name) applies to that repository only and is merged over `default`. This lets you
-vary the metadata by environment, for instance the database name:
+`batchLoadMetadataFromCache()`): the `default` key applies to every repository, a key named after the class declaring
+`initMetadata()` (as built from the namespace and file name) applies to that class only and is merged over `default`.
+This is the repository class in the usual case; when `initMetadata()` lives in another class that calls
+`setRepository()`, use the name of that class, not the one given to `setRepository()`. This lets you vary the metadata
+by environment, for instance the database name:
 
 ```php
 $metadataRepository->batchLoadMetadata(
@@ -231,10 +233,11 @@ constructor arguments, and shared by every field using it: keep it stateless. Th
 
 namespace App\Serializer;
 
+use CCMBenchmark\Ting\Serializer\ArrayValueInterface;
 use CCMBenchmark\Ting\Serializer\RuntimeException;
 use CCMBenchmark\Ting\Serializer\SerializerInterface;
 
-final class CommaSeparatedList implements SerializerInterface
+final class CommaSeparatedList implements SerializerInterface, ArrayValueInterface
 {
     public function serialize($toSerialize, array $options = []): ?string
     {
@@ -269,21 +272,39 @@ $metadata->addField([
         'serialize'   => ['separator' => '|'],
         'unserialize' => ['separator' => '|'],
     ],
+    'mutable'            => false,
 ]);
 ```
+
+Two choices in this example depend on the PHP value of the serializer:
+
+* Its PHP value is an array, so it implements the marker interface `Serializer\ArrayValueInterface`: an array given in
+  the criteria of `getBy()` / `getOneBy()` / `get()` is serialized as a whole and compared with `=`
+  (`getBy(['roles' => ['admin', 'editor']])` looks for `'admin|editor'`). Without the interface, it would become an
+  `IN` list of its elements, each sent as is (see [criteria keys and values](#criteria-keys-and-values)). Likewise, a
+  serializer whose PHP value is a scalar converted for the database (as `Ip`) implements
+  `Serializer\ScalarValueInterface`.
+* A PHP array cannot be modified in place, behind the entity's back: changing it means calling the setter, which
+  notifies the change. `'mutable' => false` says so; without it, the field of a serializer of your own is
+  [mutable](entities.md#mutable-values) by default, and written by every save of a managed entity. Keep the default
+  (`true`) for a serializer whose PHP value is an object that can be modified in place.
 
 ## Reading
 
 ```php
-public function get(mixed $primariesKeyValue, bool $forcePrimary = false);
-public function getOneBy(array $criteria, bool $forcePrimary = false);
+public function get(mixed $primariesKeyValue, bool $forcePrimary = false): ?object;
+public function getOneBy(array $criteria, bool $forcePrimary = false): ?object;
 public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface;
-public function getAll($forcePrimary = false): CollectionInterface;
+public function getAll(bool $forcePrimary = false): CollectionInterface;
 ```
 
 `get()` and `getOneBy()` return the entity, or `null` when no row matches. `getBy()` and `getAll()` return a
 collection of entities. Reads go to a replica connection when the connection has replicas; pass `$forcePrimary = true`
 to read from the primary, for instance right after a write.
+
+These methods are declared with native types: a repository overriding one of them must declare compatible types,
+return type included (`public function getAll(bool $forcePrimary = false): CollectionInterface`), otherwise PHP raises
+a fatal error when loading the class.
 
 ```php
 use App\Entity\CityStatus;

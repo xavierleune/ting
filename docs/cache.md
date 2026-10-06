@@ -78,7 +78,7 @@ class UserRepository extends Repository implements MetadataInitializer
         $query = $this->getCachedPreparedQuery('SELECT id, name FROM user WHERE name = :name');
         $query->setParams(['name' => $name])
             ->setCacheKey('users_by_name_' . md5($name))
-            ->setTtl(0) // the pool's default lifetime
+            ->setTtl(0) // no lifetime of its own: the pool's default lifetime applies
             ->setForce($refresh);
 
         return $query->query($this->getCollection(new HydratorSingleObject()));
@@ -99,7 +99,7 @@ $users->isFromCache(); // true
 | Method                          | Description                                                                                       |
 |---------------------------------|---------------------------------------------------------------------------------------------------|
 | `setCacheKey(string $cacheKey)` | Required. Key of the result in the cache.                                                         |
-| `setTtl(int $ttl)`              | Required. Lifetime in seconds. `0` means no expiration of its own (the pool's default lifetime applies). A negative TTL throws a `QueryException`. |
+| `setTtl(int $ttl)`              | Required. Lifetime in seconds. `0` gives the item no lifetime of its own: the pool's default lifetime applies, so it never expires only in a pool created without default lifetime A negative TTL throws a `QueryException`. |
 | `setForce(bool $value)`         | When true, always run the query and store its result, even if the key is in the cache.            |
 
 All of them return the query, so calls can be chained. Calling `query()` without a TTL or without a cache key throws a
