@@ -61,6 +61,19 @@ class Result implements ResultInterface
         REGEX;
 
     /**
+     * A column, table.column or [database.]schema.table.column: its last part is named <name>
+     */
+    private const COLUMN_REFERENCE = '(?:(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)*+'
+        . '(?<name>"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)';
+
+    /**
+     * A type name: a multi-word type, or a (schema-qualified) name with its modifiers, then array brackets
+     */
+    private const TYPE_NAME = '(?:double\s+precision|(?:character|bit)\s+varying'
+        . '|(?:timestamp|time)(?:\s*\(\s*\d+\s*\))?\s+with(?:out)?\s+time\s+zone'
+        . '|[a-z_][a-z0-9_$]*+(?:\s*\.\s*[a-z_][a-z0-9_$]*+)?(?:\s*\([\d\s,]*+\))?)(?:\s*\[\s*\d*+\s*\])*+';
+
+    /**
      * A column of [database.]schema.table.column
      */
     private const QUALIFIED_NAME = '/^(?:(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)++'
@@ -241,6 +254,13 @@ class Result implements ResultInterface
                             $qualified = self::match(self::QUALIFIED_NAME, $column);
                             $matches['column'] = $column;
                             $matches['alias'] = $qualified ? $matches['alias'] : '?column?';
+                        }
+
+                        // A whole column made of a cast of a column, or of AT TIME ZONE: named as PostgreSQL does
+                        $expressionName = $noAlias === false ? self::expressionName($column) : null;
+                        if ($expressionName !== null) {
+                            $matches['column'] = $column;
+                            $matches['alias'] = $expressionName;
                         }
 
                         $columnComponent = [
@@ -505,6 +525,31 @@ class Result implements ResultInterface
     private static function pcreFailure(string $action): QueryException
     {
         return new QueryException('Query invalid: can\'t ' . $action . ' (' . preg_last_error_msg() . ')');
+    }
+
+    /**
+     * The name PostgreSQL gives to a column made of a cast of a column (id::text, CAST(u.id AS text): the name of the
+     * column) or of AT TIME ZONE (timezone, the function it calls); null for any other expression
+     */
+    private static function expressionName(string $column): ?string
+    {
+        if (
+            self::match('/^' . self::COLUMN_REFERENCE . '(?:\s*::\s*' . self::TYPE_NAME . ')++$/i', $column, $matches)
+            || self::match(
+                '/^cast\s*\(\s*' . self::COLUMN_REFERENCE . '\s+as\s+' . self::TYPE_NAME . '\s*\)$/i',
+                $column,
+                $matches
+            )
+        ) {
+            return $matches['name'];
+        }
+
+        $operand = '(?:' . self::COLUMN_REFERENCE . "|'(?:[^']|'')*+')";
+        if (self::match('/(?J)^' . $operand . '\s+at\s+time\s+zone\s+' . $operand . '$/i', $column)) {
+            return 'timezone';
+        }
+
+        return null;
     }
 
     /**

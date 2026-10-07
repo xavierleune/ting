@@ -566,9 +566,26 @@ class ResultTest extends TestCase
                     ['name' => '?column?', 'orgName' => 'NOT flag', 'table' => '', 'schema' => ''],
                     ['name' => '?column?', 'orgName' => '-amount', 'table' => '', 'schema' => ''],
                     ['name' => '?column?', 'orgName' => 'a IS DISTINCT FROM t.b', 'table' => '', 'schema' => ''],
-                    ['name' => '?column?', 'orgName' => 'b::text', 'table' => '', 'schema' => ''],
-                    ['name' => '?column?', 'orgName' => 'ts AT TIME ZONE tz', 'table' => '', 'schema' => ''],
+                    ['name' => 'b', 'orgName' => 'b::text', 'table' => '', 'schema' => ''],
+                    ['name' => 'timezone', 'orgName' => 'ts AT TIME ZONE tz', 'table' => '', 'schema' => ''],
                     $id,
+                ],
+            ],
+            'casts of a column, named after the column' => [
+                'SELECT id::text, u.n::double precision, x::timestamp(0) with time zone, CAST(u.code AS varchar(10)),'
+                . ' t.tags::text[], y::int::text, "Name"::text, (a + b)::text, id::text || \'x\', d::date c FROM city',
+                [],
+                [
+                    ['name' => 'id', 'orgName' => 'id::text', 'table' => '', 'schema' => ''],
+                    ['name' => 'n', 'orgName' => 'u.n::double precision', 'table' => '', 'schema' => ''],
+                    ['name' => 'x', 'orgName' => 'x::timestamp(0) with time zone', 'table' => '', 'schema' => ''],
+                    ['name' => 'code', 'orgName' => 'CAST(u.code AS varchar(10))', 'table' => '', 'schema' => ''],
+                    ['name' => 'tags', 'orgName' => 't.tags::text[]', 'table' => '', 'schema' => ''],
+                    ['name' => 'y', 'orgName' => 'y::int::text', 'table' => '', 'schema' => ''],
+                    ['name' => 'Name', 'orgName' => 'Name"::text', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => '(a + b)::text', 'table' => '', 'schema' => ''],
+                    ['name' => "id::text || 'x'", 'orgName' => "id::text || 'x'", 'table' => '', 'schema' => ''],
+                    ['name' => 'c', 'orgName' => 'd::date', 'table' => '', 'schema' => ''],
                 ],
             ],
             'expressions with an alias without AS' => [
