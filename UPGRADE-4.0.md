@@ -940,6 +940,13 @@ Queries, Entities and the Unit of Work
   backslash reaching MySQL must double it.
 * **SphinxQL quotes values as Mysqli does**: `null` is sent as `NULL` and booleans as `0` / `1`. 3.x sent `null` and
   `false` as `''` (with a "Passing null to parameter" deprecation) and `true` as `'1'`.
+* **PostgreSQL: `'f'` is read as `false`, and `false` is sent as `'0'`**: a `bool` field without serializer now hydrates
+  the string `'f'` as `false`, whatever the driver (3.x cast it with `(bool)`, so the `'f'` PostgreSQL returns for false
+  was read as `true`). The Pgsql driver sends a PHP boolean parameter as `'1'` / `'0'`: 3.x sent `true` as `'1'` and
+  `false` as `''`, which PostgreSQL rejects for a boolean or numeric column and a text column stored as is, so a `false`
+  bound to a text column now stores `'0'`. Check the text columns written with booleans. The serializer of the driver
+  (`Driver\Pgsql\Serializer\Boolean`) is still the way to declare a `bool` field, see
+  [Types](docs/repositories.md#types).
 * **`NotifyProperty::__serialize()` and `__debugInfo()` return mangled keys** (`"\0*\0name"` for a protected property,
   `"\0App\Entity\City\0name"` for a private one, as `get_mangled_object_vars()`), so that the private properties of a
   parent or child class are no longer lost. `serialize()` / `unserialize()` and `var_dump()` are not affected, and

@@ -88,6 +88,9 @@ several times in the SQL. Give a value for every placeholder: a missing one rais
 `CCMBenchmark\Ting\Driver\QueryException`. PostgreSQL casts (`::text`) and times (`12:30`) are not taken for
 placeholders; to write a literal `:name` in the SQL, escape the colon (`'\:name'`).
 
+A PHP `null` is sent as `NULL`, and a PHP boolean as `1` / `0` (`'1'` / `'0'` with PostgreSQL, which a boolean, numeric
+or text column accepts).
+
 ### Executing and reading the results
 
 `query()` runs a reading query (`SELECT`, `SHOW`...) and returns a `CCMBenchmark\Ting\Repository\CollectionInterface`.
