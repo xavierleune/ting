@@ -58,6 +58,9 @@ class MetadataRepository
      */
     private array $tableWithConnectionToMetadata = [];
 
+    /** @var array<string, array<string, bool>> entity class => property name => mapped by some metadata of the class */
+    private array $mappedProperties = [];
+
     public function __construct(
         protected SerializerFactoryInterface $serializerFactory,
         private ?CacheItemPoolInterface $cacheItemPool = null
@@ -303,6 +306,7 @@ class MetadataRepository
             $metadata->setRepository($repositoryClass);
         }
         $this->metadataList[$repositoryClass] = $metadata;
+        $this->mappedProperties = [];
         // By repository: registered again (a repository registers its metadata when built), it is not duplicated
         $this->tableWithConnectionToMetadata[$metadata->getConnectionName() . '#' . $metadata->getTable()]
             [$repositoryClass] = $metadata->getSchema() . '#' . $metadata->getDatabase();
@@ -411,6 +415,28 @@ class MetadataRepository
         }
 
         return $repositoryOptions;
+    }
+
+    /**
+     * @param class-string $entityClass
+     * @return bool true when some metadata registered for the class (of any repository) map the property
+     *
+     * @internal
+     */
+    public function isPropertyMapped(string $entityClass, string $property): bool
+    {
+        if (isset($this->mappedProperties[$entityClass][$property]) === false) {
+            $mapped = false;
+            foreach ($this->metadataList as $metadata) {
+                if ($metadata->getEntity() === $entityClass && $metadata->hasProperty($property)) {
+                    $mapped = true;
+                    break;
+                }
+            }
+            $this->mappedProperties[$entityClass][$property] = $mapped;
+        }
+
+        return $this->mappedProperties[$entityClass][$property];
     }
 
     /**

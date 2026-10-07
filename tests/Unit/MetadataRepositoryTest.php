@@ -865,6 +865,27 @@ class MetadataRepositoryTest extends TestCase
         $this->assertSame('CityEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
     }
 
+    public function testIsPropertyMappedShouldLookAtEveryMetadataOfTheClass(): void
+    {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+        $full = BouhRepository::initMetadata($services->serializerFactory());
+        $light = new Metadata($services->serializerFactory());
+        $light->setEntity(Bouh::class);
+        $light->addField(['primary' => true, 'fieldName' => 'id', 'columnName' => 'boo_id', 'type' => 'int']);
+        $metadataRepository->addMetadata(BouhRepository::class, $full);
+
+        $this->assertFalse($metadataRepository->isPropertyMapped(Bouh::class, 'price'));
+        // Registered last: the full metadata still map "name"
+        $metadataRepository->addMetadata('BouhLightRepository', $light);
+        $light->addField(['fieldName' => 'price', 'columnName' => 'boo_price', 'type' => 'int']);
+        $metadataRepository->addMetadata('BouhLightRepository', $light);
+
+        $this->assertTrue($metadataRepository->isPropertyMapped(Bouh::class, 'name'));
+        $this->assertTrue($metadataRepository->isPropertyMapped(Bouh::class, 'price'));
+        $this->assertFalse($metadataRepository->isPropertyMapped(Bouh::class, 'enabled'));
+    }
+
     public function testFindMetadataForAnUnknownEntityWithoutCallbackNotFoundShouldDoNothing()
     {
         $services = new TingServices();
