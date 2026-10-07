@@ -405,7 +405,8 @@ $hydrator->identityMap(true);
 
 The map lives for one result: given a new result (a hydrator kept as a service, or given to several `getCollection()`
 calls), the hydrator starts an empty map, so a new read returns new objects holding the values read, even for an alias
-naming another table. An entity the map returns again is managed again if it was detached meanwhile. It requires the entity's primary key in the selected columns (every column of a composite
+naming another table. A result read while another is iterated (a nested read with the same hydrator) has its own
+map, and leaves the map of the other one alone. An entity the map returns again is managed again if it was detached meanwhile. It requires the entity's primary key in the selected columns (every column of a composite
 key): an entity whose key is missing or `null` in the row is not kept. To enable it by default, enable it on the
 hydrator given to the `CollectionFactory` (see [Getting started](getting-started.md)): it then applies to the
 collections that use that hydrator, those of `getCollection()` without hydrator and of a query run without collection
