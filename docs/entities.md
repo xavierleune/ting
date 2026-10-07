@@ -39,7 +39,7 @@ class City implements NotifyPropertyInterface
         return $this->id;
     }
 
-    public function setId(int $id): void
+    public function setId(?int $id): void
     {
         $this->propertyChanged('id', $this->id, $id);
         $this->id = $id;
@@ -125,6 +125,9 @@ A few rules:
   original value before the save is not updated.
 * A property that never calls `propertyChanged()` is still written on `INSERT`, but its changes are never `UPDATE`d.
 * A property notified by `propertyChanged()` but not mapped in the metadata is ignored by the unit of work.
+* Make the `autoincrement` id nullable, `null` by default (`private ?int $id = null;`, `setId(?int $id)`): saved
+  without being managed, an entity holding an id (`0` included) is taken as a stored row and updated, one with a
+  `null` id is inserted (see [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)).
 * Hydration goes through the same setters (unless the metadata says otherwise). A setter must accept every value the
   column can hold: if the column is nullable, type the parameter as nullable (`?\DateTimeImmutable` above), or
   hydration fails with a `TypeError`.
@@ -140,11 +143,12 @@ So Ting splits the fields in two:
 * **immutable** fields (scalars, `\DateTimeImmutable`, `\DateTimeZone`, enums, UUIDs, IPs, geometries, JSON decoded to
   arrays): their value can only change through the setter, they are updated **when notified**;
 * **mutable** fields (`\DateTime`, JSON decoded to objects, values of a serializer of your own): no notification tells
-  that they changed, so the unit of work compares them. When the entity becomes managed (hydrated, inserted, passed
-  to `manage()`), it keeps the **database value** of each of its mutable fields: the value Ting would write back,
-  that is the hydrated value serialized again (not the raw column value). On save, a mutable field is written when its
-  current database value differs from the kept one, or when its change was notified through its setter. After the
-  `INSERT` or `UPDATE`, the value written is the kept one.
+  that they changed, so the unit of work compares them. When the entity is hydrated, it keeps the **raw value** of
+  each mutable column read, as the driver returned it: nothing is serialized by a read. When it becomes managed
+  otherwise (inserted, updated as an entity not managed, passed to `manage()`), it keeps the value Ting would write.
+  On save, a mutable field is unchanged when its current database value is the kept one, or the kept raw value
+  unserialized then serialized again (the value Ting would write back once read); it is written otherwise, or when
+  its change was notified through its setter. After the `INSERT` or `UPDATE`, the value written is the kept one.
 
 Comparing database values means that a value which does not survive a round trip is not rewritten by an unrelated
 save, as long as it is not modified: the microseconds of a `DATETIME(6)` column read by a `Y-m-d H:i:s` serializer, a
@@ -154,8 +158,14 @@ place or through the setter), the field is written with what Ting can write: the
 big integer are then lost.
 
 The kept values are packed into one string per entity, held weakly by the unit of work, for the managed entities that
-have a mutable field only. Hydrating such an entity serializes each of its mutable fields once more (about 3 µs and
-220 bytes per entity with two dates and a JSON object); saving it serializes them as the `UPDATE` needs anyway.
+have a mutable field only: they take about the memory of the raw values. Hydrating costs nothing more; saving
+serializes the mutable fields as the `UPDATE` needs anyway, and unserializes a kept raw value only when it differs from
+the current database value.
+
+Change tracking never makes a read fail: a value Ting can read but not write back (a JSON number too large, decoded to
+`INF`; a document deeper than the encoding depth; a getter refusing `null`) is hydrated and managed. Writing it fails,
+as it would without the comparison. A kept raw value that cannot be unserialized again is taken as changed: the field
+is written.
 
 A mutable field is only compared, and written, when its value is **known**: read from the database, set through its
 setter, or written by the `INSERT` of the entity. An entity read **partially** (a query selecting some of its columns,
@@ -172,14 +182,20 @@ only reachable through a setter, it hydrates a `\DateTime` (mutable), as in 3.x.
 `mutable` option of the field, see [field options](repositories.md#field-options) — `'mutable' => false` on a field
 you only ever replace through its setter (a readonly value object serialized by your own serializer, for instance).
 
-`UnitOfWork::isPropertyChanged()` tells whether a mutable field will be written: its change was notified, or its
-database value differs from the kept one. A serializer returning an object, rather than a scalar, makes its field
-always different, so always written.
+`UnitOfWork::isPropertyChanged()` tells whether a mutable field of a managed entity will be written: its change was
+notified, or its database value differs from the kept one. A serializer returning an object, rather than a scalar,
+makes its field always different, so always written. For a new entity or an entity not managed, see
+[Inspecting the state](unit-of-work.md#inspecting-the-state).
 
 Prefer immutable values: type your dates `\DateTimeImmutable` (not `\DateTimeInterface`), decode JSON to arrays
 (`'serializer_options' => ['unserialize' => ['assoc' => true]]`), make your value objects `readonly`, and replace them
-through the setter: nothing is kept nor compared for them. A mutable primary key (a `\DateTime` key, say) modified in
-place still targets its row: the `UPDATE` (or `DELETE`) finds it by its kept database value.
+through the setter: nothing is kept nor compared for them. A mutable primary key (a `\DateTime` key, say), modified
+in place or not, targets its row by its kept database value: the `UPDATE` (or `DELETE`) finds it by the value read,
+microseconds included.
+
+A clone shares the objects its properties hold with its original: a `\DateTime` modified in place on the clone is
+modified on the original too. Clone such values in `__clone()`, or prefer immutable ones (see
+[Clones](unit-of-work.md#clones)).
 
 ## How Ting reads and writes properties
 
@@ -278,13 +294,14 @@ The conversion between the PHP value and the column is done by a serializer decl
 
 ## Debugging and serialization
 
-The `NotifyProperty` trait stores the listeners (the unit of work) in a `$listeners` property, and a weak reference to
-the object they were added to in a `$listenersOwner` property: `clone` copies it, so that the unit of work recognizes
-the clone of a managed entity (see [Saving a clone](unit-of-work.md#saving-a-clone)). To keep them out of the way:
+The `NotifyProperty` trait stores the listeners (the unit of work) in a `$listeners` property. A listener is added
+once: a clone copies the listeners of its original, and the unit of work does not add itself again when it manages
+the clone. To keep them out of the way:
 
 * `var_dump()` and other debug tools only show the entity's own properties (`__debugInfo()`);
 * `serialize()` leaves them out (`__serialize()`), so an entity can be stored in a session or a cache. Every other
   property is kept, including the private properties of a parent class. An entity defining its own `__serialize()`
-  must leave them out too: a `WeakReference` cannot be serialized. An unserialized entity is a new object, not managed
-  by the unit of work, and not a clone: saving it inserts it, unless you
-  [manage it](unit-of-work.md#managing-an-entity-yourself) first.
+  must leave them out too. An unserialized entity is a new object, not managed by the unit of work: saving it updates
+  every field of its row when it holds its `autoincrement` id (see
+  [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)), unless you
+  [manage it](unit-of-work.md#managing-an-entity-yourself) first, which writes its changes only.
