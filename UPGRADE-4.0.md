@@ -363,7 +363,8 @@ UnitOfWork
   serialized again), together with the notified changes of the other fields. A value which does not survive a round
   trip (microseconds, a time in a DST gap, a zero date, a JSON big integer, JSON spaces) is not rewritten while it is
   not modified. `UnitOfWork::isPropertyChanged()` is `true` for a mutable field whose database value changed. A read
-  serializes nothing, and never fails because of this tracking. By default, a field is mutable when its
+  serializes nothing, and never fails because of this tracking; a field whose database value cannot be computed (a
+  getter refusing `null`, a JSON value decoded to `INF`) is taken as unchanged unless set through its setter. By default, a field is mutable when its
   serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable`),
   `Serializer\Json` decoding objects (without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag), or a serializer of your
   own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
@@ -387,8 +388,13 @@ UnitOfWork
   entity and a lighter projection), the fields not read and the kept values of the mutable fields are those of the
   metadata the entity was read with, not those registered last for the class. Saved through another repository, the
   fields the reading metadata do not map are written only when set through their setter, and a save only forgets the
-  changes it wrote. `UnitOfWork::manage()` takes these metadata as an optional second argument (the hydrators give
-  them).
+  changes it wrote (and those no metadata of the class maps). `UnitOfWork::manage()` takes these metadata as an
+  optional second argument (the hydrators give them): a class overriding `manage()` must declare it
+  (`manage(NotifyPropertyInterface $entity, ?Metadata $metadata = null): void`), otherwise PHP refuses the override,
+  and pass it on to `parent::manage()`, otherwise the entity is tracked with the metadata registered for its class
+  again. Likewise, the protected `Metadata::getPrimariesKeyValuesByProperties()` takes an optional third argument,
+  `array $storedPrimaries = []` (the kept values of the mutable primary keys): an override must declare it and use it,
+  otherwise a mutable primary key no longer targets its row by the value read.
 
 Serializers
 -----------
@@ -951,7 +957,8 @@ Queries, Entities and the Unit of Work
   - an entity deleted keeps its id: saving it again updates no row;
   - an entity inserted in a transaction rolled back is inserted again by its next save, its id replaced: the Mysqli and
     Pgsql drivers tell the unit of work (new optional `Driver\RollbackListenerAwareDriverInterface`); with a driver of
-    your own not implementing it, set its id back to `null` before retrying.
+    your own not implementing it, the entity stays managed and its next save writes nothing: `detach()` it (or
+    `detachAll()`), then set its id back to `null` before retrying.
 
   See [Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed) and
   [Transactions](docs/unit-of-work.md#transactions).
@@ -1015,7 +1022,8 @@ Elements that became `@internal` in 4.0:
   entity it inserts in a transaction, and expects `RollbackListenerInterface::rolledBack($subject)` when the
   transaction ends without being committed (rollback, failed `COMMIT`, connection lost or closed), nothing once it is
   committed. The Mysqli and Pgsql drivers implement it. Without it, an entity inserted in a transaction rolled back
-  keeps its generated id and its next save is an `UPDATE` of a row that does not exist.
+  stays managed with its generated id, as if its row existed: its next save writes nothing (or updates a row that does
+  not exist). `detach()` it (or `detachAll()`), then set its id back to `null` to insert it again.
 
 * An INSERT without any value (an entity with only an autoincrement field, or with no field initialized) is written
   `INSERT INTO t () VALUES ()` (MySQL syntax) unless the driver implements
