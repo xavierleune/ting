@@ -1471,6 +1471,18 @@ class UnitOfWorkTest extends TestCase
 
         $this->assertSame(INF, $entity->getPayload()?->v);
         $this->assertTrue($unitOfWork->isManaged($entity));
+
+        // Its database value cannot be computed: taken as unchanged, as 3.13 did not write it either
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $entity->setTitle('new');
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame([['v1_doc_title' => 'new', 'w1_doc_id' => 1]], $params);
+
+        // Set through its setter: written, so the error of its serializer is thrown
+        $entity->setPayload((object) ['v' => INF]);
+        $this->assertThrows(\Throwable::class, function () use ($unitOfWork, $entity): void {
+            $unitOfWork->pushSave($entity)->process();
+        });
     }
 
     #[AllowMockObjectsWithoutExpectations]
