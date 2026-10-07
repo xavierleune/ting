@@ -849,7 +849,18 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return null;
         }
 
-        [$readable, $value] = $metadata->getEntityPropertyIfReadable($entity, $property);
+        try {
+            [$readable, $value] = $metadata->getEntityPropertyIfReadable($entity, $property);
+        } catch (\Throwable $exception) {
+            if ($this->isChangeNotified($entity, $property)) {
+                throw $exception;
+            }
+
+            // Its getter or its serializer throws (a getter refusing null, a JSON value decoded to INF): its database
+            // value cannot be computed, it is taken as unchanged (3.13 wrote notified changes only)
+            return null;
+        }
+
         if ($readable === false) {
             return null;
         }
