@@ -242,7 +242,7 @@ class MetadataRepository
 
     /**
      * Strict comparison, whatever the order of the keys of an array: assoc null and false, 1 and true, or "1" and 1
-     * are different options. Objects are the same when identical, or of the same class (not a closure) with the same
+     * are different options, two NAN the same. Objects are the same when identical, or of the same class (not a closure) with the same
      * properties
      */
     private static function isSameValue(mixed $value, mixed $other): bool
@@ -267,6 +267,11 @@ class MetadataRepository
                     && !$value instanceof Closure
                     && self::isSameValue((array) $value, (array) $other)
                 );
+        }
+
+        // NAN is never equal to itself, but two NAN options are the same option
+        if (\is_float($value) && \is_float($other) && is_nan($value) && is_nan($other)) {
+            return true;
         }
 
         return $value === $other;
