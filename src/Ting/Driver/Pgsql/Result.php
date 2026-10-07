@@ -152,10 +152,12 @@ class Result implements ResultInterface
             };
         }
 
-        // Schema, table and alias: a quoted identifier (any character, "" for a double quote) or a name
+        // Schema, table and alias: a quoted identifier (any character, "" for a double quote) or a name, ended by a
+        // space, the end of the statement (;), a comma or a parenthesis
         preg_match_all(
             '/(?:join|from)\s+(?:(?<schema>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]+).)*?(?<table>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]+)'
-            . '\s*(?:as)?\s*(?!"?\b(' . self::SQL_TABLE_SEPARATOR . ')\b)(?<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?(\s|$)/is',
+            . '\s*(?:as)?\s*(?!"?\b(' . self::SQL_TABLE_SEPARATOR . ')\b)(?<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?'
+            . '(?=[\s;,)]|$)/is',
             $tableSearch,
             $matches,
             PREG_SET_ORDER
@@ -164,7 +166,8 @@ class Result implements ResultInterface
         // Unquoted identifiers, lowercase: as pg_field_table() names the tables and as the columns name them
         foreach ($matches as $match) {
             $table = $this->identifierKey($match['table']);
-            $alias = $match['alias'] !== '' ? $this->identifierKey($match['alias']) : $table;
+            // A trailing group left unmatched is unset
+            $alias = ($match['alias'] ?? '') !== '' ? $this->identifierKey($match['alias']) : $table;
             $tableToAlias[$table] = $alias;
             $aliasToSchema[$alias] = $this->identifierKey($match['schema']);
         }
