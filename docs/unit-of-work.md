@@ -85,8 +85,9 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   already stored. It is updated by its primary key with **every** readable mapped field (the primary key is in the
   `WHERE` clause, uninitialized typed properties are left out), then managed: its next saves write its changes only.
   `isNew()` is `false`;
-* otherwise (no `autoincrement` field, a natural or composite key, or the property `null` or not initialized): the
-  entity is new. Every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
+* otherwise (no `autoincrement` field, a natural or composite key, the property `null` or not initialized, or no
+  property named after the `autoincrement` field, reached through `getter` / `setter` options only): the entity is
+  new. Every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
   properties. The generated key is then set on the entity (through its setter, see
   [field options](repositories.md#field-options)) and the entity becomes managed. It becomes managed as soon as the
   `INSERT` has run: if reading or setting the generated key fails (a setter that throws, say), the error is rethrown
@@ -181,16 +182,18 @@ After a rollback, the rows written in the transaction no longer exist, or no lon
   pushed again as they are, they are inserted again (`isNew()` is `true`), and their id is replaced by the newly
   generated one. This holds whatever ended the transaction: `rollback()`, a failed `commit()` (or a PostgreSQL
   `COMMIT` of an aborted transaction), or the connection lost or closed (`ping()` reconnecting, `close()`,
-  `ConnectionPool::reset()`). It survives `detach()` and `detachAll()`: the retry can push the same objects. A queued
-  save of such an entity becomes an `INSERT`, a queued deletion is dropped;
+  `ConnectionPool::reset()`). It survives `detach()`, `detachAll()` and `reset()`: the retry can push the same objects.
+  A queued save of such an entity becomes an `INSERT`, a queued deletion is dropped;
 * **the entities updated** in the transaction stay managed, but their changes are forgotten (written, then rolled
-  back): their objects no longer match the database. To retry (after a deadlock, say), read them again and apply your
-  changes to the fresh objects. `detachAll()` makes the unit of work forget the stale ones.
+  back): their objects no longer match the database. Pushed again as they are, they **write nothing**: no change is
+  left, and setting the same value again is not a change. To retry (after a deadlock, say), read them again and apply
+  your changes to the fresh objects. Or `detachAll()` (or `detach()` them) first: no longer managed, they are then
+  saved as [entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field.
 
 This protection needs a driver implementing `CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface`, as the
 Mysqli and Pgsql drivers do. With a driver that does not implement it (a driver of your own), an entity inserted in a
-rolled back transaction is still taken as a stored row: set its `autoincrement` property back to `null` before saving
-it again.
+rolled back transaction stays managed, as if its row existed: saved again, it writes nothing. `detach()` it (or
+`detachAll()`), then set its `autoincrement` property back to `null` before saving it again: it is then inserted.
 
 ## Inspecting the state
 
@@ -202,16 +205,16 @@ it again.
 | `shouldBeRemoved(NotifyPropertyInterface $entity)`                  | the entity is queued for a `DELETE`                        |
 | `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property will be written by the next save of a managed entity: its change was notified, or it is a mutable field, not left out of the read, whose database value differs from the one read or last written |
 
-`isPropertyChanged()` is about managed entities. For an entity not managed, it is `true` only for the changes notified
-to the unit of work, which are ignored for such an entity: a new entity is inserted whole, and an entity not managed
-holding its id is updated with every field, whatever `isPropertyChanged()` says.
+`isPropertyChanged()` is about managed entities. For an entity not managed (new, detached...), it is `false`: its
+changes are not recorded. Saved, a new entity is inserted whole, and an entity not managed holding its id is updated
+with every field.
 
 ## Managing an entity yourself
 
 `manage()` starts tracking an entity that was not hydrated by Ting, for instance one rebuilt from a cache or a
 session. The entity must already exist in the database, and its primary key must be set: the next `pushSave()` will
 `UPDATE` the properties changed after the call to `manage()` only: the current values of its mutable fields are taken
-as the stored ones (a value whose getter or serializer throws is not kept: that field is written by the next save).
+as the stored ones (a field whose getter or serializer throws is taken as unchanged: written only once set through its setter).
 Its metadata are those registered for its class, unless you give others: `manage($entity, $metadata)`.
 
 ```php

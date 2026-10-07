@@ -162,9 +162,11 @@ have a mutable field only: they take about the memory of the raw values. Hydrati
 serializes the mutable fields as the `UPDATE` needs anyway, and unserializes a kept raw value only when it differs from
 the current database value.
 
-Change tracking never makes a read fail: a value Ting can read but not write back (a JSON number too large, decoded to
-`INF`; a document deeper than the encoding depth; a getter refusing `null`) is hydrated and managed. Writing it fails,
-as it would without the comparison. A kept raw value that cannot be unserialized again is taken as changed: the field
+Change tracking never makes a read fail, nor a save of other fields: a value Ting can read but not write back (a JSON
+number too large, decoded to `INF`; a document deeper than the encoding depth; a getter refusing `null`) is hydrated
+and managed. As its database value cannot be computed, the field is taken as unchanged, as in 3.x: an unrelated save
+leaves it alone, and a change made in place is not written. Set through its setter, it is written, and the error of
+its getter or serializer is thrown. A kept raw value that cannot be unserialized again is taken as changed: the field
 is written.
 
 A mutable field is only compared, and written, when its value is **known**: read from the database, set through its
