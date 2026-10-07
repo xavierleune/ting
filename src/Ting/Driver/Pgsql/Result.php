@@ -40,8 +40,8 @@ class Result implements ResultInterface
      * A column, table.column, with an optional alias: each part is a quoted identifier (any character, "" for a
      * double quote) or a name, unquoted
      */
-    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)\.)?(?P<column>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)(?:\s+as\s+(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*))?\s*$/i';
-    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?\s*$/i';
+    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]++|"")+"|[a-z_][a-z0-9_$]*)\.)?(?P<column>"(?:[^"]++|"")+"|[a-z_][a-z0-9_$]*)(?:\s+as\s+(?P<alias>"(?:[^"]++|"")+"|[a-z_][a-z0-9_$]*))?\s*$/i';
+    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")+"|(?<![\w$])[a-z_][a-z0-9_$]*+)?\s*$/i';
 
     /**
      * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$), a quoted identifier,
@@ -50,11 +50,11 @@ class Result implements ResultInterface
     private const SQL_TOKEN = <<<'REGEX'
         ~
             --[^\n]*
-          | /\*.*?(?:\*/|\z)
-          | (?<![\w$])[eE]'(?:[^'\\]|\\.|'')*+(?:'|\z)
-          | '(?:[^']|'')*+(?:'|\z)
-          | "(?:[^"]|"")*+(?:"|\z)
-          | (?<![\w$])(?<tag>\$(?:[a-zA-Z_]\w*)?\$).*?(?:\k<tag>|\z)
+          | /\*(?:[^*]++|\*(?!/))*+(?:\*/|\z)
+          | (?<![\w$])[eE]'(?:[^'\\]++|\\.|'')*+(?:'|\z)
+          | '(?:[^']++|'')*+(?:'|\z)
+          | "(?:[^"]++|"")*+(?:"|\z)
+          | (?<![\w$])(?<tag>\$(?:[a-zA-Z_]\w*+)?\$)(?:[^$]++|(?!\k<tag>)\$)*+(?:\k<tag>|\z)
           | \w[\w$]*
           | .
         ~sx
@@ -63,8 +63,8 @@ class Result implements ResultInterface
     /**
      * A column, table.column or [database.]schema.table.column: its last part is named <name>
      */
-    private const COLUMN_REFERENCE = '(?:(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)*+'
-        . '(?<name>"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)';
+    private const COLUMN_REFERENCE = '(?:(?:"(?:[^"]++|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)*+'
+        . '(?<name>"(?:[^"]++|"")*+"|[a-z_][a-z0-9_$]*+)';
 
     /**
      * A type name: a multi-word type, or a (schema-qualified) name with its modifiers, then array brackets
@@ -76,13 +76,13 @@ class Result implements ResultInterface
     /**
      * A column of [database.]schema.table.column
      */
-    private const QUALIFIED_NAME = '/^(?:(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)++'
-        . '(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)$/i';
+    private const QUALIFIED_NAME = '/^(?:(?:"(?:[^"]++|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)++'
+        . '(?:"(?:[^"]++|"")*+"|[a-z_][a-z0-9_$]*+)$/i';
 
     /**
      * A whole column made of an asterisk: *, alias.* or DISTINCT *
      */
-    private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]|"")*"|\w+)\s*\.\s*)?\*$/i';
+    private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]++|"")*+"|\w++)\s*\.\s*)?\*$/i';
 
     protected ?string $connectionName = null;
     protected ?string $database = null;
@@ -502,7 +502,7 @@ class Result implements ResultInterface
      */
     private static function isIdentifier(string $token): bool
     {
-        return self::match('/^(?:"(?:[^"]|"")++"|[a-z_][a-z0-9_$]*+)$/i', $token);
+        return self::match('/^(?:"(?:[^"]++|"")++"|[a-z_][a-z0-9_$]*+)$/i', $token);
     }
 
     /**
@@ -516,7 +516,8 @@ class Result implements ResultInterface
     {
         $result = preg_match($pattern, $subject, $matches);
         if ($result === false) {
-            throw self::pcreFailure('parse "' . $subject . '"');
+            $excerpt = \strlen($subject) > 80 ? substr($subject, 0, 80) . '...' : $subject;
+            throw self::pcreFailure('parse "' . $excerpt . '"');
         }
 
         return $result === 1;
@@ -544,7 +545,7 @@ class Result implements ResultInterface
             return $matches['name'];
         }
 
-        $operand = '(?:' . self::COLUMN_REFERENCE . "|'(?:[^']|'')*+')";
+        $operand = '(?:' . self::COLUMN_REFERENCE . "|'(?:[^']++|'')*+')";
         if (self::match('/(?J)^' . $operand . '\s+at\s+time\s+zone\s+' . $operand . '$/i', $column)) {
             return 'timezone';
         }
@@ -731,7 +732,7 @@ class Result implements ResultInterface
      */
     protected function unescapeField(string $field): string
     {
-        if (self::match('/^"((?:[^"]|"")*+)"$/s', $field, $matches)) {
+        if (self::match('/^"((?:[^"]++|"")*+)"$/s', $field, $matches)) {
             return str_replace('""', '"', $matches[1]);
         }
 
