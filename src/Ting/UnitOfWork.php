@@ -84,6 +84,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     protected WeakMap $insertsRolledBack;
     /**
+     * The metadata each managed entity was read with (given to manage() by the hydrators), or written with when it
+     * became managed by its INSERT or UPDATE: its fields not read and the stored values of its mutable fields are
+     * those of these metadata. Written with other metadata (another repository mapping its class), the fields these
+     * metadata do not have are taken as not read.
+     *
+     * @var WeakMap<NotifyPropertyInterface, Metadata<object>>
+     */
+    protected WeakMap $entitiesMetadata;
+    /**
      * @var array<string, array{state: self::STATE_*, entity: NotifyPropertyInterface, metadata?: Metadata<object>|null}>
      *      by object hash; the metadata given to pushSave() or pushDelete() to write the entity with
      */
@@ -107,6 +116,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $this->propertiesNotRead = new WeakMap();
         $this->listenedEntities = new WeakMap();
         $this->insertsRolledBack = new WeakMap();
+        $this->entitiesMetadata = new WeakMap();
     }
 
     /**
@@ -132,24 +142,32 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      * Watch changes on provided entity.
      * The current values of its mutable fields (but those not read) are taken as the values stored in the database.
      *
-     * @param NotifyPropertyInterface $entity
+     * @param Metadata<object>|null $metadata the metadata the entity was read with (given by the hydrators), those
+     *                                        registered for its class otherwise. Managed already, the entity keeps
+     *                                        the metadata it was managed with, unless others are given.
      */
-    public function manage(NotifyPropertyInterface $entity): void
+    public function manage(NotifyPropertyInterface $entity, ?Metadata $metadata = null): void
     {
         $this->listen($entity);
         // Read again: its row exists
         $this->insertsRolledBack->offsetUnset($entity);
 
-        if (isset($this->mutableValues[$entity]) === false) {
+        if ($metadata !== null) {
+            $this->entitiesMetadata[$entity] = $metadata;
+        } elseif (isset($this->entitiesMetadata[$entity]) === false) {
             $this->metadataRepository->findMetadataForEntity(
                 $entity,
-                function (Metadata $metadata) use ($entity): void {
-                    $this->keepMutableValues($entity, $metadata);
+                                function (Metadata $metadata) use ($entity): void {
+                    $this->setEntityMetadata($entity, $metadata);
                 },
                 static function (): void {
                     // Without metadata, the entity cannot be saved: there is nothing to keep
                 }
             );
+        }
+
+        if (isset($this->mutableValues[$entity]) === false && isset($this->entitiesMetadata[$entity])) {
+            $this->keepMutableValues($entity, $this->entitiesMetadata[$entity]);
         }
     }
 
@@ -200,6 +218,16 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         }
 
         $this->storeMutableValues($entity, $values);
+    }
+
+    /**
+     * @template E of object
+     * @param Metadata<E> $metadata
+     */
+    private function setEntityMetadata(NotifyPropertyInterface $entity, Metadata $metadata): void
+    {
+        /** @var Metadata<object> $metadata the entities of a class are written with the metadata of any object type */
+        $this->entitiesMetadata[$entity] = $metadata;
     }
 
     /**
@@ -336,28 +364,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return true;
         }
 
-        if (isset($this->entities[$entity]) === false) {
+        // Without metadata, nothing is mutable
+        $metadata = $this->entitiesMetadata[$entity] ?? null;
+        if ($metadata === null || isset($this->entities[$entity]) === false) {
             return false;
         }
 
-        $changed = false;
-        $this->metadataRepository->findMetadataForEntity(
-            $entity,
-            function (Metadata $metadata) use ($entity, $propertyName, &$changed): void {
-                $changed = $metadata->isMutable($propertyName)
-                    && $this->getMutableChange(
-                        $entity,
-                        $metadata,
-                        $propertyName,
-                        $this->getStoredMutableValues($entity)
-                    ) !== null;
-            },
-            static function (): void {
-                // Without metadata, nothing is mutable
-            }
-        );
-
-        return $changed;
+        return $metadata->isMutable($propertyName)
+            && $this->getMutableChange($entity, $metadata, $propertyName, $this->getStoredMutableValues($entity)) !== null;
     }
 
     private function isChangeNotified(NotifyPropertyInterface $entity, string $propertyName): bool
@@ -377,6 +391,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $this->entitiesChanged->offsetUnset($entity);
         $this->mutableValues->offsetUnset($entity);
         $this->propertiesNotRead->offsetUnset($entity);
+        $this->entitiesMetadata->offsetUnset($entity);
         $this->entities->offsetUnset($entity);
     }
 
@@ -388,6 +403,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $this->entitiesChanged = new WeakMap();
         $this->mutableValues = new WeakMap();
         $this->propertiesNotRead = new WeakMap();
+        $this->entitiesMetadata = new WeakMap();
         $this->entitiesShouldBePersisted = [];
         $this->entities = new WeakMap();
     }
@@ -595,7 +611,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             function (Metadata $metadata) use ($entity): void {
                 $properties = $this->getChanges($entity, $metadata, true);
                 if ($properties === []) {
-                    $this->markSaved($entity);
+                    $this->markSaved($entity, []);
                     return;
                 }
 
@@ -614,12 +630,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
                 // The row is now stored with the values written
                 $this->keepMutableValuesWritten($entity, $metadata, $properties);
-                $this->markSaved($entity);
+                $this->markSaved($entity, $properties);
             },
             function () use ($entity): void {
                 if (isset($this->entitiesChanged[$entity]) === false) {
                     // Nothing to write
-                    $this->markSaved($entity);
+                    $this->markSaved($entity, []);
                     return;
                 }
 
@@ -641,7 +657,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $this->findMetadataToWrite(
             $entity,
             $this->entitiesShouldBePersisted[spl_object_hash($entity)]['metadata'] ?? null,
-            function (Metadata $metadata) use ($entity): void {
+                        function (Metadata $metadata) use ($entity): void {
                 if (isset($this->insertsRolledBack[$entity]) || $metadata->hasAutoincrementValue($entity) === false) {
                     $this->processNew($entity);
 
@@ -678,6 +694,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 $this->entitiesChanged->offsetUnset($entity);
                 $this->mutableValues->offsetUnset($entity);
                 $this->listen($entity);
+                $this->setEntityMetadata($entity, $metadata);
                 $this->keepMutableValues($entity, $metadata);
             },
             function () use ($entity): void {
@@ -687,12 +704,28 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     }
 
     /**
-     * The save of a managed entity is done: forget its changes and unqueue it
+     * The save of a managed entity is done: forget the changes written (and those set back to their old value) and
+     * unqueue it. The other changes are kept: not mapped by the metadata written with (a lighter projection), they
+     * are written by a save through metadata mapping them.
+     *
+     * @param array<string, mixed> $written property name => anything, for the properties written
      */
-    private function markSaved(NotifyPropertyInterface $entity): void
+    private function markSaved(NotifyPropertyInterface $entity, array $written): void
     {
-        $this->entitiesChanged->offsetUnset($entity);
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+
+        $changes = $this->entitiesChanged[$entity] ?? [];
+        foreach ($changes as $property => [$oldValue, $newValue]) {
+            if (isset($written[$property]) || $oldValue === $newValue) {
+                unset($changes[$property]);
+            }
+        }
+
+        if ($changes === []) {
+            $this->entitiesChanged->offsetUnset($entity);
+        } else {
+            $this->entitiesChanged[$entity] = $changes;
+        }
     }
 
     /**
@@ -766,6 +799,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return null;
         }
 
+        $read = $this->entitiesMetadata[$entity] ?? $metadata;
+        if ($read !== $metadata && $read->hasProperty($property) === false
+            && $this->isChangeNotified($entity, $property) === false
+        ) {
+            // Not read by the metadata the entity was read with: its value is not known
+            return null;
+        }
+
         [$readable, $value] = $metadata->getEntityPropertyIfReadable($entity, $property);
         if ($readable === false) {
             return null;
@@ -793,7 +834,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $this->findMetadataToWrite(
             $entity,
             $this->entitiesShouldBePersisted[spl_object_hash($entity)]['metadata'] ?? null,
-            function (Metadata $metadata) use ($entity): void {
+                        function (Metadata $metadata) use ($entity): void {
                 $connection = $metadata->getConnection($this->connectionPool);
                 $query = $metadata->generateQueryForInsert(
                     $connection,
@@ -811,6 +852,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 // Every value written is known
                 $this->propertiesNotRead->offsetUnset($entity);
                 $this->listen($entity);
+                $this->setEntityMetadata($entity, $metadata);
                 $this->insertsRolledBack->offsetUnset($entity);
                 // Within a transaction: told if it is rolled back
                 $driver = $connection->primary();
