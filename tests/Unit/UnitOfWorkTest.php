@@ -2052,16 +2052,29 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame([['v1_doc_published_at' => '2026-01-01 11:00:00', 'w1_doc_id' => 1]], $params);
     }
 
+    /**
+     * @return array<string, array{0: bool}>
+     */
+    public static function provideProjectionRegisteredLast(): array
+    {
+        return ['full metadata registered last' => [false], 'projection registered last' => [true]];
+    }
+
     #[AllowMockObjectsWithoutExpectations]
-    public function testAMutableFieldWrittenThroughOtherMetadataShouldBeComparedFromThenOn()
+    #[DataProvider('provideProjectionRegisteredLast')]
+    public function testAMutableFieldWrittenThroughOtherMetadataShouldBeComparedFromThenOn(bool $projectionRegisteredLast)
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
         $full = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $light = $this->lightDocumentMetadata();
+        if ($projectionRegisteredLast) {
+            $metadataRepository->addMetadata('LightDocumentRepository', $light);
+        }
 
         // Read through the projection, publishedAt set then written through the full metadata: known from now on
         $entity = new Document();
         $entity->setId(1);
-        $unitOfWork->manage($entity, $this->lightDocumentMetadata());
+        $unitOfWork->manage($entity, $light);
         $entity->setPublishedAt(new \DateTime('2026-01-01 10:00:00'));
         $unitOfWork->pushSave($entity, $full)->process();
         $entity->getPublishedAt()?->modify('+1 day');
