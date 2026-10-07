@@ -897,7 +897,7 @@ Hydrators and Transactions
   of the alias with `Hydrator::objectDatabaseIs()` / `objectSchemaIs()`, see
   [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
   still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
-  exact match (PostgreSQL results report lowercased schemas).
+  exact match (PostgreSQL folds an unquoted schema of the query to lowercase).
 * **Two repositories mapping the same table of the same database and schema** (a full entity and a lighter
   projection, e.g. `UserRepository` / `User` and `UserLightRepository` / `UserLight`): in 3.x, the last repository
   built (or the last metadata registered) hydrated the table for every read, so `UserRepository::get(1)` could return

@@ -386,6 +386,79 @@ class ResultTest extends TestCase
         $this->assertSame($expected, $this->parseColumns($query, $tables));
     }
 
+    public static function identifierCaseProvider(): array
+    {
+        return [
+            'a quoted mixed-case table, with an alias' => [
+                'SELECT u.id, u."firstName" FROM public."Users" u',
+                ['Users', 'Users'],
+                [
+                    ['id', 'id', 'u', 'Users', 'public'],
+                    ['firstName', 'firstName', 'u', 'Users', 'public'],
+                ],
+            ],
+            'a quoted mixed-case table and schema, without alias' => [
+                'SELECT id, "Users".name FROM "App"."Users"',
+                ['Users', 'Users'],
+                [
+                    ['id', 'id', 'Users', 'Users', 'App'],
+                    ['name', 'name', 'Users', 'Users', 'App'],
+                ],
+            ],
+            'unquoted identifiers folded to lowercase' => [
+                'SELECT U.ID, Name, U.Email AS Mail FROM App.USERS U',
+                ['users', 'users', 'users'],
+                [
+                    ['ID', 'id', 'u', 'users', 'app'],
+                    ['Name', 'name', 'u', 'users', 'app'],
+                    ['Mail', 'email', 'u', 'users', 'app'],
+                ],
+            ],
+            'a quoted alias keeps its case' => [
+                'SELECT "U".id, u.name FROM users "U" JOIN users u ON true',
+                ['users', 'users'],
+                [
+                    ['id', 'id', 'U', 'users', ''],
+                    ['name', 'name', 'u', 'users', ''],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * PostgreSQL folds unquoted identifiers to lowercase and keeps the case of quoted ones: pg_field_table() gives
+     * the name of the table as created ("Users" for a table created quoted)
+     *
+     * @param list<string> $tables
+     * @param list<array{string, string, string, string, string}> $expected name, orgName, table, orgTable, schema
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('identifierCaseProvider')]
+    public function testSetQueryShouldFoldUnquotedIdentifiersOnly(string $query, array $tables, array $expected)
+    {
+        NativeFunctionMock::override('pg_field_table', fn ($result, $index) => $tables[$index] ?? false);
+        NativeFunctionMock::override('pg_result_seek', true);
+        NativeFunctionMock::override('pg_fetch_array', array_fill(0, 20, 'v'));
+
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+        $result->setQuery($query);
+        $result->rewind();
+
+        $this->assertSame(
+            $expected,
+            array_map(
+                fn (array $column) => [
+                    $column['name'],
+                    $column['orgName'],
+                    $column['table'],
+                    $column['orgTable'],
+                    $column['schema'],
+                ],
+                $result->current()
+            )
+        );
+    }
+
     public static function selectListProvider(): array
     {
         $id = ['name' => 'id', 'orgName' => 'id', 'table' => 'city', 'schema' => ''];

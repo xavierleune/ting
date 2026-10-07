@@ -289,7 +289,8 @@ class Result implements ResultInterface
             if ($table === false) {
                 $table = '';
             }
-            $stdClass->orgtable = $match['complex'] === false ? strtolower((string) $table) : '';
+            // The name of the table as created: lowercase unless created quoted ("Users")
+            $stdClass->orgtable = $match['complex'] === false ? $table : '';
 
             if ($match['table'] !== '') {
                 $stdClass->table = $this->identifierKey($match['table']);
@@ -302,9 +303,12 @@ class Result implements ResultInterface
 
             $stdClass->schema = $aliasToSchema[$stdClass->table] ?? '';
 
-            // The table, the schema and orgtable (from pg_field_table()) are unquoted already
+            // The table, the schema and orgtable (from pg_field_table()) are unquoted already. The name keeps the
+            // spelling of the query; a column is folded to lowercase unless quoted, as PostgreSQL names it
             $stdClass->name     = $this->unescapeField($stdClass->name);
-            $stdClass->orgname  = $this->unescapeField($stdClass->orgname);
+            $stdClass->orgname  = $match['complex'] === false
+                ? $this->identifierKey($stdClass->orgname)
+                : $this->unescapeField($stdClass->orgname);
 
             $fields[] = $stdClass;
         }
@@ -675,11 +679,12 @@ class Result implements ResultInterface
     }
 
     /**
-     * A table, an alias or a schema of the query, unquoted and lowercase, to be compared with another one
+     * An identifier of the query as PostgreSQL resolves it: a quoted identifier unquoted, keeping its case, any other
+     * folded to lowercase
      */
     private function identifierKey(string $identifier): string
     {
-        return strtolower($this->unescapeField($identifier));
+        return str_starts_with($identifier, '"') ? $this->unescapeField($identifier) : strtolower($identifier);
     }
 
     /**
