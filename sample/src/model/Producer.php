@@ -32,20 +32,20 @@ class Producer implements NotifyPropertyInterface
 {
     use NotifyProperty;
 
-    protected $id          = null;
+    protected ?int $id     = null;
     protected $name        = null;
     protected $movies      = [];
     protected $workers     = [];
 
-    public function setId($id)
+    public function setId(?int $id): void
     {
         $this->propertyChanged('id', $this->id, $id);
-        $this->id = (int) $id;
+        $this->id = $id;
     }
 
-    public function getId()
+    public function getId(): ?int
     {
-        return (int) $this->id;
+        return $this->id;
     }
 
     public function setName($name)

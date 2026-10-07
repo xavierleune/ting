@@ -32,7 +32,7 @@ class City implements NotifyPropertyInterface
 {
     use NotifyProperty;
 
-    protected $id          = null;
+    protected ?int $id     = null;
     protected $name        = null;
     protected $countryCode = null;
     protected $district    = null;
@@ -42,15 +42,15 @@ class City implements NotifyPropertyInterface
     protected $tutu        = null;
     protected $broum       = null;
 
-    public function setId($id)
+    public function setId(?int $id): void
     {
         $this->propertyChanged('id', $this->id, $id);
-        $this->id = (int) $id;
+        $this->id = $id;
     }
 
-    public function getId()
+    public function getId(): ?int
     {
-        return (int) $this->id;
+        return $this->id;
     }
 
     public function setName($name)
