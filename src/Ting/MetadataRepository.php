@@ -73,8 +73,8 @@ class MetadataRepository
     /**
      * Finds the metadata of a table read in a result. Several metadata can share a table on a connection (one per
      * database or schema, or several on the same one): the result tells the database and the schema of the table,
-     * but not always reliably (Mysqli fields carry no database, Pgsql\Result lowercases the schemas, a query without
-     * schema has none).
+     * but not always reliably (Mysqli fields carry no database, Pgsql\Result folds unquoted schemas to lowercase, a
+     * query without schema has none).
      * The candidates are the metadata of the same schema and database (the schema compared case-insensitively when
      * none has the same case), every metadata of the table when none matches. The first group of preferred
      * repositories mapping one of the candidates (the repositories given to the hydrator with

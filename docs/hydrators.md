@@ -342,7 +342,8 @@ It takes precedence over the schema written in the query.
 These settings matter when several metadata share a table on the connection (one per database or schema). The
 hydrator takes the metadata of the same database and schema as the table read (named by `objectDatabaseIs()` and
 `objectSchemaIs()`, or read from the result). Schemas are compared case-insensitively when none has the same case, as
-PostgreSQL results report lowercased schemas (`mySchema` is read `myschema`). Without such metadata, it takes:
+PostgreSQL folds unquoted identifiers to lowercase (`FROM mySchema.users` reads the schema `myschema`). Without such
+metadata, it takes:
 
 1. the only metadata registered for the table, whatever its database or schema (a cross-database MySQL read: the
    result doesn't tell the database of each table, the hydrator only knows the one of the connection);
