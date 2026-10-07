@@ -421,7 +421,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     }
 
     /**
-     * Stop watching changes on the entity. Pushing it again with pushSave() would insert it.
+     * Stop watching changes on the entity. Pushed again with pushSave(), it is saved as an entity not managed: an
+     * UPDATE of every field when it holds its autoincrement id, an INSERT otherwise (see pushSave()).
      *
      * @param NotifyPropertyInterface $entity
      */
@@ -463,8 +464,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      * Flag the entity to be deleted on next process
      *
      * An entity never inserted (queued for its INSERT, not managed and without primary key, or whose INSERT was rolled
-     * back) has no row: it is unqueued, no query is run. An entity not managed but with its primary key is deleted by that key: it does not
-     * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, inserts it.
+     * back) has no row: it is unqueued, no query is run. An entity not managed but with its primary key is deleted by
+     * that key: it does not become managed, so a later pushSave() replacing the deletion, or a save after a failed
+     * DELETE, saves it as an entity not managed: an UPDATE of every field when it holds its autoincrement id, an INSERT
+     * otherwise (see pushSave()).
      *
      * @param Metadata<object>|null $metadata the metadata to delete the entity with (internal: given by
      *                                        Repository::delete()), those registered for its class otherwise

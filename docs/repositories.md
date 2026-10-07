@@ -539,8 +539,10 @@ $cityRepository->commit();
 ```
 
 To retry after a rollback (a deadlock, say), push the new entities again as they are: inserted in the rolled back
-transaction, they are no longer managed and are inserted again, their id replaced by the new one. Read the entities you
-updated again, and apply your changes to the fresh objects: their objects no longer match the database. See
+transaction, they are no longer managed and are inserted again, their id replaced by the new one. The entities you
+updated, pushed again as they are, write nothing: their changes were forgotten, and setting the same value again is not
+a change. Read them again and apply your changes to the fresh objects, or `detachAll()` first: they are then saved as
+entities not managed, by an `UPDATE` of every field. See
 [Transactions](unit-of-work.md#transactions) in the unit of work.
 
 Starting a transaction while another one is open on the same connection, or committing / rolling back without one,
