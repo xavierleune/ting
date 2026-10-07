@@ -358,11 +358,12 @@ UnitOfWork
 * **Mutable fields modified in place are written.** A field is mutable when its PHP value can be modified in place
   (`$entity->getPublishedAt()->modify('+1 day')`, `$entity->getPayload()->tag = 'x'`): such a change calls no setter,
   so it is never notified. Ting 3 silently lost it. Ting 4 keeps the database value of each mutable field of a managed
-  entity (its hydrated value serialized again, then the value last written) and, on save, writes the mutable fields
-  whose database value changed, together with the notified changes of the other fields. A value which does not
-  survive a round trip (microseconds, a time in a DST gap, a zero date, a JSON big integer) is not rewritten while it
-  is not modified. `UnitOfWork::isPropertyChanged()` is `true` for a mutable field whose database value changed.
-  Hydrating an entity with mutable fields serializes each of them once more. By default, a field is mutable when its
+  entity (the raw value read, as the driver returned it, then the value last written) and, on save, writes the
+  mutable fields whose database value changed (compared with the raw value, then with the raw value unserialized and
+  serialized again), together with the notified changes of the other fields. A value which does not survive a round
+  trip (microseconds, a time in a DST gap, a zero date, a JSON big integer, JSON spaces) is not rewritten while it is
+  not modified. `UnitOfWork::isPropertyChanged()` is `true` for a mutable field whose database value changed. A read
+  serializes nothing, and never fails because of this tracking. By default, a field is mutable when its
   serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable`),
   `Serializer\Json` decoding objects (without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag), or a serializer of your
   own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
@@ -380,8 +381,14 @@ UnitOfWork
   `\DateTimeImmutable` type (nullable or not) does it: a property typed `\DateTimeInterface`, `\DateTime` or a union,
   or not typed, keeps hydrating a `\DateTime`, as in 3.x (a `\DateTimeInterface` property can hold a `\DateTime`, which
   `Serializer\DateTimeImmutable` cannot write).
-* A primary key that is mutable (e.g. a `\DateTime`) and modified in place still targets its row: the `UPDATE` (or
-  `DELETE`) finds it by its kept database value.
+* A primary key that is mutable (e.g. a `\DateTime`), modified in place or not, targets its row by its kept database
+  value: the `UPDATE` (or `DELETE`) finds it by the value read.
+* **An entity is tracked with the metadata that read it.** When several repositories map the same class (a full
+  entity and a lighter projection), the fields not read and the kept values of the mutable fields are those of the
+  metadata the entity was read with, not those registered last for the class. Saved through another repository, the
+  fields the reading metadata do not map are written only when set through their setter, and a save only forgets the
+  changes it wrote. `UnitOfWork::manage()` takes these metadata as an optional second argument (the hydrators give
+  them).
 
 Serializers
 -----------
@@ -927,14 +934,31 @@ Queries, Entities and the Unit of Work
   after `manage()`. In 4.0, the unit of work ignores the changes of an entity it does not manage: after `detach()`,
   `$city->setName('Lyon')`, `manage($city)` then `pushSave($city)`, the `UPDATE` does not include the new name (and
   nothing runs when it is the only change). Make the change after `manage()`.
-* **Saving the clone of a managed entity updates the row of its original.** In 3.x, the clone was inserted as a new
-  row (its `autoincrement` id left out of the `INSERT`, then replaced by the generated one). It is now updated by its
-  primary key with every readable mapped property, except the properties its original did not read (partial read),
-  then managed; `isNew()` is `false` for it. To duplicate a row, set the `autoincrement` property of the clone to
-  `null` (or unset it) before saving it. A clone whose original is no longer managed (detached, freed) or which was
-  serialized is inserted, as in 3.x, and so is any other entity not managed (detached, read from a cache or a session,
-  built by hand with its id): `manage()` it first to update its row. See
-  [Saving a clone](docs/unit-of-work.md#saving-a-clone).
+* **Saving an entity not managed holding its `autoincrement` id updates its row.** In 3.x, any entity not managed (a
+  clone, a detached entity, one read from a cache or a session, one built by hand with its id) was inserted as a new
+  row: its `autoincrement` id was left out of the `INSERT`, then replaced by the generated one. When its metadata have
+  an `autoincrement` field and that property holds a value other than `null` (read from the property itself, not
+  through its getter), it is now updated by its primary key with every readable mapped property, then managed;
+  `isNew()` is `false` for it. With that property `null` or not initialized, or without `autoincrement` field (natural
+  or composite key), it is inserted as before. Check:
+  - an id defaulting to `0` (`private int $id = 0;`, or a setter casting `null` to `0`) is an id: declare it nullable,
+    `null` by default (`?int $id = null`, `setId(?int $id)`);
+  - to duplicate a row, set the `autoincrement` property of the clone to `null` before saving it (or reset it in
+    `__clone()`);
+  - every field is written: an entity read partially (or restored from a cache with properties left out by
+    `__sleep()`), then detached or cloned and saved, writes its default values over the columns it did not read;
+    `manage()` it first to write its changes only;
+  - an entity deleted keeps its id: saving it again updates no row;
+  - an entity inserted in a transaction rolled back is inserted again by its next save, its id replaced: the Mysqli and
+    Pgsql drivers tell the unit of work (new optional `Driver\RollbackListenerAwareDriverInterface`); with a driver of
+    your own not implementing it, set its id back to `null` before retrying.
+
+  See [Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed) and
+  [Transactions](docs/unit-of-work.md#transactions).
+* **A hydrator starts an empty identity map for each result.** With `identityMap(true)`, a hydrator given several
+  results (kept as a service, or given to several `getCollection()` calls) no longer returns the entities of an
+  earlier result: each read returns objects holding the values read. An entity the map returns again after its
+  `detach()` is managed again. The protected `Hydrator::$alreadyManaged` property is removed.
 * **Mysqli non-prepared queries turn the escaped colon `\:` into `:`**, as prepared queries and the PostgreSQL driver
   already did. 3.x sent the backslash to MySQL, which dropped it inside a string literal (except under the sql_mode
   `NO_BACKSLASH_ESCAPES`, where the backslash was kept) and received it as is elsewhere. A query that relied on the
@@ -956,11 +980,8 @@ Queries, Entities and the Unit of Work
   An entity defining `__sleep()` is honoured again (ignored since 3.12): only the properties it lists are serialized,
   as with `serialize()` (a private property of a parent class needs its mangled name, `"\0Parent\0name"`); a name
   which does not exist raises the warning of `serialize()` as an `E_USER_WARNING` (PHP raises an `E_WARNING`).
-* **The `NotifyProperty` trait declares `protected ?\WeakReference $listenersOwner = null`**, the object its listeners
-  were added to, used to recognize a clone (see above). It is left out of `__serialize()` and `__debugInfo()`; an
-  entity defining its own `__serialize()` from `get_object_vars()` must leave it out as well as `$listeners`
-  (serializing a `WeakReference` throws). `addPropertyListener()` no longer adds a listener already added (a clone
-  keeps the listeners of its original), so the unit of work is not notified twice of a change of a saved clone.
+* **`NotifyProperty::addPropertyListener()` no longer adds a listener already added**: a clone keeps the listeners of
+  its original, so the unit of work would otherwise be notified twice of each change of a saved clone.
 
 Smaller Changes for Extensions
 ------------------------------
@@ -988,6 +1009,13 @@ Elements that became `@internal` in 4.0:
 * A custom driver supporting sequences must implement `CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface`
   (`getInsertedIdForSequence(string $sequenceName): int`): having a method of that name is no longer enough for the
   `sequenceName` option of an autoincrement field.
+
+* A custom driver may implement the new `CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface`
+  (`addRollbackListener(RollbackListenerInterface $listener, object $subject): bool`): the unit of work registers each
+  entity it inserts in a transaction, and expects `RollbackListenerInterface::rolledBack($subject)` when the
+  transaction ends without being committed (rollback, failed `COMMIT`, connection lost or closed), nothing once it is
+  committed. The Mysqli and Pgsql drivers implement it. Without it, an entity inserted in a transaction rolled back
+  keeps its generated id and its next save is an `UPDATE` of a row that does not exist.
 
 * An INSERT without any value (an entity with only an autoincrement field, or with no field initialized) is written
   `INSERT INTO t () VALUES ()` (MySQL syntax) unless the driver implements
