@@ -51,12 +51,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     protected WeakMap $entitiesChanged;
     /**
-     * Database values of the mutable fields of the managed entities: the value hydrated serialized again (what Ting
-     * would write back, not the raw column value), then the value last written. A mutable field is written only when
-     * its database value differs from it (a change made in place is not notified), and a mutable primary key modified
-     * in place still targets its row. Only the entities with a mutable field known are listed. The values are packed
-     * into a string by serialize() when they are all scalars or null, as they usually are: a short string takes about
-     * a quarter of the memory of an array.
+     * Database values of the mutable fields of the managed entities: the raw value read (kept as the driver returned
+     * it, nothing is serialized by a read), or the value serialized when the entity became managed without being
+     * read (manage() by hand), then the value last written. A mutable field is written only when its database value
+     * differs from it (a change made in place is not notified, see isStoredValue()), and a mutable primary key
+     * targets its row by it. Only the entities with a mutable field known are listed. The values are packed into a
+     * string by serialize() when they are all scalars or null, as they usually are: a short string takes about a
+     * quarter of the memory of an array, and is not a candidate for the garbage collector (an array kept per entity
+     * makes it run far more often, which costs much with large decoded values).
      *
      * @var WeakMap<NotifyPropertyInterface, string|array<string, mixed>> property => database value, or serialized
      */
@@ -136,6 +138,19 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         }
 
         $this->propertiesNotRead[$entity] = $properties;
+    }
+
+    /**
+     * Keep the raw database values of the mutable fields read, as the driver returned them: compared at save with the
+     * current values (see isStoredValue()), so that a read never serializes anything. Call before manage().
+     *
+     * @param array<string, mixed> $values property name => raw database value
+     *
+     * @internal called by the hydrators
+     */
+    public function keepRawValues(NotifyPropertyInterface $entity, array $values): void
+    {
+        $this->storeMutableValues($entity, $values);
     }
 
     /**
@@ -620,7 +635,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                     $connection,
                     $this->queryFactory,
                     $entity,
-                    $properties
+                    $properties,
+                    $this->getStoredPrimaries($entity, $metadata)
                 );
 
                 $query->prepareExecute();
@@ -816,11 +832,60 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return [$value, $value];
         }
 
-        if ($stored[$property] === $value && $this->isChangeNotified($entity, $property) === false) {
+        if ($this->isChangeNotified($entity, $property) === false
+            && $this->isStoredValue($metadata, $property, $stored[$property], $value)
+        ) {
             return null;
         }
 
         return [$stored[$property], $value];
+    }
+
+    /**
+     * The current database value of a mutable field is the stored one: identical (the shortcut), or identical to the
+     * stored value unserialized then serialized again (a raw value read: JSON spaces, microseconds...). A stored value
+     * which cannot be normalized is not: the field is written.
+     *
+     * @template E of object
+     * @param Metadata<E> $metadata
+     */
+    private function isStoredValue(Metadata $metadata, string $property, mixed $stored, mixed $value): bool
+    {
+        if ($stored === $value) {
+            return true;
+        }
+
+        try {
+            return $metadata->normalizeDatabaseValue($property, $stored) === $value;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @template E of object
+     * @param Metadata<E> $metadata
+     * @return array<string, mixed> property name => database value stored, for the mutable primary keys whose stored
+     *                              value is known: the row is targeted by the value read (or last written)
+     */
+    private function getStoredPrimaries(NotifyPropertyInterface $entity, Metadata $metadata): array
+    {
+        if ($metadata->getMutableColumns() === []) {
+            return [];
+        }
+
+        $storedPrimaries = [];
+        $stored = null;
+        foreach ($metadata->getPrimaries() as $primary) {
+            if ($metadata->isMutable($primary['fieldName'])) {
+                $stored ??= $this->getStoredMutableValues($entity);
+                if (\array_key_exists($primary['fieldName'], $stored)) {
+                    $storedPrimaries[$primary['fieldName']] = $stored[$primary['fieldName']];
+                }
+            }
+        }
+
+        return $storedPrimaries;
     }
 
     /**
@@ -895,7 +960,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                     $this->queryFactory,
                     // A changed primary key: the row is still stored with the old one
                     $this->getChanges($entity, $metadata, false),
-                    $entity
+                    $entity,
+                    $this->getStoredPrimaries($entity, $metadata)
                 );
                 $query->prepareExecute();
                 // Only a prepared statement can be closed

@@ -1433,6 +1433,66 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testAReadShouldNotFailOnAMutableValueThatCannotBeWrittenBack()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+
+        // Decoded to INF, which json_encode() refuses
+        $entity = $this->hydrateDocument($unitOfWork, $metadataRepository, ['doc_id' => '1', 'doc_payload' => '{"v":1e400}']);
+
+        $this->assertSame(INF, $entity->getPayload()?->v);
+        $this->assertTrue($unitOfWork->isManaged($entity));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAMutableFieldReadShouldBeComparedWithItsRawValueNormalized()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $entity = $this->hydrateDocument(
+            $unitOfWork,
+            $metadataRepository,
+            ['doc_id' => '1', 'doc_title' => 'title', 'doc_payload' => '{"tags": ["a"]}', 'doc_published_at' => '2026-01-01 10:00:00']
+        );
+
+        // The raw JSON holds spaces: written back without them, it is still the same value
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $unitOfWork->pushSave($entity)->process();
+        $entity->getPayload()->tags[] = 'b';
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $unitOfWork->pushSave($entity)->process();
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame([['v1_doc_payload' => '{"tags":["a","b"]}', 'w1_doc_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAMutablePrimaryKeyReadShouldTargetItsRowByTheValueRead()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        // DATETIME(6): the microseconds are not written back by the serializer
+        $entity = $this->hydrateRow(
+            $unitOfWork,
+            $metadataRepository,
+            ['slo_day' => '2026-01-01 00:00:00.123456', 'slo_label' => 'a']
+        )['slo'];
+        $this->assertInstanceOf(Slot::class, $entity);
+
+        $entity->setLabel('b');
+        $unitOfWork->pushSave($entity)->process();
+        $entity->getDay()->modify('+1 day');
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(
+            [
+                // Unchanged or changed in place: targeted by the value read, not by its current database value
+                ['v1_slo_label' => 'b', 'w1_slo_day' => '2026-01-01 00:00:00.123456'],
+                ['v1_slo_day' => '2026-01-02 00:00:00', 'w1_slo_day' => '2026-01-01 00:00:00.123456'],
+            ],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAMutableFieldWhoseDatabaseValueIsNotAScalarShouldBeCompared()
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
@@ -1765,14 +1825,31 @@ class UnitOfWorkTest extends TestCase
      */
     private function hydrateDocument(UnitOfWork $unitOfWork, MetadataRepository $metadataRepository, array $columns): Document
     {
+        $entity = $this->hydrateRow($unitOfWork, $metadataRepository, $columns)['doc'];
+        $this->assertInstanceOf(Document::class, $entity);
+
+        return $entity;
+    }
+
+    /**
+     * Hydrates one row: the columns prefixed with doc_ are those of T_DOCUMENT_DOC (alias "doc"), slo_ those of
+     * T_SLOT_SLO (alias "slo"), the others those of T_BOUH_BOO (alias "bouh")
+     *
+     * @param array<string, string|null> $columns column name => raw value
+     * @return array<int|string, object|null>
+     */
+    private function hydrateRow(UnitOfWork $unitOfWork, MetadataRepository $metadataRepository, array $columns): array
+    {
         $fields = [];
         foreach (array_keys($columns) as $column) {
             $field = new \stdClass();
             $field->name     = $column;
             $field->orgname  = $column;
-            [$field->table, $field->orgtable] = str_starts_with($column, 'doc_')
-                ? ['doc', 'T_DOCUMENT_DOC']
-                : ['bouh', 'T_BOUH_BOO'];
+            [$field->table, $field->orgtable] = match (substr($column, 0, 4)) {
+                'doc_' => ['doc', 'T_DOCUMENT_DOC'],
+                'slo_' => ['slo', 'T_SLOT_SLO'],
+                default => ['bouh', 'T_BOUH_BOO'],
+            };
             $field->type     = $column === 'doc_id' ? MYSQLI_TYPE_LONG : MYSQLI_TYPE_VAR_STRING;
             $fields[] = $field;
         }
@@ -1784,10 +1861,8 @@ class UnitOfWorkTest extends TestCase
         $hydrator = new Hydrator();
         $hydrator->setMetadataRepository($metadataRepository);
         $hydrator->setUnitOfWork($unitOfWork);
-        $entity = $hydrator->setResult($result)->getIterator()->current()['doc'];
-        $this->assertInstanceOf(Document::class, $entity);
 
-        return $entity;
+        return $hydrator->setResult($result)->getIterator()->current();
     }
 
     /**

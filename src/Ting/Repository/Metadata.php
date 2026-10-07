@@ -126,6 +126,8 @@ class Metadata
     private array $dateTimeFieldsToResolve = [];
     /** @var array<string, array<string, true>> names of the columns read, joined by "\0" => properties not read */
     private array $propertiesNotRead = [];
+    /** @var array<string, string>|null column name => property name, for the mutable fields; null until computed */
+    private ?array $mutableColumns = null;
     public PropertyAccessor $propertyAccessor;
 
     /**
@@ -341,6 +343,7 @@ class Metadata
         $this->fieldsByProperty[$params['fieldName']] = $params;
         $this->fields[$params['columnName']] = $params;
         $this->propertiesNotRead = [];
+        $this->mutableColumns = null;
 
         return $this;
     }
@@ -455,6 +458,49 @@ class Metadata
     public function getMutableProperties(): array
     {
         return array_keys($this->mutableProperties);
+    }
+
+    /**
+     * @return array<string, string> column name => property name, for the mutable fields: empty without one
+     *
+     * @internal
+     */
+    public function getMutableColumns(): array
+    {
+        if ($this->mutableColumns === null) {
+            $this->mutableColumns = [];
+            foreach ($this->fields as $column => $field) {
+                if (isset($this->mutableProperties[$field['fieldName']])) {
+                    $this->mutableColumns[$column] = $field['fieldName'];
+                }
+            }
+        }
+
+        return $this->mutableColumns;
+    }
+
+    /**
+     * Database value of a field as Ting would write it once read: the raw value unserialized, then serialized again,
+     * by the serializer of the field (a raw value may not survive the round trip: JSON spaces, microseconds...)
+     *
+     * @throws \Throwable the error of the serializer
+     *
+     * @internal
+     */
+    public function normalizeDatabaseValue(string $fieldName, mixed $value): mixed
+    {
+        $field = $this->fieldsByProperty[$fieldName];
+        if (isset($field['serializer']) === false) {
+            return $value;
+        }
+
+        return $this->serializeFieldValue(
+            $field,
+            $this->serializerFactory->get($field['serializer'])->unserialize(
+                $value,
+                $field['serializer_options']['unserialize'] ?? []
+            )
+        );
     }
 
     /**
@@ -708,7 +754,8 @@ class Metadata
     }
 
     /**
-     * Database values of the readable mutable fields of the entity: the values Ting would write
+     * Database values of the readable mutable fields of the entity: the values Ting would write. A field whose value
+     * cannot be serialized (its getter or its serializer throws) is left out.
      *
      * @param array<string, true> $propertiesNotRead property name => true, for the properties to leave out
      * @return array<string, mixed> property name => database value
@@ -723,7 +770,12 @@ class Metadata
                 continue;
             }
 
-            [$readable, $value] = $this->getEntityPropertyIfReadable($entity, $fieldName);
+            try {
+                [$readable, $value] = $this->getEntityPropertyIfReadable($entity, $fieldName);
+            } catch (\Throwable) {
+                continue;
+            }
+
             if ($readable) {
                 $values[$fieldName] = $value;
             }
@@ -1122,6 +1174,9 @@ class Metadata
      *
      * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
      *                                                            the change, new database value]
+     * @param array<string, mixed> $storedPrimaries property name => database value stored, for the primary keys whose
+     *                                              stored value is known (mutable ones): targets the row when not in
+     *                                              $properties
      * @return PreparedQuery<mixed>
      *
      * @internal
@@ -1130,7 +1185,8 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         object $entity,
-        array $properties
+        array $properties,
+        array $storedPrimaries = []
     ): PreparedQuery {
         $queryGenerator = $this->queryGenerator($connection, $queryFactory, array_keys($properties));
 
@@ -1139,7 +1195,7 @@ class Metadata
             $values[$this->fieldsByProperty[$name]['columnName']] = $value;
         }
 
-        $primariesKeyValue = $this->getPrimariesKeyValuesByProperties($properties, $entity);
+        $primariesKeyValue = $this->getPrimariesKeyValuesByProperties($properties, $entity, $storedPrimaries);
 
         return $queryGenerator->update($values, $primariesKeyValue);
     }
@@ -1152,6 +1208,7 @@ class Metadata
      * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
      *                                                            the change, new database value]
      * @param object                $entity
+     * @param array<string, mixed> $storedPrimaries see generateQueryForUpdate()
      * @return PreparedQuery<mixed>
      *
      * @internal
@@ -1160,11 +1217,12 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         array $properties,
-        object $entity
+        object $entity,
+        array $storedPrimaries = []
     ): PreparedQuery {
         $queryGenerator = $this->queryGenerator($connection, $queryFactory, array_keys($properties));
 
-        $primariesKeyValue = $this->getPrimariesKeyValuesByProperties($properties, $entity);
+        $primariesKeyValue = $this->getPrimariesKeyValuesByProperties($properties, $entity, $storedPrimaries);
 
         return $queryGenerator->delete($primariesKeyValue);
     }
@@ -1172,9 +1230,10 @@ class Metadata
     /**
      * @param array<string, array{0: mixed, 1: mixed}> $properties changed properties: name => [database value before
      *                                                            the change, new database value]
+     * @param array<string, mixed> $storedPrimaries see generateQueryForUpdate()
      * @return array<string, mixed> primary key values by column name, as currently stored in the database
      */
-    protected function getPrimariesKeyValuesByProperties(array $properties, object $entity): array
+    protected function getPrimariesKeyValuesByProperties(array $properties, object $entity, array $storedPrimaries = []): array
     {
         $primariesKeyValue = [];
         foreach ($this->primaries as $key => $primary) {
@@ -1182,6 +1241,9 @@ class Metadata
             if (isset($properties[$fieldName])) {
                 // Key value has been updated: the row is still stored with the old one
                 $primariesKeyValue[$key] = $properties[$fieldName][0];
+            } elseif (\array_key_exists($fieldName, $storedPrimaries)) {
+                // The value read, which the database value of the current one may not be (microseconds...)
+                $primariesKeyValue[$key] = $storedPrimaries[$fieldName];
             } else {
                 $primariesKeyValue[$key] = $this->getEntityProperty($entity, $primary);
             }
