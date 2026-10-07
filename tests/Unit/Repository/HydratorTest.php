@@ -1774,6 +1774,35 @@ class HydratorTest extends TestCase
         $this->assertTrue($unitOfWork->isManaged($again));
     }
 
+    public function testAResultReadDuringTheIterationOfAnotherShouldNotChangeItsIdentityMap()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->addMetadata(CityRepository::class, CityRepository::initMetadata($services->serializerFactory()));
+        $services->metadataRepository()->addMetadata(BouhRepository::class, BouhRepository::initMetadata($services->serializerFactory()));
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->identityMap(true);
+
+        $cities = [];
+        $outer = $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['1', 'Paris'], ['1', 'Paris'], ['2', 'Lyon']]);
+        foreach ($hydrator->setResult($outer) as $i => $row) {
+            $cities[] = $row['x'];
+            if ($i === 0) {
+                // A nested read with the same hydrator (kept as a service), the same alias on another table
+                $inner = $this->resultOf([['boo_id', 'T_BOUH_BOO'], ['boo_name', 'T_BOUH_BOO']], [['1', 'Sylvain']]);
+                foreach ($hydrator->setResult($inner) as $innerRow) {
+                    $this->assertInstanceOf(Bouh::class, $innerRow['x']);
+                }
+            }
+        }
+
+        $this->assertCount(3, $cities);
+        $this->assertContainsOnlyInstancesOf(City::class, $cities);
+        $this->assertSame($cities[0], $cities[1]);
+        $this->assertNotSame($cities[0], $cities[2]);
+    }
+
     public function testAnEntityOfTheIdentityMapShouldBeManagedAgainOnceDetached()
     {
         $services = new TingServices();
