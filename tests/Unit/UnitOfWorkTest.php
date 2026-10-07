@@ -839,6 +839,35 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testTheDuplicationRecipesOfTheDocumentationShouldInsertACopy()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        // The shape of the entities of the documentation: private ?int $id = null; setId(?int $id)
+        $entity = $this->createDocument();
+        $unitOfWork->manage($entity);
+        $copy = clone $entity;
+        $copy->setId(null);
+        $unitOfWork->pushSave($copy)->process();
+
+        // __clone() resetting the id
+        $withClone = new class () extends Document {
+            public function __clone()
+            {
+                $this->id = null;
+            }
+        };
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $metadata->setEntity($withClone::class);
+        $withClone->setId(2);
+        $unitOfWork->manage($withClone, $metadata);
+        $unitOfWork->pushSave(clone $withClone, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame([1, 1], [$entity->getId(), $copy->getId()]);
+        $this->assertSame(2, $withClone->getId());
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAnIdSetToNullAfterThePushSaveShouldInsertTheEntity()
     {
         $entity = new Bouh();
