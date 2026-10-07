@@ -260,7 +260,7 @@ class City implements NotifyPropertyInterface
     private string $countryCode = '';
     private int $population = 0;
 
-    public function setId(int $id): void
+    public function setId(?int $id): void
     {
         $this->propertyChanged('id', $this->id, $id);
         $this->id = $id;
