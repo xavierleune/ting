@@ -1168,6 +1168,22 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testResetShouldKeepTheEntitiesWhoseInsertWasRolledBack()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $entity = new Bouh();
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity)->process();
+        // ConnectionPool::reset() before UnitOfWork::reset(): the connection closed rolls the transaction back
+        $driver->rollback();
+        $unitOfWork->reset();
+        $unitOfWork->pushSave($entity)->process();
+
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAnEntityUpdatedInATransactionRolledBackShouldStayManaged()
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);

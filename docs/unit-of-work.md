@@ -261,8 +261,8 @@ queued, open connections, a transaction left open...
 `ConnectionPool`, `UnitOfWork` and `Repository` implement `CCMBenchmark\Ting\ResetInterface`, whose `reset(): void`
 method restores a clean state:
 
-* `UnitOfWork::reset()` detaches every entity, forgets the entities whose `INSERT` was rolled back and the prepared
-  statements to close;
+* `UnitOfWork::reset()` detaches every entity and forgets the prepared statements to close (it still knows the
+  entities whose `INSERT` was rolled back, whatever the order of the resets);
 * `ConnectionPool::reset()` closes every connection; they are opened again on the next query;
 * `Repository::reset()` resets the unit of work and its connection.
 

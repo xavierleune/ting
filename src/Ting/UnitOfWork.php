@@ -80,7 +80,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     protected WeakMap $listenedEntities;
     /**
      * Entities whose INSERT was rolled back (see rolledBack()): their autoincrement property still holds the id
-     * generated, but no row has it, so their next save inserts them. Kept by detach() and detachAll().
+     * generated, but no row has it, so their next save inserts them. Kept by detach(), detachAll() and reset().
      *
      * @var WeakMap<NotifyPropertyInterface, true>
      */
@@ -453,8 +453,9 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     public function reset(): void
     {
+        // The entities whose INSERT was rolled back are kept: a fact which stays true, whatever the order in which the
+        // connection pool and the unit of work are reset
         $this->detachAll();
-        $this->insertsRolledBack = new WeakMap();
         $this->statements = [];
     }
 
