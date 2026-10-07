@@ -28,6 +28,8 @@ namespace CCMBenchmark\Ting;
 
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface;
+use CCMBenchmark\Ting\Driver\RollbackListenerInterface;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 use CCMBenchmark\Ting\Entity\PropertyListenerInterface;
 use CCMBenchmark\Ting\Query\QueryFactoryInterface;
@@ -35,7 +37,7 @@ use CCMBenchmark\Ting\Repository\Metadata;
 use Closure;
 use WeakMap;
 
-class UnitOfWork implements PropertyListenerInterface, ResetInterface
+class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackListenerInterface
 {
     public const STATE_NEW     = 1;
     public const STATE_MANAGED = 2;
@@ -75,6 +77,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      */
     protected WeakMap $listenedEntities;
     /**
+     * Entities whose INSERT was rolled back (see rolledBack()): their autoincrement property still holds the id
+     * generated, but no row has it, so their next save inserts them. Kept by detach() and detachAll().
+     *
+     * @var WeakMap<NotifyPropertyInterface, true>
+     */
+    protected WeakMap $insertsRolledBack;
+    /**
      * @var array<string, array{state: self::STATE_*, entity: NotifyPropertyInterface, metadata?: Metadata<object>|null}>
      *      by object hash; the metadata given to pushSave() or pushDelete() to write the entity with
      */
@@ -97,6 +106,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         $this->mutableValues = new WeakMap();
         $this->propertiesNotRead = new WeakMap();
         $this->listenedEntities = new WeakMap();
+        $this->insertsRolledBack = new WeakMap();
     }
 
     /**
@@ -127,6 +137,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function manage(NotifyPropertyInterface $entity): void
     {
         $this->listen($entity);
+        // Read again: its row exists
+        $this->insertsRolledBack->offsetUnset($entity);
 
         if (isset($this->mutableValues[$entity]) === false) {
             $this->metadataRepository->findMetadataForEntity(
@@ -252,8 +264,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
      * cache, a clone...) is taken as a stored row when its metadata have an autoincrement field and its property holds
      * a value other than null (read from the property itself, not through its getter): it is updated by its primary
      * key with every readable mapped field, as no change is tracked for it, then managed (isNew() is false). Otherwise
-     * (no autoincrement field, its property null or not initialized) it is new: inserted, then managed. Until then, it
-     * is not managed.
+     * (no autoincrement field, its property null or not initialized), or when its INSERT was rolled back (see
+     * rolledBack()), it is new: inserted, then managed. Until then, it is not managed.
      *
      * @param Metadata<object>|null $metadata the metadata to write the entity with (internal: given by
      *                                        Repository::save()), those registered for its class otherwise
@@ -262,7 +274,9 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $state = self::STATE_MANAGED;
 
-        if (isset($this->entities[$entity]) === false && $this->isStoredRow($entity, $metadata) === false) {
+        if (isset($this->entities[$entity]) === false
+            && (isset($this->insertsRolledBack[$entity]) || $this->isStoredRow($entity, $metadata) === false)
+        ) {
             $state = self::STATE_NEW;
         }
 
@@ -384,14 +398,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     public function reset(): void
     {
         $this->detachAll();
+        $this->insertsRolledBack = new WeakMap();
         $this->statements = [];
     }
 
     /**
      * Flag the entity to be deleted on next process
      *
-     * An entity never inserted (queued for its INSERT, or not managed and without primary key) has no row: it is
-     * unqueued, no query is run. An entity not managed but with its primary key is deleted by that key: it does not
+     * An entity never inserted (queued for its INSERT, not managed and without primary key, or whose INSERT was rolled
+     * back) has no row: it is unqueued, no query is run. An entity not managed but with its primary key is deleted by that key: it does not
      * become managed, so a later pushSave() replacing the deletion, or a save after a failed DELETE, inserts it.
      *
      * @param Metadata<object>|null $metadata the metadata to delete the entity with (internal: given by
@@ -401,7 +416,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $hash = spl_object_hash($entity);
         if ($this->isNew($entity)
-            || (isset($this->entities[$entity]) === false && $this->hasPrimaryKey($entity, $metadata) === false)
+            || (isset($this->entities[$entity]) === false
+                && (isset($this->insertsRolledBack[$entity]) || $this->hasPrimaryKey($entity, $metadata) === false))
         ) {
             unset($this->entitiesShouldBePersisted[$hash]);
 
@@ -474,6 +490,29 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
         }
 
         return true;
+    }
+
+    /**
+     * The transaction in which the entity was inserted ended without being committed (rolled back, failed COMMIT,
+     * lost with the connection): its row does not exist. The entity is left as it is, its generated id included, but
+     * is no longer managed, and its next save inserts it again. Queued for a save, it is queued for its INSERT; queued
+     * for a deletion, it is unqueued.
+     *
+     * @internal called by the drivers implementing RollbackListenerAwareDriverInterface, see processNew()
+     */
+    public function rolledBack(object $subject): void
+    {
+        if ($subject instanceof NotifyPropertyInterface === false) {
+            return;
+        }
+
+        $hash = spl_object_hash($subject);
+        $queued = $this->entitiesShouldBePersisted[$hash] ?? null;
+        $this->detach($subject);
+        $this->insertsRolledBack[$subject] = true;
+        if ($queued !== null && $queued['state'] !== self::STATE_DELETE) {
+            $this->entitiesShouldBePersisted[$hash] = ['state' => self::STATE_NEW] + $queued;
+        }
     }
 
     /**
@@ -592,7 +631,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     /**
      * Update the row of an entity not managed, by its primary key, with every readable mapped field: no change is
      * tracked for it. Then the entity is managed, with every field known. Inserted instead when its autoincrement
-     * property no longer holds a value (set to null since pushSave()).
+     * property no longer holds a value (set to null since pushSave()), or its INSERT was rolled back since.
      *
      * @throws Exception
      * @throws QueryException
@@ -603,7 +642,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
             $entity,
             $this->entitiesShouldBePersisted[spl_object_hash($entity)]['metadata'] ?? null,
             function (Metadata $metadata) use ($entity): void {
-                if ($metadata->hasAutoincrementValue($entity) === false) {
+                if (isset($this->insertsRolledBack[$entity]) || $metadata->hasAutoincrementValue($entity) === false) {
                     $this->processNew($entity);
 
                     return;
@@ -772,6 +811,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 // Every value written is known
                 $this->propertiesNotRead->offsetUnset($entity);
                 $this->listen($entity);
+                $this->insertsRolledBack->offsetUnset($entity);
+                // Within a transaction: told if it is rolled back
+                $driver = $connection->primary();
+                if ($driver instanceof RollbackListenerAwareDriverInterface) {
+                    $driver->addRollbackListener($this, $entity);
+                }
 
                 try {
                     $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());

@@ -30,12 +30,14 @@ use CCMBenchmark\Ting\Exceptions\TransactionException;
 /**
  * A transaction lives in the server session: when the connection is replaced or closed while a transaction is open,
  * the server rolls it back. The driver then forgets the transaction and remembers it was lost, so that the next
- * commit() reports it instead of "succeeding" on the new connection.
+ * commit() reports it instead of "succeeding" on the new connection. Its rollback listeners are notified.
  *
  * @internal shared by the drivers, which declare $transactionOpened
  */
 trait LostTransactionTrait
 {
+    use RollbackListenersTrait;
+
     /**
      * True when the connection was replaced or closed while a transaction was open, until the next commit(),
      * rollback() or startTransaction()
@@ -50,6 +52,7 @@ trait LostTransactionTrait
         if ($this->transactionOpened === true) {
             $this->transactionOpened = false;
             $this->transactionLost = true;
+            $this->notifyRollbackListeners();
         }
     }
 

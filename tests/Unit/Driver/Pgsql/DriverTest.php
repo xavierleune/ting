@@ -31,6 +31,7 @@ use CCMBenchmark\Ting\Driver\Exception;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Driver\RollbackListenerInterface;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Driver\Pgsql\Statement;
 use CCMBenchmark\Ting\Exceptions\DriverException;
@@ -1948,6 +1949,104 @@ class DriverTest extends TestCase
 
         $this->assertThrows(TransactionException::class, fn () => $driver->commit(), self::TRANSACTION_LOST);
         $this->assertSame([], $sent->getArrayCopy());
+    }
+
+    /**
+     * @param list<object> $rolledBack filled with the subjects notified
+     */
+    private function rollbackListener(?array &$rolledBack): RollbackListenerInterface
+    {
+        $rolledBack = [];
+
+        return new class ($rolledBack) implements RollbackListenerInterface {
+            /** @param list<object> $rolledBack */
+            public function __construct(private array &$rolledBack)
+            {
+            }
+
+            public function rolledBack(object $subject): void
+            {
+                $this->rolledBack[] = $subject;
+            }
+        };
+    }
+
+    public function testARollbackShouldNotifyTheSubjectsOfTheTransaction()
+    {
+        $listener = $this->rollbackListener($rolledBack);
+        $subject = new \stdClass();
+        $driver = new Driver();
+        $this->assertFalse($driver->addRollbackListener($listener, $subject));
+        [$driver] = $this->driverInATransaction();
+
+        $this->assertTrue($driver->addRollbackListener($listener, $subject));
+        $driver->rollback();
+        $this->assertSame([$subject], $rolledBack);
+        // Forgotten with the transaction
+        $driver->startTransaction();
+        $driver->rollback();
+        $this->assertSame([$subject], $rolledBack);
+    }
+
+    public function testACommitShouldForgetTheSubjectsOfTheTransaction()
+    {
+        $listener = $this->rollbackListener($rolledBack);
+        [$driver] = $this->driverInATransaction();
+
+        $driver->addRollbackListener($listener, new \stdClass());
+        $driver->commit();
+        $driver->startTransaction();
+        $driver->rollback();
+
+        $this->assertSame([], $rolledBack);
+    }
+
+    public function testACommitAnsweringRollbackShouldNotifyTheSubjectsOfTheTransaction()
+    {
+        $listener = $this->rollbackListener($rolledBack);
+        $subject = new \stdClass();
+        [$driver] = $this->driverInATransaction();
+        // PostgreSQL answers ROLLBACK, without error, to the COMMIT of a transaction aborted by a failed query
+        NativeFunctionMock::override('pg_result_status', 'ROLLBACK');
+
+        $driver->addRollbackListener($listener, $subject);
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit());
+
+        $this->assertSame([$subject], $rolledBack);
+    }
+
+    public function testAFailedCommitShouldNotifyTheSubjectsOfTheTransaction()
+    {
+        $listener = $this->rollbackListener($rolledBack);
+        $subject = new \stdClass();
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query', fn ($connection, $query) => $query === 'BEGIN');
+        NativeFunctionMock::override('pg_last_error', 'server closed the connection unexpectedly');
+        $driver = new Driver();
+        $driver->setDatabase('myDatabase');
+        $driver->startTransaction();
+
+        $driver->addRollbackListener($listener, $subject);
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit());
+
+        $this->assertSame([$subject], $rolledBack);
+    }
+
+    public function testALostTransactionShouldNotifyItsSubjects()
+    {
+        $listener = $this->rollbackListener($rolledBack);
+        $subject = new \stdClass();
+        [$driver] = $this->driverInATransaction([42, 43]);
+        $driver->addRollbackListener($listener, $subject);
+        // A new backend
+        $this->assertTrue($driver->ping());
+        $this->assertSame([$subject], $rolledBack);
+
+        $driver->rollback();
+        $driver->startTransaction();
+        $driver->addRollbackListener($listener, $subject);
+        $driver->close();
+        $this->assertSame([$subject, $subject], $rolledBack);
     }
 
     public function testExecuteWhenTheParametersCannotBeParsedShouldRaiseQueryException()
