@@ -157,7 +157,9 @@ $cache->delete('stats');
 
 * `startOperation(string $operation, array|string $keys)`, with `CacheLoggerInterface::OPERATION_GET` for `get()`
   (cached queries included) or `CacheLoggerInterface::OPERATION_DELETE` for `delete()`;
-* `stopOperation(bool $miss = false)`, where `$miss` is `true` when a `get()` had to compute (and store) the value.
+* `stopOperation(bool $miss = false)`, where `$miss` is `true` when a `get()` did not serve a cached value: it had to
+  compute (and store) the value, or it failed before (a key with a reserved character, a pool throwing), without
+  calling the callback.
 
 ```php
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
