@@ -1838,6 +1838,102 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * The metadata of a lighter projection of Document: its id and title
+     */
+    private function lightDocumentMetadata(): Metadata
+    {
+        $metadata = new Metadata($this->services->serializerFactory());
+        $metadata->setEntity(Document::class);
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setTable('T_DOCUMENT_DOC');
+        $metadata->addField(['primary' => true, 'autoincrement' => true, 'fieldName' => 'id', 'columnName' => 'doc_id', 'type' => 'int']);
+        $metadata->addField(['fieldName' => 'title', 'columnName' => 'doc_title', 'type' => 'string']);
+
+        return $metadata;
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityReadThroughAProjectionShouldNotWriteTheFieldsTheProjectionDoesNotHave()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $full = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $light = $this->lightDocumentMetadata();
+        // Registered last for Document
+        $metadataRepository->addMetadata('LightDocumentRepository', $light);
+
+        // Read through the projection: publishedAt holds a default set by the constructor, say
+        $entity = new Document();
+        $entity->setId(1);
+        $entity->setTitle('title');
+        $entity->setPublishedAt(new \DateTime('2026-01-01 10:00:00'));
+        $unitOfWork->manage($entity, $light);
+        $entity->setTitle('new');
+        $entity->getPublishedAt()?->modify('+1 hour');
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $unitOfWork->pushSave($entity, $full)->process();
+
+        $this->assertSame([['v1_doc_title' => 'new', 'w1_doc_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityReadWithEveryFieldShouldBeComparedWithTheMetadataThatReadIt()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $full = DocumentRepository::initMetadata($this->services->serializerFactory());
+        // Registered last for Document: it has no mutable field
+        $metadataRepository->addMetadata('LightDocumentRepository', $this->lightDocumentMetadata());
+
+        $entity = $this->createDocument();
+        $unitOfWork->manage($entity, $full);
+        $unitOfWork->pushSave($entity, $full)->process();
+        $entity->getPublishedAt()?->modify('+1 hour');
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $unitOfWork->pushSave($entity, $full)->process();
+
+        $this->assertSame([['v1_doc_published_at' => '2026-01-01 11:00:00', 'w1_doc_id' => 1]], $params);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testASaveThroughAProjectionShouldKeepTheChangesItDoesNotWrite()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $full = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $light = $this->lightDocumentMetadata();
+
+        // Another projection: its id and its payload
+        $payload = new Metadata($this->services->serializerFactory());
+        $payload->setEntity(Document::class);
+        $payload->setConnectionName('main');
+        $payload->setDatabase('bouh_world');
+        $payload->setTable('T_DOCUMENT_DOC');
+        $payload->addField(['primary' => true, 'autoincrement' => true, 'fieldName' => 'id', 'columnName' => 'doc_id', 'type' => 'int']);
+        $payload->addField(['fieldName' => 'payload', 'columnName' => 'doc_payload', 'type' => 'json']);
+
+        $entity = $this->createDocument();
+        $unitOfWork->manage($entity, $full);
+        $entity->setTitle('new');
+        $entity->setPayload((object) ['tags' => ['a']]);
+        $unitOfWork->pushSave($entity, $light)->process();
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $entity->setTitle('newer');
+        $unitOfWork->pushSave($entity, $payload)->process();
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
+        $unitOfWork->pushSave($entity, $full)->process();
+
+        $this->assertSame(
+            [
+                ['v1_doc_title' => 'new', 'w1_doc_id' => 1],
+                ['v1_doc_payload' => '{"tags":["a"]}', 'w1_doc_id' => 1],
+                ['v1_doc_title' => 'newer', 'w1_doc_id' => 1],
+            ],
+            $params
+        );
+    }
+
+    /**
      * Builds a UnitOfWork on Bouh, Event, Document, Slot and Account whose queries are recorded instead of executed.
      *
      * @param list<string>|null $queries SQL of each successfully executed query

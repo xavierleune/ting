@@ -50,6 +50,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\Serializer\CountingJson;
+use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
 use tests\fixtures\model\City;
 use tests\fixtures\model\CityRepository;
@@ -1690,6 +1691,34 @@ class HydratorTest extends TestCase
         $this->assertTrue($unitOfWork->isManaged($bouhs[0]));
         $this->assertSame(3, CountingJson::$unserialized);
         $this->assertSame(3, CountingJson::$serialized);
+    }
+
+    public function testTheEntitiesShouldBeManagedWithTheMetadataHydratingThem()
+    {
+        $services = new TingServices();
+        $metadata = BouhRepository::initMetadata($services->serializerFactory());
+        $services->metadataRepository()->addMetadata(BouhRepository::class, $metadata);
+        // Registered last for Bouh, but not the metadata of the table read
+        $other = BouhRepository::initMetadata($services->serializerFactory());
+        $other->setTable('T_BOUH_ARCHIVE');
+        $services->metadataRepository()->addMetadata('BouhArchiveRepository', $other);
+
+        $mockMysqliResult = new MysqliResult([[1, 'Sylvain']]);
+        $mockMysqliResult->setFieldsCallback(fn (): array => [
+            $this->field('id', 'boo_id', 'bouh', 'T_BOUH_BOO', MYSQLI_TYPE_LONG),
+            $this->field('name', 'boo_name', 'bouh', 'T_BOUH_BOO'),
+        ]);
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $unitOfWork = $this->createMock(UnitOfWork::class);
+        $unitOfWork->expects($this->once())->method('manage')->with($this->isInstanceOf(Bouh::class), $this->identicalTo($metadata));
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($unitOfWork);
+        iterator_to_array($hydrator->setResult($result)->getIterator());
     }
 
     private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass

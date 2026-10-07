@@ -488,14 +488,14 @@ class Hydrator implements HydratorInterface
                     // A null entity (LEFT JOIN without match) may not be replaced by null yet: it depends on the
                     // order of the aliases in the row, so check its validity rather than its value
                     if (isset($validEntities[$fromAndColumn[0]]) && isset($result[$fromAndColumn[0]])) {
-                        $this->manageIfYouCan($result[$fromAndColumn[0]]);
+                        $this->manageIfYouCan($result[$fromAndColumn[0]], $this->metadataList[$fromAndColumn[0]] ?? null);
                         $entity->{$fromAndColumn[1]}($result[$fromAndColumn[0]]);
                     }
                     unset($result[$fromAndColumn[0]]);
                 }
             }
 
-            $this->manageIfYouCan($entity);
+            $this->manageIfYouCan($entity, $this->metadataList[$table] ?? null);
         }
 
         if (isset($result[0]) && get_object_vars($result[0]) === []) {
@@ -544,15 +544,17 @@ class Hydrator implements HydratorInterface
 
     /**
      * @param mixed $entity
+     * @param Metadata<object>|null $metadata the metadata the entity was hydrated with, null for an object of a virtual
+     *                                        column (mapAliasTo())
      * @throws HydratorException
      */
-    private function manageIfYouCan(mixed $entity): void
+    private function manageIfYouCan(mixed $entity, ?Metadata $metadata = null): void
     {
         if ($entity instanceof NotifyPropertyInterface && $this->alreadyManaged->offsetExists($entity) === false) {
             if ($this->unitOfWork === null) {
                 throw new HydratorException('Hydrator used before setUnitOfWork(): the entities cannot be managed');
             }
-            $this->unitOfWork->manage($entity);
+            $this->unitOfWork->manage($entity, $metadata);
             $this->alreadyManaged[$entity] = true;
         }
     }
