@@ -9,20 +9,26 @@ One instance is shared by the whole application: it is the one given to the `Rep
 ## Managed entities
 
 An entity is **managed** when the unit of work listens to its changes. Entities hydrated from the database (by
-`get()`, `getBy()`, a query...) are managed automatically, provided they implement `NotifyPropertyInterface`. A new
-entity becomes managed once it has been inserted, a clone of a managed entity once its row has been updated (see
-[Saving a clone](#saving-a-clone)).
+`get()`, `getBy()`, a query...) are managed automatically, provided they implement `NotifyPropertyInterface`. An entity
+not managed becomes managed once it has been saved (see [Saving an entity not managed](#saving-an-entity-not-managed)).
 
 Managed entities are stored in a `WeakMap`: the unit of work does not keep them alive. Once your code drops its last
 reference to an entity, it is freed, and forgotten by the unit of work.
 
-Changes are notified by the entities. The only values the unit of work keeps are the database values of the
-[mutable fields](entities.md#mutable-values) (a `\DateTime`, a JSON object...), which can change without notification:
-they are kept (in a `WeakMap` too) when the entity becomes managed (hydration, `manage()`, after its `INSERT`) and
-refreshed by each `UPDATE`, so that a mutable field is written only when its database value changes, and a mutable
-primary key modified in place still targets its row. For an entity read partially, only the names of the fields left
-out of the query are kept, so that their default value is not written. All of them are dropped with the entity, by
-`detach()`, `detachAll()` and `reset()`.
+Changes are notified by the entities. Besides them, the unit of work keeps, per managed entity (in `WeakMap`s too):
+
+* the metadata it was read with (those of the repository or of the alias that hydrated it), or written with when it
+  became managed by its save. When several repositories map the same class (a full entity and a lighter projection),
+  an entity read through the projection and saved through the full repository does not write the fields the
+  projection does not have: their value was never read (a default set by the constructor, say). They are written
+  only when set through their setter;
+* the names of the fields left out of a partial read (a `SELECT` of some columns, a join), so that their default value
+  is not written;
+* the database values of its [mutable fields](entities.md#mutable-values) (a `\DateTime`, a JSON object...), which can
+  change without notification: the raw value read, as the driver returned it, then the value last written. A mutable
+  field is written only when its database value changes, and a mutable primary key targets its row by the value read.
+
+All of them are dropped with the entity, by `detach()`, `detachAll()` and `reset()`.
 
 ## Saving and deleting
 
@@ -30,8 +36,8 @@ Changes are queued with `pushSave()` and `pushDelete()`, then written by `proces
 
 ```php
 $unitOfWork->pushSave($city);    // managed: UPDATE of the changed columns
-$unitOfWork->pushSave($newCity); // not managed: INSERT
-$unitOfWork->pushSave($copy);    // clone of a managed entity: UPDATE of its row
+$unitOfWork->pushSave($newCity); // not managed, id null: INSERT
+$unitOfWork->pushSave($cached);  // not managed, with its autoincrement id: UPDATE of its row
 $unitOfWork->pushDelete($oldCity);
 $unitOfWork->process();
 ```
@@ -44,34 +50,105 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
 
 `process()` writes the queued entities in the order they were pushed:
 
-* **new entity**, that is any entity not managed but a clone of a managed one: every mapped property is inserted,
-  except the `autoincrement` primary key and uninitialized typed properties. The generated key is then set on the
-  entity, replacing any value set before (through its setter, see [field options](repositories.md#field-options)) and
-  the entity becomes managed. It becomes managed as soon as the `INSERT` has run: if reading or setting the generated
-  key fails (a setter that throws, say), the error is rethrown but the entity is not inserted again by its next save.
-  An entity detached, read from a cache or a session, or built by hand with its id is new too: to update its row
-  instead, [manage it](#managing-an-entity-yourself) first.
-* **clone of a managed entity**: it is a copy of the row of its original, updated by its primary key, then managed.
-  See [Saving a clone](#saving-a-clone).
 * **managed entity**: the properties reported by `propertyChanged()` since the last write (and not set back to their
   old value) are updated, together with the [mutable fields](entities.md#mutable-values) (a `\DateTime`, a JSON
   object...) whose database value differs from the one read or last written, except a field left out of a partial
   read and not set since. If nothing changed, no query is sent. An immutable property modified without calling its
-  setter is not reported, so it is not updated: see [entities](entities.md#tracking-changes).
+  setter is not reported, so it is not updated: see [entities](entities.md#tracking-changes). Only the changes written
+  are forgotten: saved through a lighter projection, the changes of the fields it does not map wait for a save through
+  a repository mapping them.
+* **entity not managed**: updated by its primary key when it holds its id, inserted otherwise. See
+  [Saving an entity not managed](#saving-an-entity-not-managed).
 * **deleted entity**: it is deleted by its primary key, then detached. An entity that was never inserted (still queued
-  for its `INSERT`, or not managed and without primary key) has no row: `pushDelete()` only removes it from the queue,
-  no query is sent. An entity not managed but whose primary key is set is deleted by that key; it does not become
-  managed: if its `DELETE` fails, or a `pushSave()` replaces the deletion, saving it runs an `INSERT`. Once deleted, an
-  entity keeps its primary key, but saving it runs an `INSERT` (with a new generated id).
+  for its `INSERT`, not managed and without primary key, or whose `INSERT` was [rolled back](#transactions)) has no row:
+  `pushDelete()` only removes it from the queue, no query is sent. An entity not managed but whose primary key is set
+  is deleted by that key; it does not become managed. Once deleted, an entity is detached but keeps its primary key:
+  saving it again runs an `UPDATE` that matches no row. Set its `autoincrement` property to `null` to insert it again
+  (with a new generated id).
 
 Use `pushSave()` both to insert and to update: the unit of work knows which one applies.
 
 `Repository::save($entity)` and `Repository::delete($entity)` are shortcuts for `pushSave($entity)->process()` and
-`pushDelete($entity)->process()`. Note that they process the **whole** queue, including entities pushed earlier.
+`pushDelete($entity)->process()`, writing with the metadata of the repository. Note that they process the **whole**
+queue, including entities pushed earlier.
 
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
 removed from the queue (its tracked changes are kept, so saving it again retries) and the following ones stay queued.
+
+### Saving an entity not managed
+
+An entity built by hand, detached, read from a cache or a session, or a clone, is not managed: nothing tells which of
+its fields changed. `pushSave()` decides by its `autoincrement` primary key:
+
+* its metadata have an `autoincrement` field and that property holds a value other than `null`: the entity is a row
+  already stored. It is updated by its primary key with **every** readable mapped field (the primary key is in the
+  `WHERE` clause, uninitialized typed properties are left out), then managed: its next saves write its changes only.
+  `isNew()` is `false`;
+* otherwise (no `autoincrement` field, a natural or composite key, or the property `null` or not initialized): the
+  entity is new. Every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
+  properties. The generated key is then set on the entity (through its setter, see
+  [field options](repositories.md#field-options)) and the entity becomes managed. It becomes managed as soon as the
+  `INSERT` has run: if reading or setting the generated key fails (a setter that throws, say), the error is rethrown
+  but the entity is not inserted again by its next save. `isNew()` is `true`.
+
+The `autoincrement` property is read directly, not through its getter, which may refuse an id not generated yet. It is
+read again by `process()`: set to `null` between `pushSave()` and `process()`, the entity is inserted. If the `UPDATE`
+fails, the entity stays not managed and can be saved again. The metadata given to `Repository::save()` are the ones
+used: the row updated or inserted is the one of the table of that repository.
+
+```php
+$city = new City();
+$city->setId(42);
+$city->setName('Lyon');
+$cityRepository->save($city);
+// UPDATE t_city_cit SET cit_name = 'Lyon', cit_zip = NULL, ... WHERE cit_id = 42
+```
+
+Every field is written, so these entities must hold the value of every field:
+
+* **an id defaulting to `0`** (`private int $id = 0;`) is an id: the entity is updated `WHERE id = 0`, nothing is
+  inserted. Declare the id nullable: `private ?int $id = null;`, with `setId(?int $id)`;
+* **a deleted entity** keeps its id: saving it again updates no row (see above);
+* **an entity read partially** (a `SELECT` of some columns, a lighter projection), then detached and saved, writes its
+  default values over the columns it did not read; so does **an entity restored from a cache or a session** whose
+  `__sleep()` left properties out, and **a clone of an entity read partially**. Read the whole row first, or
+  [manage](#managing-an-entity-yourself) such an entity before changing it: only its changes are then written.
+
+#### Clones
+
+A clone is not managed: `clone` copies the properties of an entity, not its tracking by the unit of work. Holding the
+id of its original, it updates the row of its original with every field, as any entity not managed:
+
+```php
+$copy = clone $city;              // $city is managed, $copy is not
+$copy->setName('Lyon');
+$unitOfWork->pushSave($copy)->process();
+// UPDATE t_city_cit SET cit_name = 'Lyon', cit_zip = ..., ... WHERE cit_id = <id of $city>
+```
+
+Then the clone is managed too: both objects track the same row, each with its own changes. A clone with another
+natural key (not `autoincrement`) is inserted.
+
+**To duplicate a row**, clone the entity and set its `autoincrement` property to `null` before saving the clone: it is
+inserted, and gets its own id. The entity must accept `null` as id (`setId(?int $id)`), or reset it in `__clone()`:
+
+```php
+$copy = clone $city;
+$copy->setId(null);
+$cityRepository->save($copy); // INSERT, $copy->getId() is the new id
+
+// or, once for all the clones of the class:
+public function __clone()
+{
+    $this->id = null;
+}
+```
+
+As anywhere in PHP, a clone shares the objects its properties hold with its original (a shallow copy): a `\DateTime`
+modified in place on the clone is modified on the original too, and written by the next save of both. Clone the mutable
+objects in `__clone()` (`$this->createdAt = clone $this->createdAt;`), or use immutable values
+(`\DateTimeImmutable`, arrays).
 
 ### Transactions
 
@@ -88,7 +165,6 @@ try {
         ->process();
 } catch (\Throwable $e) {
     $cityRepository->rollback();
-    $unitOfWork->detachAll();
     throw $e;
 }
 $cityRepository->commit();
@@ -98,29 +174,45 @@ $cityRepository->commit();
 and leaves no transaction open, so a `rollback()` after it would throw too and hide the original error (see
 [Transactions](repositories.md#transactions)).
 
-After a `rollback()`, the entities written in the transaction no longer match the database: their changes are no longer
-tracked, and the entities inserted keep the id generated by their rolled back `INSERT`. `detachAll()` makes the unit of
-work forget them. To retry (after a deadlock, say), start again from the database: read the entities to update again,
-and apply your changes to them. The new entities can be pushed again as they are: not managed, they are inserted again,
-and their id is replaced by the newly generated one. Do not push again an entity read from the database: detached, it
-would be inserted as a new row.
+After a rollback, the rows written in the transaction no longer exist, or no longer hold the values written:
+
+* **the entities inserted** in the transaction keep the id generated by their rolled back `INSERT`. The driver tells
+  the unit of work, which stops managing them (without modifying them) and remembers that their row was rolled back:
+  pushed again as they are, they are inserted again (`isNew()` is `true`), and their id is replaced by the newly
+  generated one. This holds whatever ended the transaction: `rollback()`, a failed `commit()` (or a PostgreSQL
+  `COMMIT` of an aborted transaction), or the connection lost or closed (`ping()` reconnecting, `close()`,
+  `ConnectionPool::reset()`). It survives `detach()` and `detachAll()`: the retry can push the same objects. A queued
+  save of such an entity becomes an `INSERT`, a queued deletion is dropped;
+* **the entities updated** in the transaction stay managed, but their changes are forgotten (written, then rolled
+  back): their objects no longer match the database. To retry (after a deadlock, say), read them again and apply your
+  changes to the fresh objects. `detachAll()` makes the unit of work forget the stale ones.
+
+This protection needs a driver implementing `CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface`, as the
+Mysqli and Pgsql drivers do. With a driver that does not implement it (a driver of your own), an entity inserted in a
+rolled back transaction is still taken as a stored row: set its `autoincrement` property back to `null` before saving
+it again.
 
 ## Inspecting the state
 
 | Method                                                              | Returns `true` when                                        |
 |---------------------------------------------------------------------|------------------------------------------------------------|
-| `isManaged(NotifyPropertyInterface $entity)`                        | the entity is managed: hydrated by Ting, inserted, saved as a clone of a managed entity, or passed to `manage()`, and not detached since. An entity not managed queued by `pushSave()` is not managed until its `INSERT` (or, for a clone, `UPDATE`) has run, and `pushDelete()` of an entity not managed does not make it managed |
-| `isNew(NotifyPropertyInterface $entity)`                            | the entity is queued for an `INSERT` (`false` for a clone of a managed entity, queued for the `UPDATE` of its row) |
+| `isManaged(NotifyPropertyInterface $entity)`                        | the entity is managed: hydrated by Ting, saved, or passed to `manage()`, and not detached (nor its `INSERT` rolled back) since. An entity not managed queued by `pushSave()` is not managed until its `INSERT` or `UPDATE` has run, and `pushDelete()` of an entity not managed does not make it managed |
+| `isNew(NotifyPropertyInterface $entity)`                            | the entity is queued for an `INSERT`: not managed, without `autoincrement` id (or whose `INSERT` was rolled back). `false` for an entity not managed queued for the `UPDATE` of its row |
 | `shouldBePersisted(NotifyPropertyInterface $entity)`                | the entity is queued (save or delete)                      |
 | `shouldBeRemoved(NotifyPropertyInterface $entity)`                  | the entity is queued for a `DELETE`                        |
-| `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property will be written by the next save: its change was notified, or it is a mutable field of a managed entity, not left out of a partial read, whose database value differs from the one read or last written |
+| `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property will be written by the next save of a managed entity: its change was notified, or it is a mutable field, not left out of the read, whose database value differs from the one read or last written |
+
+`isPropertyChanged()` is about managed entities. For an entity not managed, it is `true` only for the changes notified
+to the unit of work, which are ignored for such an entity: a new entity is inserted whole, and an entity not managed
+holding its id is updated with every field, whatever `isPropertyChanged()` says.
 
 ## Managing an entity yourself
 
 `manage()` starts tracking an entity that was not hydrated by Ting, for instance one rebuilt from a cache or a
 session. The entity must already exist in the database, and its primary key must be set: the next `pushSave()` will
-`UPDATE` the properties changed after the call to `manage()`: the current values of its mutable fields are taken as
-the stored ones.
+`UPDATE` the properties changed after the call to `manage()` only: the current values of its mutable fields are taken
+as the stored ones (a value whose getter or serializer throws is not kept: that field is written by the next save).
+Its metadata are those registered for its class, unless you give others: `manage($entity, $metadata)`.
 
 ```php
 $city = unserialize($cachedCity); // a City read earlier, with its id
@@ -130,42 +222,16 @@ $city->setName('Lyon');
 $unitOfWork->pushSave($city)->process(); // UPDATE t_city_cit SET cit_name = 'Lyon' WHERE cit_id = ...
 ```
 
-## Saving a clone
-
-A clone is not managed: `clone` copies the properties of an entity, not its tracking by the unit of work. But the clone
-of a managed entity is a copy of its row, and the unit of work recognizes it: the `NotifyProperty` trait keeps a
-reference to the object the unit of work listens to, which `clone` copies along with the other properties. Saving such
-a clone updates the row of its original, by the primary key of the clone:
-
-```php
-$copy = clone $city;              // $city is managed, $copy is not
-$copy->setName('Lyon');
-$unitOfWork->pushSave($copy)->process();
-// UPDATE t_city_cit SET cit_name = 'Lyon', cit_zip = ..., ... WHERE cit_id = <id of $city>
-```
-
-Its changes are not tracked, so every readable mapped property is written (the primary key is in the `WHERE` clause;
-uninitialized typed properties are left out), except the properties its original did not read (left out of a partial
-read and not set since), unless the clone holds another value, and the mutable fields whose database value is the one
-kept for its original. Then the clone is managed, as if just read: its next
-saves write its changes only. The original stays managed, with its own changes. If the `UPDATE` fails, the clone
-stays not managed and can be saved again.
-
-The clone is a clone of a managed entity as long as its original is managed by this unit of work. It is inserted as a
-new entity when:
-
-* its original is no longer managed: detached (by `detach()`, `detachAll()`, `reset()` or its deletion) or freed;
-* it was serialized then unserialized (read from a cache or a session): the reference to the original is not kept;
-* its `autoincrement` property is set to `null` (or unset) before it is saved: this is the way **to duplicate a row**.
-
-A clone of a clone is a copy of the same row: it updates the row of the original too.
+Without `manage()`, saving it would update every field (see
+[Saving an entity not managed](#saving-an-entity-not-managed)).
 
 ## Detaching entities
 
 `detach()` stops tracking an entity: it is no longer managed, its pending changes are forgotten and it is removed from
 the queue. The changes made while it is detached are not tracked, even if it is managed again later. Pushing it again
-with `pushSave()` would insert it: to update its row, [manage it](#managing-an-entity-yourself) again before changing
-it. `detachAll()` does the same for every entity.
+with `pushSave()` saves it as an [entity not managed](#saving-an-entity-not-managed): with its id, every field is
+updated; to update its changes only, [manage it](#managing-an-entity-yourself) again before changing it. `detachAll()`
+does the same for every entity.
 
 Entities are held weakly, but queued entities are not: an entity passed to `pushSave()` or `pushDelete()` stays in
 memory until it is processed or detached. In a batch handling many entities, call `process()` regularly instead of once
@@ -195,7 +261,8 @@ queued, open connections, a transaction left open...
 `ConnectionPool`, `UnitOfWork` and `Repository` implement `CCMBenchmark\Ting\ResetInterface`, whose `reset(): void`
 method restores a clean state:
 
-* `UnitOfWork::reset()` detaches every entity and forgets the prepared statements to close;
+* `UnitOfWork::reset()` detaches every entity, forgets the entities whose `INSERT` was rolled back and the prepared
+  statements to close;
 * `ConnectionPool::reset()` closes every connection; they are opened again on the next query;
 * `Repository::reset()` resets the unit of work and its connection.
 
@@ -220,7 +287,8 @@ while ($message = $queue->next()) {
 
 Repositories created by `RepositoryFactory::get()` for each request need no reset. If your container shares repository
 instances between requests, reset them too. With Symfony, [ting_bundle](https://github.com/xavierleune/ting_bundle)
-integrates Ting with the framework.
+integrates Ting with the framework. A hydrator kept as a service needs no reset either: its
+[identity map](hydrators.md#identity-map) only lives for one result.
 
 Closing the connections after each request costs a reconnection on the next one. If you prefer to keep them open, reset
 the unit of work only, and check the connections with `Repository::ping()` / `pingPrimary()` (see

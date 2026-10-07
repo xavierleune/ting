@@ -392,8 +392,8 @@ Writes follow the same idea: `save()` and `delete()` of a repository write with 
 ### Identity map
 
 By default, every row produces new objects, even when the same entity appears in several rows. With
-`identityMap(true)`, the hydrator keeps the entities it has built, by alias and primary key, and returns the same
-instance when it meets the same primary key again:
+`identityMap(true)`, the hydrator keeps the entities it has built from the current result, by alias and primary key
+(within one result, an alias names one table), and returns the same instance when it meets the same primary key again:
 
 ```php
 $hydrator = new Hydrator();
@@ -403,8 +403,9 @@ $hydrator->identityMap(true);
 // Two books by Frank Herbert now share the same Author instance
 ```
 
-The map lives as long as the hydrator: a hydrator given to several `getCollection()` calls returns the same instance
-across their collections. It requires the entity's primary key in the selected columns (every column of a composite
+The map lives for one result: given a new result (a hydrator kept as a service, or given to several `getCollection()`
+calls), the hydrator starts an empty map, so a new read returns new objects holding the values read, even for an alias
+naming another table. An entity the map returns again is managed again if it was detached meanwhile. It requires the entity's primary key in the selected columns (every column of a composite
 key): an entity whose key is missing or `null` in the row is not kept. To enable it by default, enable it on the
 hydrator given to the `CollectionFactory` (see [Getting started](getting-started.md)): it then applies to the
 collections that use that hydrator, those of `getCollection()` without hydrator and of a query run without collection
