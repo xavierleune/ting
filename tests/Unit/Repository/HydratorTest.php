@@ -1721,6 +1721,81 @@ class HydratorTest extends TestCase
         iterator_to_array($hydrator->setResult($result)->getIterator());
     }
 
+    /**
+     * @param list<array{0: string, 1: string}> $columns [column name, table] of each column, aliased "x"
+     * @param list<list<string>> $rows
+     */
+    private function resultOf(array $columns, array $rows): Result
+    {
+        $mockMysqliResult = new MysqliResult($rows);
+        $mockMysqliResult->setFields(array_map(
+            fn (array $column): \stdClass => $this->field($column[0], $column[0], 'x', $column[1]),
+            $columns
+        ));
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        return $result;
+    }
+
+    public function testAHydratorGivenANewResultShouldStartAnEmptyIdentityMap()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->addMetadata(CityRepository::class, CityRepository::initMetadata($services->serializerFactory()));
+        $services->metadataRepository()->addMetadata(BouhRepository::class, BouhRepository::initMetadata($services->serializerFactory()));
+        $unitOfWork = $services->unitOfWork();
+        // Kept as a service, say
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($unitOfWork);
+        $hydrator->identityMap(true);
+
+        $city = iterator_to_array($hydrator->setResult(
+            $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['1', 'Paris']])
+        )->getIterator())[0]['x'];
+        // The same alias and the same primary key, another table
+        $bouh = iterator_to_array($hydrator->setResult(
+            $this->resultOf([['boo_id', 'T_BOUH_BOO'], ['boo_name', 'T_BOUH_BOO']], [['1', 'Sylvain']])
+        )->getIterator())[0]['x'];
+        // The same row read again, once the unit of work is reset (a worker between two requests)
+        $unitOfWork->reset();
+        $again = iterator_to_array($hydrator->setResult(
+            $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['1', 'Paris 1er']])
+        )->getIterator())[0]['x'];
+
+        $this->assertInstanceOf(City::class, $city);
+        $this->assertInstanceOf(Bouh::class, $bouh);
+        $this->assertSame('Sylvain', $bouh->getName());
+        $this->assertInstanceOf(City::class, $again);
+        $this->assertNotSame($city, $again);
+        $this->assertSame('Paris 1er', $again->getName());
+        $this->assertTrue($unitOfWork->isManaged($again));
+    }
+
+    public function testAnEntityOfTheIdentityMapShouldBeManagedAgainOnceDetached()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->addMetadata(CityRepository::class, CityRepository::initMetadata($services->serializerFactory()));
+        $unitOfWork = $services->unitOfWork();
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($unitOfWork);
+        $hydrator->identityMap(true);
+
+        $rows = $hydrator->setResult(
+            $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['1', 'Paris'], ['1', 'Paris']])
+        )->getIterator();
+        $first = $rows->current()['x'];
+        $unitOfWork->detach($first);
+        $rows->next();
+        $second = $rows->current()['x'];
+
+        $this->assertSame($first, $second);
+        $this->assertTrue($unitOfWork->isManaged($second));
+    }
+
     private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass
     {
         $field = new \stdClass();
