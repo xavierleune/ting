@@ -858,6 +858,8 @@ class MetadataRepositoryTest extends TestCase
             ],
             'the same closure' => [['callback' => $closure], ['callback' => $closure], true],
             'two closures' => [['callback' => fn (): int => 1], ['callback' => fn (): int => 1], false],
+            'NAN' => [['default' => NAN], ['default' => NAN], true],
+            'NAN and 0.0' => [['default' => NAN], ['default' => 0.0], false],
         ];
     }
 
