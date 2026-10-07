@@ -496,24 +496,14 @@ class Result implements ResultInterface
     }
 
     /**
-     * Depth of the parentheses around the main SELECT: 0, unless the query starts with parentheses and has no SELECT
-     * outside of any parentheses, as (SELECT ...) UNION ALL (SELECT ...): its columns are those of the first SELECT
+     * Depth of the parentheses around the main SELECT: 0, unless the query starts with parentheses around a SELECT,
+     * as (SELECT ...) UNION ALL (SELECT ...) or (SELECT ... LIMIT 1) UNION ALL SELECT ...: the columns are those of
+     * that first SELECT, as PostgreSQL names them
      *
      * @param list<string> $tokens lowercase tokens
      */
     private static function findMainSelectDepth(array $tokens): int
     {
-        $depth = 0;
-        foreach ($tokens as $token) {
-            if ($token === '(' || $token === '[') {
-                $depth++;
-            } elseif ($token === ')' || $token === ']') {
-                $depth--;
-            } elseif ($token === 'select' && $depth === 0) {
-                return 0;
-            }
-        }
-
         $leading = 0;
         foreach ($tokens as $token) {
             if ($token === '(') {
