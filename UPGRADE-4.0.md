@@ -387,7 +387,8 @@ UnitOfWork
 * **An entity is tracked with the metadata that read it.** When several repositories map the same class (a full
   entity and a lighter projection), the fields not read and the kept values of the mutable fields are those of the
   metadata the entity was read with, not those registered last for the class. Saved through another repository, the
-  fields the reading metadata do not map are written only when set through their setter, and a save only forgets the
+  fields the reading metadata do not map are written only once known (set through their setter, or written by an
+  `INSERT` or an `UPDATE`), and a save only forgets the
   changes it wrote (and those no metadata of the class maps). `UnitOfWork::manage()` takes these metadata as an
   optional second argument (the hydrators give them): a class overriding `manage()` must declare it
   (`manage(NotifyPropertyInterface $entity, ?Metadata $metadata = null): void`), otherwise PHP refuses the override,

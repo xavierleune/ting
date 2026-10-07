@@ -170,7 +170,7 @@ its getter or serializer is thrown. A kept raw value that cannot be unserialized
 is written.
 
 A mutable field is only compared, and written, when its value is **known**: read from the database, set through its
-setter, or written by the `INSERT` of the entity. An entity read **partially** (a query selecting some of its columns,
+setter, or written (by the `INSERT` of the entity or an `UPDATE`, through any repository of its class). An entity read **partially** (a query selecting some of its columns,
 a join selecting some columns of the joined entity) leaves the other fields with their PHP default (`null`, or a value
 set by the constructor, such as `new \DateTime()`): the fields not read are left out of its `UPDATE`, so a save does
 not overwrite their column with that default. Once set through its setter (with a new value), such a field is known,

@@ -21,7 +21,10 @@ Changes are notified by the entities. Besides them, the unit of work keeps, per 
   became managed by its save. When several repositories map the same class (a full entity and a lighter projection),
   an entity read through the projection and saved through the full repository does not write the fields the
   projection does not have: their value was never read (a default set by the constructor, say). They are written
-  only when set through their setter;
+  only once known: set through their setter, or written (by its `INSERT` or an `UPDATE`).
+  Register every metadata before saving entities (`batchLoadMetadata()` or `batchLoadMetadataFromCache()` at boot):
+  after a save, the changes of the properties no registered metadata of the class maps are forgotten for good, so a
+  repository whose metadata are registered later would not find them;
 * the names of the fields left out of a partial read (a `SELECT` of some columns, a join), so that their default value
   is not written;
 * the database values of its [mutable fields](entities.md#mutable-values) (a `\DateTime`, a JSON object...), which can
