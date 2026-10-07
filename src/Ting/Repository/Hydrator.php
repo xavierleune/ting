@@ -77,6 +77,14 @@ class Hydrator implements HydratorInterface
      */
     private array $mutableColumns = [];
 
+    /**
+     * The state of the results being iterated ($references, $metadataList, $mutableColumns): a result read while
+     * another is iterated (a hydrator kept as a service) does not change the state of the other
+     *
+     * @var \WeakMap<ResultInterface, array{0: array<string, object|null>, 1: array<string, Metadata<object>>, 2: array<string, array<string, string>>}>|null
+     */
+    private ?\WeakMap $resultStates = null;
+
     protected ?ResultInterface $result = null;
 
     protected ?MetadataRepository $metadataRepository = null;
@@ -127,6 +135,8 @@ class Hydrator implements HydratorInterface
         $this->mutableColumns = [];
         // Another read: its rows may have changed, and the unit of work may have been reset since (worker mode)
         $this->references = [];
+        $this->resultStates ??= new \WeakMap();
+        $this->resultStates[$result] = [[], [], []];
         return $this;
     }
 
@@ -154,6 +164,7 @@ class Hydrator implements HydratorInterface
             return;
         }
 
+        $this->resultStates ??= new \WeakMap();
         foreach ($result as $key => $columns) {
             $connectionName = $result->getConnectionName();
             $database = $result->getDatabase();
@@ -163,7 +174,20 @@ class Hydrator implements HydratorInterface
                 );
             }
 
-            yield $key => $this->hydrateColumns($connectionName, $database, $columns);
+            // The state of this result, which another result read meanwhile may have replaced. Moved, not copied:
+            // the arrays are then modified in place
+            if (isset($this->resultStates[$result])) {
+                [$this->references, $this->metadataList, $this->mutableColumns] = $this->resultStates[$result];
+                unset($this->resultStates[$result]);
+            }
+
+            try {
+                $row = $this->hydrateColumns($connectionName, $database, $columns);
+            } finally {
+                $this->resultStates[$result] = [$this->references, $this->metadataList, $this->mutableColumns];
+            }
+
+            yield $key => $row;
         }
     }
 
