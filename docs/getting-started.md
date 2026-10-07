@@ -597,9 +597,10 @@ $french = $repositoryFactory
 
 ## Next steps
 
-- [Repositories](repositories.md): metadata options, field types, serializers, custom methods.
+- [Repositories](repositories.md): metadata options, field types, serializers, custom methods,
+  [transactions](repositories.md#transactions).
 - [Entities](entities.md): change tracking, public and hooked properties.
-- [Queries](queries.md): queries, prepared queries, the query builder, transactions.
+- [Queries](queries.md): queries, prepared queries, the query builder.
 - [Hydrators](hydrators.md): joins, aggregation, value objects.
 - [UnitOfWork](unit-of-work.md): batching saves and deletes.
 - [Cache](cache.md): cached queries.
