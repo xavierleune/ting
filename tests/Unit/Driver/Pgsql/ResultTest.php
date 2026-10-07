@@ -255,6 +255,36 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function largeLiteralProvider(): array
+    {
+        $big = str_repeat('x', 2_000_000);
+
+        return [
+            'a block comment' => ["SELECT u.id /* $big */, u.name FROM users u", 'name'],
+            'a dollar-quoted string' => ["SELECT u.id, \$\$ $big \$\$ AS s FROM users u", "\$\$ $big \$\$"],
+            'a tagged dollar-quoted string' => [
+                "SELECT u.id, \$t\$ \$ $big \$t\$ AS s FROM users u",
+                "\$t\$ \$ $big \$t\$",
+            ],
+            'a string' => ["SELECT u.id, '$big''' AS s FROM users u", "'$big'''"],
+            'an escape string' => ["SELECT u.id, E'$big\\'' AS s FROM users u", "E'$big\\''"],
+            'a quoted identifier' => ["SELECT u.id, u.\"$big\" FROM users u", $big],
+        ];
+    }
+
+    /**
+     * Comments, string literals and quoted identifiers of any size: no PCRE backtrack limit reached
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('largeLiteralProvider')]
+    public function testSetQueryShouldParseLargeLiterals(string $query, string $secondColumn)
+    {
+        $columns = $this->parseColumns($query, ['users', 'users']);
+
+        $this->assertCount(2, $columns);
+        $this->assertSame(['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => ''], $columns[0]);
+        $this->assertSame($secondColumn, $columns[1]['orgName']);
+    }
+
     public function testSetQueryShouldIgnoreComments()
     {
         $this->assertSame(
