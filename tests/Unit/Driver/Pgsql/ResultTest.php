@@ -325,6 +325,51 @@ class ResultTest extends TestCase
                 ['t_bouh_boo'],
                 [$column('boo_id', 'b', 'app')],
             ],
+            'a long table name before a parenthesis' => [
+                'SELECT x.n, b.boo_id, boo_name FROM (SELECT count(*) AS n FROM customer_order_line_items_archive_2024)'
+                . ' x JOIN app.t_bouh_boo b ON true',
+                [false, 't_bouh_boo', 't_bouh_boo'],
+                [
+                    ['name' => 'n', 'orgName' => 'n', 'table' => 'x', 'schema' => ''],
+                    $column('boo_id', 'b', 'app'),
+                    $column('boo_name', 'b', 'app'),
+                ],
+            ],
+            'a long function name' => [
+                'SELECT boo_id, boo_name FROM some_long_function_name_returning_rows(1) f'
+                . ' JOIN app.t_bouh_boo b ON true',
+                ['t_bouh_boo', 't_bouh_boo'],
+                [$column('boo_id', 'b', 'app'), $column('boo_name', 'b', 'app')],
+            ],
+            'a long table name before a comma' => [
+                'SELECT boo_id, total FROM app.t_bouh_boo b,customer_order_line_items_archive_2024 o',
+                ['t_bouh_boo', 'customer_order_line_items_archive_2024'],
+                [$column('boo_id', 'b', 'app'), $column('total', 'o')],
+            ],
+            'tables separated by a comma, without space' => [
+                'SELECT o.id, total FROM users,orders o',
+                ['orders', 'orders'],
+                [$column('id', 'o'), $column('total', 'o')],
+            ],
+            'schema-qualified tables separated by commas' => [
+                'SELECT u.id, name, label FROM public.users u, app.settings s , "app" . "tags" AS t WHERE true',
+                ['users', 'settings', 'tags'],
+                [$column('id', 'u', 'public'), $column('name', 's', 'app'), $column('label', 't', 'app')],
+            ],
+            'FROM in a function is no table' => [
+                'SELECT id, extract(year from c.created_at) AS y, trim(both from name) AS t FROM created_at',
+                ['created_at', false, false],
+                [
+                    $column('id', 'created_at'),
+                    ['name' => 'y', 'orgName' => 'extract(year from c.created_at)', 'table' => '', 'schema' => ''],
+                    ['name' => 't', 'orgName' => 'trim(both from name)', 'table' => '', 'schema' => ''],
+                ],
+            ],
+            'a table named by one character' => [
+                'SELECT id FROM t',
+                ['t'],
+                [$column('id', 't')],
+            ],
         ];
     }
 

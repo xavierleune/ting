@@ -45,7 +45,7 @@ class Result implements ResultInterface
 
     /**
      * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$), a quoted identifier,
-     * a word, or any other character
+     * a word (an unquoted identifier holds $ after its first character), or any other character
      */
     private const SQL_TOKEN = <<<'REGEX'
         ~
@@ -55,7 +55,7 @@ class Result implements ResultInterface
           | '(?:[^']|'')*+(?:'|\z)
           | "(?:[^"]|"")*+(?:"|\z)
           | (?<![\w$])(?<tag>\$(?:[a-zA-Z_]\w*)?\$).*?(?:\k<tag>|\z)
-          | \w+
+          | \w[\w$]*
           | .
         ~sx
         REGEX;
@@ -125,8 +125,6 @@ class Result implements ResultInterface
             );
         }
 
-        $tableToAlias = [];
-        $aliasToSchema = [];
         $fields = [];
 
         $tokensWithCase = self::tokenize($query);
@@ -134,43 +132,7 @@ class Result implements ResultInterface
         $comparisonFroms = self::findComparisonFroms($tokens);
         $selectDepth = self::findMainSelectDepth($tokens);
 
-        // String literals can't hold a table, nor the FROM of IS [NOT] DISTINCT FROM: blank them for the table search.
-        // The parenthesis closing a parenthesized SELECT ends its FROM clause, as a space would: one is added
-        $tableSearch = '';
-        $depth = 0;
-        foreach ($tokensWithCase as $index => $token) {
-            $depth += match ($token) {
-                '(', '[' => 1,
-                ')', ']' => -1,
-                default => 0,
-            };
-            $tableSearch .= match (true) {
-                self::isStringLiteral($token) => "''",
-                isset($comparisonFroms[$index]) => ' ',
-                $token === ')' && $depth < $selectDepth => ' )',
-                default => $token,
-            };
-        }
-
-        // Schema, table and alias: a quoted identifier (any character, "" for a double quote) or a name, ended by a
-        // space, the end of the statement (;), a comma or a parenthesis
-        preg_match_all(
-            '/(?:join|from)\s+(?:(?<schema>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]+).)*?(?<table>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]+)'
-            . '\s*(?:as)?\s*(?!"?\b(' . self::SQL_TABLE_SEPARATOR . ')\b)(?<alias>"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*)?'
-            . '(?=[\s;,)]|$)/is',
-            $tableSearch,
-            $matches,
-            PREG_SET_ORDER
-        );
-
-        // Unquoted identifiers, lowercase: as pg_field_table() names the tables and as the columns name them
-        foreach ($matches as $match) {
-            $table = $this->identifierKey($match['table']);
-            // A trailing group left unmatched is unset
-            $alias = ($match['alias'] ?? '') !== '' ? $this->identifierKey($match['alias']) : $table;
-            $tableToAlias[$table] = $alias;
-            $aliasToSchema[$alias] = $this->identifierKey($match['schema']);
-        }
+        [$tableToAlias, $aliasToSchema] = $this->findTables($tokensWithCase, $tokens, $comparisonFroms);
 
         $startCapture = false;
         // The tokens of the main SELECT before its first column: DISTINCT, ALL, DISTINCT ON (...)
@@ -218,14 +180,14 @@ class Result implements ResultInterface
                     }
 
                     // Only a whole column is forbidden: COUNT(*) or 2 * id are not
-                    if (preg_match(self::ASTERISK_COLUMN, trim($column)) === 1) {
+                    if (self::match(self::ASTERISK_COLUMN, trim($column))) {
                         throw new QueryException('Query invalid: usage of asterisk in column definition is forbidden');
                     }
 
                     /**
                      * Match column format table.column (as alias)
                      */
-                    preg_match(
+                    self::match(
                         self::PARSE_RAW_COLUMN,
                         $column,
                         $matches
@@ -245,7 +207,7 @@ class Result implements ResultInterface
                         }
                     } else { // Match dynamic column, ie : max(table.column), table.column || table.id, ...
                         $column = trim($column);
-                        preg_match(self::PARSE_DYNAMIC_COLUMN, $column, $matches);
+                        self::match(self::PARSE_DYNAMIC_COLUMN, $column, $matches);
 
                         $cut = 0;
 
@@ -264,7 +226,7 @@ class Result implements ResultInterface
                         if (
                             $noAlias === false
                             && ($matches['prefix'] ?? '') === ''
-                            && preg_match('/\bdistinct\s+from$/i', $matches['column']) === 1
+                            && self::match('/\bdistinct\s+from$/i', $matches['column'])
                         ) {
                             $matches['column'] = $column;
                             $matches['alias'] = '?column?';
@@ -340,12 +302,190 @@ class Result implements ResultInterface
     }
 
     /**
+     * The tables of the FROM clauses and of the joins, read from the tokens: the alias of each table, and the schema
+     * of each alias. A FROM belongs to a SELECT at the same depth of parentheses (not to extract(year FROM x), nor to
+     * IS [NOT] DISTINCT FROM); a FROM clause lists its items separated by commas. Neither a sub-query nor a function
+     * names a table
+     *
+     * @param list<string> $tokensWithCase
+     * @param list<string> $tokens lowercase tokens
+     * @param array<int, true> $comparisonFroms
+     * @return array{array<string, string>, array<string, string>} table => alias, alias => schema
+     */
+    private function findTables(array $tokensWithCase, array $tokens, array $comparisonFroms): array
+    {
+        $tableToAlias = [];
+        $aliasToSchema = [];
+        // Whether each depth of parentheses holds a SELECT
+        $selects = [false];
+
+        foreach ($tokens as $index => $token) {
+            if ($token === '(' || $token === '[') {
+                $selects[] = false;
+                continue;
+            }
+            if ($token === ')' || $token === ']') {
+                if (\count($selects) > 1) {
+                    array_pop($selects);
+                }
+                continue;
+            }
+            if ($token === 'select') {
+                $selects[array_key_last($selects)] = true;
+                continue;
+            }
+            $isFrom = $token === 'from' && !isset($comparisonFroms[$index]) && $selects[array_key_last($selects)];
+            if ($token !== 'join' && !$isFrom) {
+                continue;
+            }
+
+            $position = $index;
+            do {
+                $item = self::readFromItem($tokensWithCase, $tokens, $position);
+                if ($item['table'] !== null) {
+                    $table = $this->identifierKey($item['table']);
+                    $alias = $item['alias'] !== null ? $this->identifierKey($item['alias']) : $table;
+                    $tableToAlias[$table] = $alias;
+                    $aliasToSchema[$alias] = $item['schema'] !== null ? $this->identifierKey($item['schema']) : '';
+                }
+                $position = $item['end'];
+            } while (($tokens[$position] ?? '') === ',');
+        }
+
+        return [$tableToAlias, $aliasToSchema];
+    }
+
+    /**
+     * The item of a FROM clause or of a join following $position: [ONLY | LATERAL] [[database.]schema.]table, a
+     * function call or a parenthesized sub-query / join, then its optional alias (AS optional, with its column
+     * aliases)
+     *
+     * @param list<string> $tokensWithCase
+     * @param list<string> $tokens lowercase tokens
+     * @return array{table: ?string, schema: ?string, alias: ?string, end: int} end: the first token after the item
+     */
+    private static function readFromItem(array $tokensWithCase, array $tokens, int $position): array
+    {
+        $item = ['table' => null, 'schema' => null, 'alias' => null, 'end' => $position];
+
+        $index = self::nextSignificant($tokens, $position);
+        if (\in_array($tokens[$index] ?? '', ['only', 'lateral'], true)) {
+            $index = self::nextSignificant($tokens, $index);
+        }
+
+        if (($tokens[$index] ?? '') === '(') {
+            $index = self::closingParenthesis($tokens, $index);
+        } elseif (self::isIdentifier($tokensWithCase[$index] ?? '')) {
+            $names = [$tokensWithCase[$index]];
+            $next = self::nextSignificant($tokens, $index);
+            while (
+                ($tokens[$next] ?? '') === '.'
+                && self::isIdentifier($tokensWithCase[self::nextSignificant($tokens, $next)] ?? '')
+            ) {
+                $index = self::nextSignificant($tokens, $next);
+                $names[] = $tokensWithCase[$index];
+                $next = self::nextSignificant($tokens, $index);
+            }
+
+            if (($tokens[$next] ?? '') === '(') {
+                // A function call
+                $index = self::closingParenthesis($tokens, $next);
+            } else {
+                $item['table'] = array_pop($names);
+                $item['schema'] = array_pop($names);
+                // FROM table * (its descendant tables, the default)
+                if (($tokens[$next] ?? '') === '*') {
+                    $index = $next;
+                }
+            }
+        } else {
+            return $item;
+        }
+
+        $index = self::nextSignificant($tokens, $index);
+        $hasAs = ($tokens[$index] ?? '') === 'as';
+        if ($hasAs) {
+            $index = self::nextSignificant($tokens, $index);
+        }
+        $alias = $tokensWithCase[$index] ?? '';
+        if (
+            self::isIdentifier($alias)
+            && (
+                $hasAs
+                || $alias[0] === '"'
+                || !self::match('/^(?:' . self::SQL_TABLE_SEPARATOR . '|tablesample)$/i', $alias)
+            )
+        ) {
+            $item['alias'] = $alias;
+            $index = self::nextSignificant($tokens, $index);
+            // The column aliases: AS t (a, b)
+            if (($tokens[$index] ?? '') === '(') {
+                $index = self::nextSignificant($tokens, self::closingParenthesis($tokens, $index));
+            }
+        }
+        $item['end'] = $index;
+
+        return $item;
+    }
+
+    /**
+     * Position of the parenthesis closing the one at $index (the last token when it is never closed)
+     *
+     * @param list<string> $tokens
+     */
+    private static function closingParenthesis(array $tokens, int $index): int
+    {
+        $depth = 0;
+        for ($count = \count($tokens); $index < $count; $index++) {
+            if ($tokens[$index] === '(' || $tokens[$index] === '[') {
+                $depth++;
+            } elseif (($tokens[$index] === ')' || $tokens[$index] === ']') && --$depth === 0) {
+                return $index;
+            }
+        }
+
+        return $index;
+    }
+
+    /**
+     * Whether the token is an identifier: a quoted identifier or a name, unquoted
+     */
+    private static function isIdentifier(string $token): bool
+    {
+        return self::match('/^(?:"(?:[^"]|"")++"|[a-z_][a-z0-9_$]*+)$/i', $token);
+    }
+
+    /**
+     * preg_match() that never fails silently: a PCRE failure (backtrack or JIT stack limit) throws
+     *
+     * @param array<int|string, string>|null $matches
+     * @param-out array<int|string, string> $matches
+     * @throws QueryException
+     */
+    private static function match(string $pattern, string $subject, ?array &$matches = null): bool
+    {
+        $result = preg_match($pattern, $subject, $matches);
+        if ($result === false) {
+            throw self::pcreFailure('parse "' . $subject . '"');
+        }
+
+        return $result === 1;
+    }
+
+    private static function pcreFailure(string $action): QueryException
+    {
+        return new QueryException('Query invalid: can\'t ' . $action . ' (' . preg_last_error_msg() . ')');
+    }
+
+    /**
      * Split the query into tokens, comments replaced by a space: concatenated, the tokens give the query back
      * @return list<string>
      */
     private static function tokenize(string $query): array
     {
-        preg_match_all(self::SQL_TOKEN, $query, $matches);
+        if (preg_match_all(self::SQL_TOKEN, $query, $matches) === false) {
+            throw self::pcreFailure('split the query into tokens');
+        }
 
         return array_map(
             static fn (string $token): string => str_starts_with($token, '--') || str_starts_with($token, '/*')
@@ -457,11 +597,6 @@ class Result implements ResultInterface
         return $froms;
     }
 
-    private static function isStringLiteral(string $token): bool
-    {
-        return preg_match('/^(?:\'|[eE]\'|\$(?:[a-zA-Z_]\w*)?\$)/', $token) === 1;
-    }
-
     /**
      * Move the internal pointer to an arbitrary row in the result set
      */
@@ -517,7 +652,7 @@ class Result implements ResultInterface
      */
     protected function unescapeField(string $field): string
     {
-        if (preg_match('/^"((?:[^"]|"")*)"$/s', $field, $matches) === 1) {
+        if (self::match('/^"((?:[^"]|"")*+)"$/s', $field, $matches)) {
             return str_replace('""', '"', $matches[1]);
         }
 
