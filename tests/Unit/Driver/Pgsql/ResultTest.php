@@ -300,6 +300,47 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function fromClauseProvider(): array
+    {
+        $column = fn (string $name, string $table, string $schema = '') => [
+            'name' => $name,
+            'orgName' => $name,
+            'table' => $table,
+            'schema' => $schema,
+        ];
+
+        return [
+            'a semicolon after the alias of the last table' => [
+                'SELECT b.boo_id, boo_name FROM app.t_bouh_boo b;',
+                ['t_bouh_boo', 't_bouh_boo'],
+                [$column('boo_id', 'b', 'app'), $column('boo_name', 'b', 'app')],
+            ],
+            'a semicolon after the alias of a joined table' => [
+                'SELECT u.id, total, qty FROM users u JOIN shop.orders o ON o.uid = u.id JOIN app.carts c;',
+                ['users', 'orders', 'carts'],
+                [$column('id', 'u'), $column('total', 'o', 'shop'), $column('qty', 'c', 'app')],
+            ],
+            'a semicolon and spaces after the alias' => [
+                "SELECT boo_id FROM app.t_bouh_boo AS b ;\n",
+                ['t_bouh_boo'],
+                [$column('boo_id', 'b', 'app')],
+            ],
+        ];
+    }
+
+    /**
+     * The tables of the FROM clause, their aliases and their schemas: a column without table prefix is attributed to
+     * the alias of the table pg_field_table() names
+     *
+     * @param array<int, string|false> $tables
+     * @param list<array<string, string>> $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('fromClauseProvider')]
+    public function testSetQueryShouldReadTheTablesOfTheFromClause(string $query, array $tables, array $expected)
+    {
+        $this->assertSame($expected, $this->parseColumns($query, $tables));
+    }
+
     public static function selectListProvider(): array
     {
         $id = ['name' => 'id', 'orgName' => 'id', 'table' => 'city', 'schema' => ''];
