@@ -676,7 +676,7 @@ class MetadataRepositoryTest extends TestCase
 
     public function testFindMetadataForTableShouldCompareSchemasCaseInsensitively(): void
     {
-        // Pgsql\Result lowercases the schemas read in the query
+        // Pgsql\Result folds the unquoted schemas of the query to lowercase
         $metadataRepository = $this->metadataRepositoryFor([
             ['City', 'bouh_world', ''],
             ['CityMySchema', 'bouh_world', 'mySchema'],
@@ -780,7 +780,7 @@ class MetadataRepositoryTest extends TestCase
         $this->assertSame('EnUserEntity', $this->entityFoundForTable($metadataRepository, 'db_en', '', preferredRepositories: [['FrUser']]));
         $this->assertSame('FrUserEntity', $this->entityFoundForTable($metadataRepository, 'db_fr', '', preferredRepositories: [['FrUser']]));
         $this->assertSame('AuditUserEntity', $this->entityFoundForTable($metadataRepository, 'db', 'Audit', preferredRepositories: [['User']]));
-        // Pgsql\Result lowercases the schemas read
+        // Pgsql\Result folds the unquoted schemas read to lowercase
         $this->assertSame('AuditUserEntity', $this->entityFoundForTable($metadataRepository, 'db', 'audit', preferredRepositories: [['User']]));
         // No metadata of the database and schema read: the preference chooses
         $this->assertSame('FrUserEntity', $this->entityFoundForTable($metadataRepository, 'db_other', '', preferredRepositories: [['FrUser']]));
@@ -831,6 +831,75 @@ class MetadataRepositoryTest extends TestCase
             HydratorException::class,
             fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', '')
         );
+    }
+
+    public static function fieldOptionsProvider(): array
+    {
+        $closure = fn (): int => 1;
+
+        return [
+            'assoc null and false' => [['assoc' => null], ['assoc' => false], false],
+            '1 and true' => [['depth' => 1], ['depth' => true], false],
+            '"1" and 1' => [['depth' => '1'], ['depth' => 1], false],
+            'the same options in another order' => [
+                ['assoc' => true, 'depth' => 2],
+                ['depth' => 2, 'assoc' => true],
+                true,
+            ],
+            'equal objects' => [
+                ['zone' => new \DateTimeZone('UTC')],
+                ['zone' => new \DateTimeZone('UTC')],
+                true,
+            ],
+            'objects with loosely equal properties' => [
+                ['o' => (object) ['assoc' => null]],
+                ['o' => (object) ['assoc' => false]],
+                false,
+            ],
+            'the same closure' => [['callback' => $closure], ['callback' => $closure], true],
+            'two closures' => [['callback' => fn (): int => 1], ['callback' => fn (): int => 1], false],
+        ];
+    }
+
+    /**
+     * Two repositories hydrate the same way only when their fields are strictly the same: assoc null and false
+     * decode JSON differently
+     *
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $otherOptions
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('fieldOptionsProvider')]
+    public function testFindMetadataForTableShouldCompareTheFieldsStrictly(
+        array $options,
+        array $otherOptions,
+        bool $same
+    ): void {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+        foreach (['UserRepository' => $options, 'UserJsonRepository' => $otherOptions] as $repository => $unserialize) {
+            $metadata = new Metadata($services->serializerFactory());
+            $metadata->setEntity('User');
+            $metadata->setConnectionName('main');
+            $metadata->setDatabase('bouh_world');
+            $metadata->setTable('T_CITY_CIT');
+            $metadata->addField(['fieldName' => 'id', 'columnName' => 'id', 'type' => 'int', 'primary' => true]);
+            $metadata->addField([
+                'fieldName' => 'data',
+                'columnName' => 'data',
+                'type' => 'json',
+                'serializer_options' => ['unserialize' => $unserialize],
+            ]);
+            $metadataRepository->addMetadata($repository, $metadata);
+        }
+
+        if ($same) {
+            $this->assertSame('User', $this->entityFoundForTable($metadataRepository, 'bouh_world', ''));
+        } else {
+            $this->assertThrows(
+                HydratorException::class,
+                fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', '')
+            );
+        }
     }
 
     public function testFindMetadataForTableShouldApplyTheRulesToThePreferredRepositories(): void

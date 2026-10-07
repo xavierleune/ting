@@ -228,14 +228,48 @@ class MetadataRepository
             $first ??= $metadata;
             // Fields by column: the order in which they are added does not matter
             if ($metadata->getEntity() !== $first->getEntity()
-                || array_column($metadata->getFields(), null, 'columnName')
-                    != array_column($first->getFields(), null, 'columnName')
+                || !self::isSameValue(
+                    array_column($metadata->getFields(), null, 'columnName'),
+                    array_column($first->getFields(), null, 'columnName')
+                )
             ) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * Strict comparison, whatever the order of the keys of an array: assoc null and false, 1 and true, or "1" and 1
+     * are different options. Objects are the same when identical, or of the same class (not a closure) with the same
+     * properties
+     */
+    private static function isSameValue(mixed $value, mixed $other): bool
+    {
+        if (\is_array($value) && \is_array($other)) {
+            if (\count($value) !== \count($other)) {
+                return false;
+            }
+            foreach ($value as $key => $item) {
+                if (!\array_key_exists($key, $other) || !self::isSameValue($item, $other[$key])) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (\is_object($value) && \is_object($other)) {
+            return $value === $other
+                || (
+                    $value::class === $other::class
+                    && !$value instanceof Closure
+                    && self::isSameValue((array) $value, (array) $other)
+                );
+        }
+
+        return $value === $other;
     }
 
     /**
