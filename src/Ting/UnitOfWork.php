@@ -385,6 +385,31 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return false;
         }
 
+        if ($metadata->hasProperty($propertyName)) {
+            return $this->isMutableFieldChanged($entity, $metadata, $propertyName);
+        }
+
+        // Not mapped by the metadata the entity was read with (a projection): those registered for its class
+        $changed = false;
+        $this->metadataRepository->findMetadataForEntity(
+            $entity,
+            function (Metadata $registered) use ($entity, $propertyName, &$changed): void {
+                $changed = $this->isMutableFieldChanged($entity, $registered, $propertyName);
+            },
+            static function (): void {
+                // Nothing else maps it
+            }
+        );
+
+        return $changed;
+    }
+
+    /**
+     * @template E of object
+     * @param Metadata<E> $metadata
+     */
+    private function isMutableFieldChanged(NotifyPropertyInterface $entity, Metadata $metadata, string $propertyName): bool
+    {
         return $metadata->isMutable($propertyName)
             && $this->getMutableChange($entity, $metadata, $propertyName, $this->getStoredMutableValues($entity)) !== null;
     }
@@ -817,9 +842,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
         $read = $this->entitiesMetadata[$entity] ?? $metadata;
         if ($read !== $metadata && $read->hasProperty($property) === false
+            && array_key_exists($property, $stored) === false
             && $this->isChangeNotified($entity, $property) === false
         ) {
-            // Not read by the metadata the entity was read with: its value is not known
+            // Neither read by the metadata the entity was read with, nor written since: its value is not known
             return null;
         }
 

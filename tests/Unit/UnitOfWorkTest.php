@@ -1999,6 +1999,31 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testAMutableFieldWrittenThroughOtherMetadataShouldBeComparedFromThenOn()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $full = DocumentRepository::initMetadata($this->services->serializerFactory());
+
+        // Read through the projection, publishedAt set then written through the full metadata: known from now on
+        $entity = new Document();
+        $entity->setId(1);
+        $unitOfWork->manage($entity, $this->lightDocumentMetadata());
+        $entity->setPublishedAt(new \DateTime('2026-01-01 10:00:00'));
+        $unitOfWork->pushSave($entity, $full)->process();
+        $entity->getPublishedAt()?->modify('+1 day');
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $unitOfWork->pushSave($entity, $full)->process();
+
+        $this->assertSame(
+            [
+                ['v1_doc_published_at' => '2026-01-01 10:00:00', 'w1_doc_id' => 1],
+                ['v1_doc_published_at' => '2026-01-02 10:00:00', 'w1_doc_id' => 1],
+            ],
+            $params
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testASaveThroughAProjectionShouldKeepTheChangesItDoesNotWrite()
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
