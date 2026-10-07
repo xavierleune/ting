@@ -34,7 +34,6 @@ use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Serializer\UnserializeInterface;
 use CCMBenchmark\Ting\UnitOfWork;
 use Generator;
-use WeakMap;
 
 /**
  * Hydrates each row into an array: alias of the table => entity (null when a LEFT JOIN matched nothing), and
@@ -64,9 +63,7 @@ class Hydrator implements HydratorInterface
     protected ?string $queryRepository = null;
     /** @var array<string, array{0: UnserializeInterface, 1: SerializerOptions}> virtual column => [unserializer, options] */
     protected array $unserializeAliases = [];
-    /** @var WeakMap<NotifyPropertyInterface, bool> */
-    protected WeakMap $alreadyManaged;
-    /** @var array<string, object|null> identity map: reference key => entity */
+    /** @var array<string, object|null> identity map of the current result: reference key => entity */
     protected array $references         = [];
 
     /**
@@ -88,9 +85,11 @@ class Hydrator implements HydratorInterface
 
     protected bool $identityMap = false;
 
+    /**
+     * Kept for the hydrators extending this class, which call it
+     */
     public function __construct()
     {
-        $this->alreadyManaged = new WeakMap();
     }
 
     /**
@@ -126,6 +125,8 @@ class Hydrator implements HydratorInterface
         // An alias names another table, or the same one of another database, in another result
         $this->metadataList = [];
         $this->mutableColumns = [];
+        // Another read: its rows may have changed, and the unit of work may have been reset since (worker mode)
+        $this->references = [];
         return $this;
     }
 
@@ -573,12 +574,15 @@ class Hydrator implements HydratorInterface
      */
     private function manageIfYouCan(mixed $entity, ?Metadata $metadata = null): void
     {
-        if ($entity instanceof NotifyPropertyInterface && $this->alreadyManaged->offsetExists($entity) === false) {
+        if ($entity instanceof NotifyPropertyInterface) {
             if ($this->unitOfWork === null) {
                 throw new HydratorException('Hydrator used before setUnitOfWork(): the entities cannot be managed');
             }
-            $this->unitOfWork->manage($entity, $metadata);
-            $this->alreadyManaged[$entity] = true;
+
+            // Returned again by the identity map: managed again once detached
+            if ($this->unitOfWork->isManaged($entity) === false) {
+                $this->unitOfWork->manage($entity, $metadata);
+            }
         }
     }
 }
