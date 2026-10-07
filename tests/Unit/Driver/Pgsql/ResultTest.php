@@ -454,6 +454,37 @@ class ResultTest extends TestCase
                 ['city', 'city'],
                 [$id, ['name' => 'n', 'orgName' => 'name', 'table' => 'city', 'schema' => '']],
             ],
+            'expressions ending in an identifier, without alias' => [
+                'SELECT price * qty, NOT flag, -amount, a IS DISTINCT FROM t.b, b::text, ts AT TIME ZONE tz, id FROM city',
+                [6 => 'city'],
+                [
+                    ['name' => '?column?', 'orgName' => 'price * qty', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => 'NOT flag', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => '-amount', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => 'a IS DISTINCT FROM t.b', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => 'b::text', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => 'ts AT TIME ZONE tz', 'table' => '', 'schema' => ''],
+                    $id,
+                ],
+            ],
+            'expressions with an alias without AS' => [
+                "SELECT price * qty total, lower(name) n, 'a' x, 2 y, (a + b) s, t.b c, CASE WHEN a THEN 1 END d FROM city",
+                [],
+                [
+                    ['name' => 'total', 'orgName' => 'price * qty', 'table' => '', 'schema' => ''],
+                    ['name' => 'n', 'orgName' => 'lower(name)', 'table' => '', 'schema' => ''],
+                    ['name' => 'x', 'orgName' => "'a'", 'table' => '', 'schema' => ''],
+                    ['name' => 'y', 'orgName' => '2', 'table' => '', 'schema' => ''],
+                    ['name' => 's', 'orgName' => '(a + b)', 'table' => '', 'schema' => ''],
+                    ['name' => 'c', 'orgName' => 't.b', 'table' => '', 'schema' => ''],
+                    ['name' => 'd', 'orgName' => 'CASE WHEN a THEN 1 END', 'table' => '', 'schema' => ''],
+                ],
+            ],
+            'a column of schema.table.column' => [
+                'SELECT app.city.id FROM app.city',
+                [],
+                [['name' => 'id', 'orgName' => 'app.city.id', 'table' => '', 'schema' => '']],
+            ],
             'UNION whose first SELECT alone is parenthesized' => [
                 '(SELECT id, name AS n FROM city ORDER BY id LIMIT 3) UNION ALL SELECT o.code, o.label FROM other o',
                 [],

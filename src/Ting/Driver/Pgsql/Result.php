@@ -61,6 +61,12 @@ class Result implements ResultInterface
         REGEX;
 
     /**
+     * A column of [database.]schema.table.column
+     */
+    private const QUALIFIED_NAME = '/^(?:(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)++'
+        . '(?:"(?:[^"]|"")*+"|[a-z_][a-z0-9_$]*+)$/i';
+
+    /**
      * A whole column made of an asterisk: *, alias.* or DISTINCT *
      */
     private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]|"")*"|\w+)\s*\.\s*)?\*$/i';
@@ -222,14 +228,19 @@ class Result implements ResultInterface
 
                         $matches['column'] = $cut > 0 ? trim(substr($column, 0, - $cut)) : $column;
 
-                        // The right operand of IS [NOT] DISTINCT FROM is no alias: PostgreSQL names the column ?column?
+                        // Without AS, an identifier is an alias only after an operand: in price * qty, NOT flag,
+                        // a IS DISTINCT FROM t.b or b::text, it ends the expression, which PostgreSQL names ?column?.
+                        // A column of [database.]schema.table.column is named after the column, as PostgreSQL does
                         if (
                             $noAlias === false
                             && ($matches['prefix'] ?? '') === ''
-                            && self::match('/\bdistinct\s+from$/i', $matches['column'])
+                            && ($matches['alias'] ?? '') !== ''
+                            && $matches['column'] !== ''
+                            && !self::endsWithOperand($matches['column'])
                         ) {
+                            $qualified = self::match(self::QUALIFIED_NAME, $column);
                             $matches['column'] = $column;
-                            $matches['alias'] = '?column?';
+                            $matches['alias'] = $qualified ? $matches['alias'] : '?column?';
                         }
 
                         $columnComponent = [
@@ -475,6 +486,20 @@ class Result implements ResultInterface
     private static function pcreFailure(string $action): QueryException
     {
         return new QueryException('Query invalid: can\'t ' . $action . ' (' . preg_last_error_msg() . ')');
+    }
+
+    /**
+     * Whether the expression ends with an operand (a name, a quoted identifier, a literal, a parenthesis or a bracket),
+     * which an alias may follow without AS, rather than with an operator, a "." or a keyword expecting an operand
+     */
+    private static function endsWithOperand(string $expression): bool
+    {
+        return self::match('/[\w$"\')\]]$/', $expression)
+            && !self::match(
+                '/(?:^|[^\w$."])(?:not|and|or|is|like|ilike|similar|to|between|symmetric|escape|collate|from|when|then'
+                . '|else|case|any|some|all|distinct|overlaps|at\s+time\s+zone)$/i',
+                $expression
+            );
     }
 
     /**
