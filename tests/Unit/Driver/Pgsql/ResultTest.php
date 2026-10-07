@@ -454,6 +454,14 @@ class ResultTest extends TestCase
                 ['city', 'city'],
                 [$id, ['name' => 'n', 'orgName' => 'name', 'table' => 'city', 'schema' => '']],
             ],
+            'UNION whose first SELECT alone is parenthesized' => [
+                '(SELECT id, name AS n FROM city ORDER BY id LIMIT 3) UNION ALL SELECT o.code, o.label FROM other o',
+                [],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => '', 'schema' => ''],
+                    ['name' => 'n', 'orgName' => 'name', 'table' => '', 'schema' => ''],
+                ],
+            ],
             'parenthesized UNION without FROM' => [
                 '(SELECT 1 AS id, lower(name) AS name) UNION ALL (SELECT 2, 3)',
                 [],
