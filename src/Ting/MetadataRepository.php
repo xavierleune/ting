@@ -58,8 +58,11 @@ class MetadataRepository
      */
     private array $tableWithConnectionToMetadata = [];
 
-    /** @var array<string, array<string, bool>> entity class => property name => mapped by some metadata of the class */
-    private array $mappedProperties = [];
+    /**
+     * @var array<string, array<string, list<Metadata<object>>>> entity class => property name => the metadata of the
+     *      class mapping it
+     */
+    private array $mappingMetadata = [];
 
     public function __construct(
         protected SerializerFactoryInterface $serializerFactory,
@@ -306,7 +309,7 @@ class MetadataRepository
             $metadata->setRepository($repositoryClass);
         }
         $this->metadataList[$repositoryClass] = $metadata;
-        $this->mappedProperties = [];
+        $this->mappingMetadata = [];
         // By repository: registered again (a repository registers its metadata when built), it is not duplicated
         $this->tableWithConnectionToMetadata[$metadata->getConnectionName() . '#' . $metadata->getTable()]
             [$repositoryClass] = $metadata->getSchema() . '#' . $metadata->getDatabase();
@@ -425,18 +428,28 @@ class MetadataRepository
      */
     public function isPropertyMapped(string $entityClass, string $property): bool
     {
-        if (isset($this->mappedProperties[$entityClass][$property]) === false) {
-            $mapped = false;
+        return $this->getMetadataMappingProperty($entityClass, $property) !== [];
+    }
+
+    /**
+     * @param class-string $entityClass
+     * @return list<Metadata<object>> the metadata registered for the class (of every repository) mapping the property
+     *
+     * @internal
+     */
+    public function getMetadataMappingProperty(string $entityClass, string $property): array
+    {
+        if (isset($this->mappingMetadata[$entityClass][$property]) === false) {
+            $mapping = [];
             foreach ($this->metadataList as $metadata) {
                 if ($metadata->getEntity() === $entityClass && $metadata->hasProperty($property)) {
-                    $mapped = true;
-                    break;
+                    $mapping[] = $metadata;
                 }
             }
-            $this->mappedProperties[$entityClass][$property] = $mapped;
+            $this->mappingMetadata[$entityClass][$property] = $mapping;
         }
 
-        return $this->mappedProperties[$entityClass][$property];
+        return $this->mappingMetadata[$entityClass][$property];
     }
 
     /**

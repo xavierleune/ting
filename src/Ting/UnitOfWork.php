@@ -389,19 +389,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return $this->isMutableFieldChanged($entity, $metadata, $propertyName);
         }
 
-        // Not mapped by the metadata the entity was read with (a projection): those registered for its class
-        $changed = false;
-        $this->metadataRepository->findMetadataForEntity(
-            $entity,
-            function (Metadata $registered) use ($entity, $propertyName, &$changed): void {
-                $changed = $this->isMutableFieldChanged($entity, $registered, $propertyName);
-            },
-            static function (): void {
-                // Nothing else maps it
+        // Not mapped by the metadata the entity was read with (a projection): every metadata of its class mapping it,
+        // whichever repository registered them last, as a save through any of them would write it
+        foreach ($this->metadataRepository->getMetadataMappingProperty($entity::class, $propertyName) as $registered) {
+            if ($this->isMutableFieldChanged($entity, $registered, $propertyName)) {
+                return true;
             }
-        );
+        }
 
-        return $changed;
+        return false;
     }
 
     /**
