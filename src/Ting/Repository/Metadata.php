@@ -555,6 +555,25 @@ class Metadata
     }
 
     /**
+     * @return bool true when the metadata have an autoincrement field and the property of the entity holds a value
+     *              other than null, read from the property itself (not through its getter, which may refuse an id not
+     *              generated yet); false without autoincrement field, or when the property is null, not initialized or
+     *              does not exist
+     *
+     * @internal
+     */
+    public function hasAutoincrementValue(object $entity): bool
+    {
+        if ($this->autoincrement === null) {
+            return false;
+        }
+
+        [$exists, $value] = $this->propertyAccessor->getRawValue($entity, $this->autoincrement['fieldName']);
+
+        return $exists && $value !== null;
+    }
+
+    /**
      * Set the provided value to autoincrement if applicable
      *
      * @return Metadata<T>|false false without autoincrement

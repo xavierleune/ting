@@ -287,6 +287,59 @@ class PropertyAccessorTest extends TestCase
         $this->assertSame(2, $cache->getItemCalls);
     }
 
+    public function testGetRawValueShouldReadThePropertyItselfWhateverItsVisibility()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TrackedChild();
+        $entity->setOwner('owner');
+        $entity->setTitle('title');
+        $public = new PublicPropertiesEntity();
+        $public->propertyWithoutSetter = 'value';
+
+        // Private in the parent class, private in the class, public, private with a getter
+        $this->assertSame([true, 'owner'], $accessor->getRawValue($entity, 'owner'));
+        $this->assertSame([true, 'title'], $accessor->getRawValue($entity, 'title'));
+        $this->assertSame([true, 'value'], $accessor->getRawValue($public, 'propertyWithoutSetter'));
+        $this->assertSame([true, 'with getter'], $accessor->getRawValue($public, 'propertyWithGetter'));
+        // Protected
+        $this->assertSame([true, []], $accessor->getRawValue($entity, 'listeners'));
+    }
+
+    public function testGetRawValueShouldNotCallTheGetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            protected ?int $id = null;
+
+            public function getId(): int
+            {
+                return $this->id ?? throw new \LogicException('Not generated yet');
+            }
+        };
+
+        $this->assertSame([true, null], $accessor->getRawValue($entity, 'id'));
+    }
+
+    public function testGetRawValueShouldTellAPropertyNotInitializedOrMissing()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new PublicPropertiesEntity();
+
+        $this->assertSame([false, null], $accessor->getRawValue($entity, 'propertyWithSetter'));
+        $this->assertSame([false, null], $accessor->getRawValue($entity, 'missing'));
+    }
+
+    #[RequiresPhp('>= 8.4.0')]
+    public function testGetRawValueShouldBypassAGetHook()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new HookedPropertiesEntity();
+
+        $this->assertSame([true, 'default'], $accessor->getRawValue($entity, 'hookGetOnly'));
+        // Virtual: no value
+        $this->assertSame([false, null], $accessor->getRawValue($entity, 'virtualSetOnly'));
+    }
+
     public function testSetPropertyShouldWriteAPrivatePropertyOfTheParentClassThroughItsSetter()
     {
         $accessor = new PropertyAccessor();

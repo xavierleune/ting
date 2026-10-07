@@ -130,6 +130,33 @@ class PropertyAccessor
     }
 
     /**
+     * The value held by the property itself, whatever its visibility: neither its getter nor its get hook is called
+     *
+     * @return array{0: bool, 1: mixed} [false, null] when the property does not exist, is not initialized or is
+     *                                  virtual (hooks without a value of its own), [true, its value] otherwise
+     */
+    public function getRawValue(object $object, string $property): array
+    {
+        // Mangled names, as serialize() writes them: the hooks are bypassed, an uninitialized property is left out
+        $properties = get_mangled_object_vars($object);
+        foreach ([$property, "\0*\0" . $property] as $key) {
+            if (\array_key_exists($key, $properties)) {
+                return [true, $properties[$key]];
+            }
+        }
+
+        // Private, in the class or one of its parents (the closest one first)
+        for ($class = $object::class; $class !== false; $class = get_parent_class($class)) {
+            $key = "\0" . $class . "\0" . $property;
+            if (\array_key_exists($key, $properties)) {
+                return [true, $properties[$key]];
+            }
+        }
+
+        return [false, null];
+    }
+
+    /**
      * @param object $object
      * @param string $propertyPath
      * @return array{'public': bool, 'supportsHook': bool, 'hasSetHook': bool}

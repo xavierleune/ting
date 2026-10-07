@@ -28,7 +28,6 @@ namespace CCMBenchmark\Ting;
 
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\QueryException;
-use CCMBenchmark\Ting\Entity\NotifyProperty;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 use CCMBenchmark\Ting\Entity\PropertyListenerInterface;
 use CCMBenchmark\Ting\Query\QueryFactoryInterface;
@@ -82,12 +81,6 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
-    /**
-     * NotifyProperty::$listenersOwner, by entity class: null for a class which does not use the trait
-     *
-     * @var array<class-string, \ReflectionProperty|null>
-     */
-    private static array $listenersOwnerProperties = [];
 
     /**
      * @param ConnectionPool        $connectionPool
@@ -255,10 +248,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     /**
      * Flag the entity to be persisted (insert or update) on next process.
      *
-     * A managed entity is updated with its changes. An entity not managed is new: inserted (its autoincrement
-     * property, if set, is left out of the INSERT then overwritten by the generated id), then managed. Except a clone
-     * of an entity managed by this unit of work (see getManagedOriginal()): it is a copy of a row, updated by its
-     * primary key, then managed. Until then, it is not managed.
+     * A managed entity is updated with its changes. An entity not managed (built with its id, detached, read from a
+     * cache, a clone...) is taken as a stored row when its metadata have an autoincrement field and its property holds
+     * a value other than null (read from the property itself, not through its getter): it is updated by its primary
+     * key with every readable mapped field, as no change is tracked for it, then managed (isNew() is false). Otherwise
+     * (no autoincrement field, its property null or not initialized) it is new: inserted, then managed. Until then, it
+     * is not managed.
      *
      * @param Metadata<object>|null $metadata the metadata to write the entity with (internal: given by
      *                                        Repository::save()), those registered for its class otherwise
@@ -267,7 +262,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     {
         $state = self::STATE_MANAGED;
 
-        if (isset($this->entities[$entity]) === false && $this->getManagedOriginal($entity) === null) {
+        if (isset($this->entities[$entity]) === false && $this->isStoredRow($entity, $metadata) === false) {
             $state = self::STATE_NEW;
         }
 
@@ -441,51 +436,26 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * The entity managed by this unit of work that $entity is a clone of. NotifyProperty keeps a reference to the
-     * object its listeners were added to (by manage()): clone copies it, so in a clone it still points to the
-     * original. Read by reflection: the reference is internal to the trait, and NotifyPropertyInterface does not
-     * expose it (adding a method would break its implementations).
-     *
-     * @return NotifyPropertyInterface|null null when $entity is not a clone, its original is not managed (detached,
-     *                                      freed, managed by another unit of work), or it does not use NotifyProperty
-     *                                      (an unserialized entity has no reference)
+     * @param Metadata<object>|null $metadata
+     * @return bool true when the entity not managed is taken as a stored row: its autoincrement property holds a
+     *              value (see Metadata::hasAutoincrementValue()). False without metadata: process() then reports the
+     *              missing repository.
      */
-    private function getManagedOriginal(NotifyPropertyInterface $entity): ?NotifyPropertyInterface
+    private function isStoredRow(NotifyPropertyInterface $entity, ?Metadata $metadata): bool
     {
-        $class = $entity::class;
-        if (\array_key_exists($class, self::$listenersOwnerProperties) === false) {
-            self::$listenersOwnerProperties[$class] = \in_array(NotifyProperty::class, $this->getTraits($class), true)
-                ? new \ReflectionProperty($class, 'listenersOwner')
-                : null;
-        }
-
-        $owner = self::$listenersOwnerProperties[$class]?->getValue($entity);
-        $original = $owner instanceof \WeakReference ? $owner->get() : null;
-
-        return $original !== $entity && $original instanceof NotifyPropertyInterface && isset($this->entities[$original])
-            ? $original
-            : null;
-    }
-
-    /**
-     * @param class-string $class
-     * @return list<string> the traits used by the class, its parents and their traits
-     */
-    private function getTraits(string $class): array
-    {
-        $traits = [];
-        foreach ([$class, ...array_values(class_parents($class))] as $name) {
-            $toVisit = array_values(class_uses($name));
-            while ($toVisit !== []) {
-                $trait = array_pop($toVisit);
-                if (\in_array($trait, $traits, true) === false) {
-                    $traits[] = $trait;
-                    array_push($toVisit, ...array_values(class_uses($trait)));
-                }
+        $isStoredRow = false;
+        $this->findMetadataToWrite(
+            $entity,
+            $metadata,
+            function (Metadata $metadata) use ($entity, &$isStoredRow): void {
+                $isStoredRow = $metadata->hasAutoincrementValue($entity);
+            },
+            static function (): void {
+                // Without metadata, process() throws
             }
-        }
+        );
 
-        return $traits;
+        return $isStoredRow;
     }
 
     /**
@@ -541,7 +511,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                             if (isset($this->entities[$details['entity']])) {
                                 $this->processManaged($details['entity']);
                             } else {
-                                $this->processClone($details['entity']);
+                                $this->processNotManaged($details['entity']);
                             }
                             break;
 
@@ -620,57 +590,38 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
     }
 
     /**
-     * Update the row of a clone of a managed entity, by its primary key, with every readable field: its changes are
-     * not tracked. The fields its original did not read are left out, unless the clone holds another value, and so are
-     * the mutable fields whose database value is the one stored for the original. Then the clone is managed, as if
-     * just read. Inserted instead when its original is no longer managed (detached or deleted since pushSave()) or its
-     * primary key is no longer set.
+     * Update the row of an entity not managed, by its primary key, with every readable mapped field: no change is
+     * tracked for it. Then the entity is managed, with every field known. Inserted instead when its autoincrement
+     * property no longer holds a value (set to null since pushSave()).
      *
      * @throws Exception
      * @throws QueryException
      */
-    private function processClone(NotifyPropertyInterface $entity): void
+    private function processNotManaged(NotifyPropertyInterface $entity): void
     {
         $this->findMetadataToWrite(
             $entity,
             $this->entitiesShouldBePersisted[spl_object_hash($entity)]['metadata'] ?? null,
             function (Metadata $metadata) use ($entity): void {
-                $original = $this->getManagedOriginal($entity);
-                if ($original === null || $this->isPrimaryKeySet($entity, $metadata) === false) {
+                if ($metadata->hasAutoincrementValue($entity) === false) {
                     $this->processNew($entity);
 
                     return;
                 }
 
-                $originalNotRead = $this->propertiesNotRead[$original] ?? [];
-                $originalMutableValues = $this->getStoredMutableValues($original);
-                $notRead = [];
                 $properties = [];
                 foreach ($metadata->getFields() as $field) {
                     $property = $field['fieldName'];
-                    // The primary key targets the row. A public typed property not initialized: the column keeps
-                    // its value
-                    if (($field['primary'] ?? false) || $metadata->isEntityPropertyReadable($entity, $property) === false) {
+                    // The primary key targets the row
+                    if ($field['primary'] ?? false) {
                         continue;
                     }
 
-                    $value = $metadata->getEntityPropertyByFieldName($entity, $property);
-                    if (isset($originalNotRead[$property])
-                        && $metadata->getEntityPropertyByFieldName($original, $property) === $value
-                    ) {
-                        // Not read: the value of the original, not the stored one
-                        $notRead[$property] = true;
-                        continue;
+                    // A public typed property not initialized: the column keeps its value
+                    [$readable, $value] = $metadata->getEntityPropertyIfReadable($entity, $property);
+                    if ($readable) {
+                        $properties[$property] = [$value, $value];
                     }
-
-                    if (\array_key_exists($property, $originalMutableValues)
-                        && $originalMutableValues[$property] === $value
-                    ) {
-                        // The value stored
-                        continue;
-                    }
-
-                    $properties[$property] = [$value, $value];
                 }
 
                 if ($properties !== []) {
@@ -683,8 +634,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface
                 }
 
                 unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
-                $this->setPropertiesNotRead($entity, $notRead);
-                $this->manage($entity);
+                // Every value is known: written, or the primary key targeting the row
+                $this->propertiesNotRead->offsetUnset($entity);
+                $this->entitiesChanged->offsetUnset($entity);
+                $this->mutableValues->offsetUnset($entity);
+                $this->listen($entity);
+                $this->keepMutableValues($entity, $metadata);
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
