@@ -44,6 +44,7 @@ use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use tests\fixtures\Fake\Mysqli as FakeMysqli;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Account;
 use tests\fixtures\model\AccountRepository;
@@ -1062,6 +1063,100 @@ class UnitOfWorkTest extends TestCase
         );
     }
     #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityInsertedInATransactionRolledBackShouldBeInsertedAgain()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $entity = new Bouh();
+        $entity->setName('name');
+        $detached = new Bouh();
+        $detached->setName('detached');
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity)->pushSave($detached)->process();
+        $this->assertSame(1, $entity->getId());
+        $unitOfWork->detachAll();
+        $driver->rollback();
+
+        // Left as it is, its id included, but no longer managed
+        $this->assertSame(1, $entity->getId());
+        $this->assertFalse($unitOfWork->isManaged($entity));
+        // The retry: inserted again, with or without detachAll()
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity)->pushSave($detached);
+        $this->assertTrue($unitOfWork->isNew($entity));
+        $this->assertTrue($unitOfWork->isNew($detached));
+        $unitOfWork->process();
+        $driver->commit();
+
+        $this->assertSame(['INSERT', 'INSERT', 'INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        // Inserted again: the row exists, its next save updates it
+        $entity->setName('other');
+        $unitOfWork->pushSave($entity)->process();
+        $this->assertSame('UPDATE', strtok($queries[4], ' '));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityInsertedInATransactionCommittedOrWithoutTransactionShouldBeUpdatedOnceDetached()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $committed = new Bouh();
+        $withoutTransaction = new Bouh();
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($committed)->process();
+        $driver->commit();
+        $unitOfWork->pushSave($withoutTransaction)->process();
+        // A rollback of a later transaction does not concern them
+        $driver->startTransaction();
+        $driver->rollback();
+        $unitOfWork->detachAll();
+        $unitOfWork->pushSave($committed)->pushSave($withoutTransaction)->process();
+
+        $this->assertSame(['INSERT', 'INSERT', 'UPDATE', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityInsertedThenQueuedBeforeARollbackShouldBeInsertedAgain()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $saved = new Bouh();
+        $deleted = new Bouh();
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($saved)->pushSave($deleted)->process();
+        $saved->setName('name');
+        $unitOfWork->pushSave($saved)->pushDelete($deleted);
+        $driver->rollback();
+        $this->assertTrue($unitOfWork->isNew($saved));
+        // Its row was rolled back: nothing to delete
+        $this->assertFalse($unitOfWork->shouldBePersisted($deleted));
+        $unitOfWork->pushDelete($deleted);
+        $this->assertFalse($unitOfWork->shouldBePersisted($deleted));
+        $unitOfWork->process();
+
+        $this->assertSame(['INSERT', 'INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityUpdatedInATransactionRolledBackShouldStayManaged()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $entity = new Bouh();
+        $entity->setId(3);
+        $unitOfWork->manage($entity);
+
+        $driver->startTransaction();
+        $entity->setName('name');
+        $unitOfWork->pushSave($entity)->process();
+        $driver->rollback();
+
+        // Read it again before retrying: its change is no longer tracked
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testAFailedQueryShouldNotBeReplayedByTheNextProcess()
     {
         $failing = new Bouh();
@@ -1751,13 +1846,16 @@ class UnitOfWorkTest extends TestCase
      * @param list<string>|null $closed  names of the closed statements
      * @param list<array<string, mixed>>|null $params parameters of each successfully executed query
      * @param MetadataRepository|null $metadataRepository the metadata repository of the unit of work
+     * @param Driver|null       $driver  the driver of every query, whose transactions can be started, committed and
+     *                                   rolled back
      */
     private function createRecordingUnitOfWork(
         ?array &$queries,
         ?string &$failOn,
         ?array &$closed,
         ?array &$params = null,
-        ?MetadataRepository &$metadataRepository = null
+        ?MetadataRepository &$metadataRepository = null,
+        ?Driver &$driver = null
     ): UnitOfWork {
         $queries = [];
         $closed = [];
@@ -1772,7 +1870,10 @@ class UnitOfWorkTest extends TestCase
         }
 
         $connectionPool = $this->getMockBuilder(ConnectionPool::class)->onlyMethods(['primary'])->getMock();
-        $driver = $this->getMockBuilder(Driver::class)->onlyMethods(['getInsertedId', 'closeStatement'])->getMock();
+        $driver = $this->getMockBuilder(Driver::class)
+            ->setConstructorArgs([$this->createStub(FakeMysqli::class)])
+            ->onlyMethods(['getInsertedId', 'closeStatement'])
+            ->getMock();
         $driver->method('getInsertedId')->willReturnCallback(function () use (&$failOn): int {
             if ($failOn === 'getInsertedId') {
                 throw new QueryException('Forced failure of getInsertedId()');

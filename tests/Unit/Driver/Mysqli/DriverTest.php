@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Statement;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Driver\RollbackListenerInterface;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Repository\Collection;
@@ -1848,6 +1849,108 @@ class DriverTest extends TestCase
         $driver->commit();
 
         $this->assertSame(['BEGIN', 'COMMIT'], $connection->commands);
+    }
+
+    /**
+     * @param list<object> $rolledBack filled with the subjects notified
+     */
+    private function rollbackListener(?array &$rolledBack): RollbackListenerInterface
+    {
+        $rolledBack = [];
+
+        return new class ($rolledBack) implements RollbackListenerInterface {
+            /** @param list<object> $rolledBack */
+            public function __construct(private array &$rolledBack)
+            {
+            }
+
+            public function rolledBack(object $subject): void
+            {
+                $this->rolledBack[] = $subject;
+            }
+        };
+    }
+
+    public function testARollbackListenerShouldBeAddedInATransactionOnly()
+    {
+        $driver = new Driver($this->createStub(Mysqli::class));
+        $listener = $this->rollbackListener($rolledBack);
+
+        $this->assertFalse($driver->addRollbackListener($listener, new \stdClass()));
+        $driver->startTransaction();
+        $this->assertTrue($driver->addRollbackListener($listener, new \stdClass()));
+    }
+
+    public function testARollbackShouldNotifyTheSubjectsOfTheTransaction()
+    {
+        $driver = new Driver($this->createStub(Mysqli::class));
+        $listener = $this->rollbackListener($rolledBack);
+        $first = new \stdClass();
+        $second = new \stdClass();
+        $freed = new \stdClass();
+
+        $driver->startTransaction();
+        $driver->addRollbackListener($listener, $first);
+        $driver->addRollbackListener($listener, $second);
+        $driver->addRollbackListener($listener, $freed);
+        unset($freed);
+        $driver->rollback();
+
+        $this->assertSame([$first, $second], $rolledBack);
+        // Forgotten with the transaction
+        $driver->startTransaction();
+        $driver->rollback();
+        $this->assertCount(2, $rolledBack);
+    }
+
+    public function testACommitShouldForgetTheSubjectsOfTheTransaction()
+    {
+        $driver = new Driver($this->createStub(Mysqli::class));
+        $listener = $this->rollbackListener($rolledBack);
+
+        $driver->startTransaction();
+        $driver->addRollbackListener($listener, new \stdClass());
+        $driver->commit();
+        $driver->startTransaction();
+        $driver->rollback();
+
+        $this->assertSame([], $rolledBack);
+    }
+
+    public function testAFailedCommitOrRollbackShouldNotifyTheSubjectsOfTheTransaction()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->method('commit')->willReturn(false);
+        $mysqli->method('rollback')->willReturn(false);
+        $driver = new Driver($mysqli);
+        $listener = $this->rollbackListener($rolledBack);
+        $subject = new \stdClass();
+
+        $driver->startTransaction();
+        $driver->addRollbackListener($listener, $subject);
+        $this->assertThrows(TransactionException::class, fn () => $driver->commit());
+        $driver->startTransaction();
+        $driver->addRollbackListener($listener, $subject);
+        $this->assertThrows(TransactionException::class, fn () => $driver->rollback());
+
+        $this->assertSame([$subject, $subject], $rolledBack);
+    }
+
+    public function testALostTransactionShouldNotifyItsSubjects()
+    {
+        $listener = $this->rollbackListener($rolledBack);
+        $subject = new \stdClass();
+        [$driver] = $this->driverWithATransactionOnALostConnection();
+        $driver->addRollbackListener($listener, $subject);
+        NativeFunctionMock::override('mysqli_init', $this->transactionRecordingConnection());
+        $this->assertTrue($driver->ping());
+        $this->assertSame([$subject], $rolledBack);
+
+        $driver->rollback();
+        $driver->startTransaction();
+        $driver->addRollbackListener($listener, $subject);
+        $driver->close();
+        $this->assertSame([$subject, $subject], $rolledBack);
     }
 
     public function testConstructWhenMysqliCannotBeInitializedShouldRaiseDriverException()

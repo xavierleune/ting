@@ -33,6 +33,7 @@ use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\Exception;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface;
 use CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Exceptions\DriverException;
@@ -44,7 +45,11 @@ use CCMBenchmark\Ting\Repository\CollectionInterface;
 /**
  * @phpstan-import-type ConnectionParameters from DriverInterface
  */
-class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultValuesInsertDriverInterface
+class Driver implements
+    DriverInterface,
+    SequenceAwareDriverInterface,
+    DefaultValuesInsertDriverInterface,
+    RollbackListenerAwareDriverInterface
 {
     /**
      * @var string
@@ -514,9 +519,14 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultVa
                     'Cannot commit transaction: the transaction was aborted and has been rolled back'
                 );
             }
+        } catch (TransactionException $exception) {
+            $this->notifyRollbackListeners();
+
+            throw $exception;
         } finally {
             $this->deallocateStatementsRefusedInTheTransaction($connection);
         }
+        $this->forgetRollbackListeners();
     }
 
     /**
@@ -538,6 +548,8 @@ class Driver implements DriverInterface, SequenceAwareDriverInterface, DefaultVa
                 throw new TransactionException('Cannot rollback transaction: ' . pg_last_error($connection));
             }
         } finally {
+            // Failed, the transaction is over as well: rolled back by the server or lost with the connection
+            $this->notifyRollbackListeners();
             $this->deallocateStatementsRefusedInTheTransaction($connection);
         }
     }

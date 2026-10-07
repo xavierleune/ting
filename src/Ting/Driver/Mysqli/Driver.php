@@ -38,6 +38,7 @@ use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
+use CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface;
 use CCMBenchmark\Ting\Exceptions\StatementException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
@@ -47,7 +48,7 @@ use mysqli_sql_exception;
 /**
  * @phpstan-import-type ConnectionParameters from DriverInterface
  */
-class Driver implements DriverInterface
+class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
 {
     private const RECONNECTION_PENDING = 'the connection was lost and could not be reopened, ping() retries it';
 
@@ -481,7 +482,14 @@ class Driver implements DriverInterface
         }
         // Even when the COMMIT fails, the transaction is over: rolled back by the server or lost with the connection
         $this->transactionOpened = false;
-        $this->runTransactionCommand('commit', fn () => $this->connection->commit());
+        try {
+            $this->runTransactionCommand('commit', fn () => $this->connection->commit());
+        } catch (TransactionException $exception) {
+            $this->notifyRollbackListeners();
+
+            throw $exception;
+        }
+        $this->forgetRollbackListeners();
     }
 
     /**
@@ -496,7 +504,12 @@ class Driver implements DriverInterface
             throw new TransactionException('Cannot rollback no transaction');
         }
         $this->transactionOpened = false;
-        $this->runTransactionCommand('rollback', fn () => $this->connection->rollback());
+        try {
+            $this->runTransactionCommand('rollback', fn () => $this->connection->rollback());
+        } finally {
+            // Failed, the transaction is over as well: rolled back by the server or lost with the connection
+            $this->notifyRollbackListeners();
+        }
     }
 
     /**
