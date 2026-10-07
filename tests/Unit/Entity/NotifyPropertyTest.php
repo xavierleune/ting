@@ -176,7 +176,7 @@ class NotifyPropertyTest extends TestCase
     public function testSerializeShouldNeverKeepTheListenersListedBySleep(): void
     {
         $entity = new SleepingTrackedChild();
-        $entity->sleep = ['title', 'listeners', 'listenersOwner'];
+        $entity->sleep = ['title', 'listeners'];
         $entity->addPropertyListener($this->createStub(PropertyListenerInterface::class));
 
         $types = $this->collectErrorTypes(function () use ($entity, &$serialized): void {
@@ -250,7 +250,6 @@ class NotifyPropertyTest extends TestCase
         $debugInfo = $entity->__debugInfo();
 
         $this->assertArrayNotHasKey("\0*\0listeners", $debugInfo);
-        $this->assertArrayNotHasKey("\0*\0listenersOwner", $debugInfo);
         $this->assertSame('Xavier', $debugInfo["\0*\0name"]);
     }
 }
