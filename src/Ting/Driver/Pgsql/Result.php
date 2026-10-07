@@ -138,7 +138,7 @@ class Result implements ResultInterface
         $comparisonFroms = self::findComparisonFroms($tokens);
         $selectDepth = self::findMainSelectDepth($tokens);
 
-        [$tableToAlias, $aliasToSchema] = $this->findTables($tokensWithCase, $tokens, $comparisonFroms);
+        [$tableToAlias, $aliasToSchema] = $this->findTables($tokensWithCase, $tokens, $comparisonFroms, $selectDepth);
 
         $startCapture = false;
         // The tokens of the main SELECT before its first column: DISTINCT, ALL, DISTINCT ON (...)
@@ -320,17 +320,24 @@ class Result implements ResultInterface
      * The tables of the FROM clauses and of the joins, read from the tokens: the alias of each table, and the schema
      * of each alias. A FROM belongs to a SELECT at the same depth of parentheses (not to extract(year FROM x), nor to
      * IS [NOT] DISTINCT FROM); a FROM clause lists its items separated by commas. Neither a sub-query nor a function
-     * names a table
+     * names a table.
+     * A table or an alias read at several depths (a sub-query, a LATERAL join, IN (SELECT ...), EXISTS, a CTE) is
+     * the one of the main SELECT: a table read deeper never replaces one read closer to the main SELECT
      *
      * @param list<string> $tokensWithCase
      * @param list<string> $tokens lowercase tokens
      * @param array<int, true> $comparisonFroms
+     * @param int $selectDepth depth of the parentheses around the main SELECT
      * @return array{array<string, string>, array<string, string>} table => alias, alias => schema
      */
-    private function findTables(array $tokensWithCase, array $tokens, array $comparisonFroms): array
+    private function findTables(array $tokensWithCase, array $tokens, array $comparisonFroms, int $selectDepth): array
     {
         $tableToAlias = [];
         $aliasToSchema = [];
+        // How far from the main SELECT each table and each alias was read: 0 at its depth, deeper further, and
+        // outside of its parentheses (the next SELECT of a UNION) the furthest
+        $tableDistance = [];
+        $aliasDistance = [];
         // Whether each depth of parentheses holds a SELECT
         $selects = [false];
 
@@ -354,14 +361,22 @@ class Result implements ResultInterface
                 continue;
             }
 
+            $depth = \count($selects) - 1;
+            $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
             $position = $index;
             do {
                 $item = self::readFromItem($tokensWithCase, $tokens, $position);
                 if ($item['table'] !== null) {
                     $table = $this->identifierKey($item['table']);
                     $alias = $item['alias'] !== null ? $this->identifierKey($item['alias']) : $table;
-                    $tableToAlias[$table] = $alias;
-                    $aliasToSchema[$alias] = $item['schema'] !== null ? $this->identifierKey($item['schema']) : '';
+                    if ($distance <= ($tableDistance[$table] ?? \PHP_INT_MAX)) {
+                        $tableToAlias[$table] = $alias;
+                        $tableDistance[$table] = $distance;
+                    }
+                    if ($distance <= ($aliasDistance[$alias] ?? \PHP_INT_MAX)) {
+                        $aliasToSchema[$alias] = $item['schema'] !== null ? $this->identifierKey($item['schema']) : '';
+                        $aliasDistance[$alias] = $distance;
+                    }
                 }
                 $position = $item['end'];
             } while (($tokens[$position] ?? '') === ',');

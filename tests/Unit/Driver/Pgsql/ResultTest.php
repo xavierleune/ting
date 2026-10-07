@@ -370,6 +370,37 @@ class ResultTest extends TestCase
                 ['t'],
                 [$column('id', 't')],
             ],
+            'the same table in a sub-query of another schema' => [
+                'SELECT id, title FROM tenant_a.articles WHERE id IN (SELECT id FROM tenant_b.articles)',
+                ['articles', 'articles'],
+                [$column('id', 'articles', 'tenant_a'), $column('title', 'articles', 'tenant_a')],
+            ],
+            'the same alias in a sub-query of another schema' => [
+                'SELECT a.id, title FROM tenant_a.articles a'
+                . ' WHERE a.id IN (SELECT a.article_id FROM tenant_b.archive a)',
+                ['articles', 'articles'],
+                [$column('id', 'a', 'tenant_a'), $column('title', 'a', 'tenant_a')],
+            ],
+            'the same alias in a lateral sub-query' => [
+                'SELECT a.id, title FROM tenant_a.articles a JOIN LATERAL (SELECT 1 FROM tenant_b.x a) l ON true',
+                ['articles', 'articles'],
+                [$column('id', 'a', 'tenant_a'), $column('title', 'a', 'tenant_a')],
+            ],
+            'the same table under another alias in EXISTS' => [
+                'SELECT id FROM users u WHERE EXISTS (SELECT 1 FROM users v)',
+                ['users'],
+                [$column('id', 'u')],
+            ],
+            'the same table in a CTE' => [
+                'WITH a AS (SELECT x.id FROM app.users x) SELECT id FROM users WHERE id IN (SELECT id FROM a)',
+                ['users'],
+                [$column('id', 'users')],
+            ],
+            'the same table in the second SELECT of a parenthesized UNION' => [
+                '(SELECT id FROM city c) UNION ALL (SELECT 1) UNION ALL SELECT id FROM app.city d',
+                ['city'],
+                [$column('id', 'c')],
+            ],
         ];
     }
 
