@@ -651,7 +651,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             function (Metadata $metadata) use ($entity): void {
                 $properties = $this->getChanges($entity, $metadata, true);
                 if ($properties === []) {
-                    $this->markSaved($entity, []);
+                    $this->markSaved($entity, $metadata, []);
                     return;
                 }
 
@@ -671,12 +671,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
                 // The row is now stored with the values written
                 $this->keepMutableValuesWritten($entity, $metadata, $properties);
-                $this->markSaved($entity, $properties);
+                $this->markSaved($entity, $metadata, $properties);
             },
             function () use ($entity): void {
                 if (isset($this->entitiesChanged[$entity]) === false) {
                     // Nothing to write
-                    $this->markSaved($entity, []);
+                    $this->markSaved($entity, null, []);
                     return;
                 }
 
@@ -746,18 +746,26 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
     /**
      * The save of a managed entity is done: forget the changes written (and those set back to their old value) and
-     * unqueue it. The other changes are kept: not mapped by the metadata written with (a lighter projection), they
-     * are written by a save through metadata mapping them.
+     * unqueue it. The changes of the properties some metadata of its class map are kept: not mapped by the metadata
+     * written with (a lighter projection), they are written by a save through metadata mapping them. Those no metadata
+     * maps (a relation whose setter notifies its changes, say) can never be written: they are forgotten.
      *
+     * @template E of object
+     * @param Metadata<E>|null $metadata the metadata written with, null when none was found
      * @param array<string, mixed> $written property name => anything, for the properties written
      */
-    private function markSaved(NotifyPropertyInterface $entity, array $written): void
+    private function markSaved(NotifyPropertyInterface $entity, ?Metadata $metadata, array $written): void
     {
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
 
+        $read = $this->entitiesMetadata[$entity] ?? null;
         $changes = $this->entitiesChanged[$entity] ?? [];
         foreach ($changes as $property => [$oldValue, $newValue]) {
-            if (isset($written[$property]) || $oldValue === $newValue) {
+            if (isset($written[$property]) || $oldValue === $newValue
+                || ($metadata?->hasProperty($property) !== true
+                    && $read?->hasProperty($property) !== true
+                    && $this->metadataRepository->isPropertyMapped($entity::class, $property) === false)
+            ) {
                 unset($changes[$property]);
             }
         }

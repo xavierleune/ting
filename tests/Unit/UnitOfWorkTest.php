@@ -1267,6 +1267,32 @@ class UnitOfWorkTest extends TestCase
 
         $this->assertSame([], $queries);
         $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+        // No metadata can write it: forgotten by the save, not kept forever
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'enabled'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMappedByAnotherRepositoryOfTheClassShouldBeKeptUntilWritten()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $full = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $light = $this->lightDocumentMetadata();
+        // Registered last for Document: the full metadata are those of another repository
+        $metadataRepository->addMetadata('LightDocumentRepository', $light);
+
+        $entity = new Document();
+        $entity->setId(1);
+        $unitOfWork->manage($entity, $light);
+        $entity->setTitle('title');
+        $entity->setPayload((object) ['a' => 1]);
+        $unitOfWork->pushSave($entity, $light)->process();
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+        $unitOfWork->pushSave($entity, $full)->process();
+
+        $this->assertSame(
+            [['v1_doc_title' => 'title', 'w1_doc_id' => 1], ['v1_doc_payload' => '{"a":1}', 'w1_doc_id' => 1]],
+            $params
+        );
     }
 
     #[AllowMockObjectsWithoutExpectations]
