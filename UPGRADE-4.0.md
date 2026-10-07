@@ -278,7 +278,8 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
   keys became manual (`setCacheKey()`), so it had no effect. Put the version in the key instead:
   `$query->setCacheKey('user-list-v2')`.
 * Logging (`CacheLoggerInterface`): a read is logged as `OPERATION_GET`, flagged as a miss when no cached value was
-  served: the value had to be computed, which also stores it, or the read failed before computing it (a key with a
+  served: the value had to be computed (and is stored unless the callback
+  sets `$save` to `false`), or the read failed before computing it (a key with a
   reserved character, a pool throwing). `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
 * Values stored by doctrine/cache cannot be read by the new pools: expect a cold cache after upgrading.
 
@@ -943,7 +944,7 @@ Queries, Entities and the Unit of Work
 * **PostgreSQL: `'f'` is read as `false`, and `false` is sent as `'0'`**: a `bool` field without serializer now hydrates
   the string `'f'` as `false`, whatever the driver (3.x cast it with `(bool)`, so the `'f'` PostgreSQL returns for false
   was read as `true`). The Pgsql driver sends a PHP boolean parameter as `'1'` / `'0'`: 3.x sent `true` as `'1'` and
-  `false` as `''`, which PostgreSQL rejects for a boolean or numeric column and a text column stored as is, so a `false`
+  `false` as `''`, which PostgreSQL rejects for a boolean or numeric column, and a text column stored as `''`; so a `false`
   bound to a text column now stores `'0'`. Check the text columns written with booleans. The serializer of the driver
   (`Driver\Pgsql\Serializer\Boolean`) is still the way to declare a `bool` field, see
   [Types](docs/repositories.md#types).
