@@ -74,6 +74,12 @@ class Hydrator implements HydratorInterface
      */
     protected array $metadataList       = [];
 
+    /**
+     * @var array<string, array<string, string>> alias => column name => property name, for the mutable fields of the
+     *                                           metadata of the alias (see $metadataList): their raw values are kept
+     */
+    private array $mutableColumns = [];
+
     protected ?ResultInterface $result = null;
 
     protected ?MetadataRepository $metadataRepository = null;
@@ -119,6 +125,7 @@ class Hydrator implements HydratorInterface
         $this->result = $result;
         // An alias names another table, or the same one of another database, in another result
         $this->metadataList = [];
+        $this->mutableColumns = [];
         return $this;
     }
 
@@ -348,6 +355,7 @@ class Hydrator implements HydratorInterface
         $fromReferences = []; // Prevents from hydrating if an entity is already ref for a table
         $rowReferences  = []; // Identity map key of each table of the row, false without a complete primary key
         $readColumns    = []; // Columns set on each entity created by this row
+        $rawValues      = []; // Raw values of the mutable fields set on each entity created by this row
         foreach ($columns as $column) {
 
             // Bypass if an entity has already been hydrated with this column
@@ -372,6 +380,7 @@ class Hydrator implements HydratorInterface
                     // Callback if table metadata found
                     function (Metadata $metadata) use ($column, &$result): void {
                         $this->metadataList[$column['table']] = $metadata;
+                        $this->mutableColumns[$column['table']] = $metadata->getMutableColumns();
                         $result[$column['table']]             = $metadata->createEntity();
                         $tmpEntities[$column['table']]        = [];
                     },
@@ -421,6 +430,9 @@ class Hydrator implements HydratorInterface
                                 null
                             );
                             $readColumns[$column['table']][$entityColumn] = true;
+                            if (isset($this->mutableColumns[$column['table']][$entityColumn])) {
+                                $rawValues[$column['table']][$this->mutableColumns[$column['table']][$entityColumn]] = null;
+                            }
                         }
                         unset($tmpEntities[$column['table']]);
                     }
@@ -433,6 +445,9 @@ class Hydrator implements HydratorInterface
                         $column['value']
                     );
                     $readColumns[$column['table']][$column['orgName']] = true;
+                    if (isset($this->mutableColumns[$column['table']][$column['orgName']])) {
+                        $rawValues[$column['table']][$this->mutableColumns[$column['table']][$column['orgName']]] = $column['value'];
+                    }
                 }
 
                 // Table is not mapped or column is a virtual column
@@ -457,6 +472,14 @@ class Hydrator implements HydratorInterface
             $notRead = $this->metadataList[$table]->getPropertiesNotRead($tableColumns);
             if ($notRead !== [] && $result[$table] instanceof NotifyPropertyInterface) {
                 $this->unitOfWork?->setPropertiesNotRead($result[$table], $notRead);
+            }
+        }
+
+        // The raw values of the mutable fields are kept as they are: compared by the unit of work at save, nothing is
+        // serialized by a read
+        foreach ($rawValues as $table => $values) {
+            if ($result[$table] instanceof NotifyPropertyInterface) {
+                $this->unitOfWork?->keepRawValues($result[$table], $values);
             }
         }
 
