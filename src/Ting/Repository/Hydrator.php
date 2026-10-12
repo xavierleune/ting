@@ -78,10 +78,17 @@ class Hydrator implements HydratorInterface
     private array $mutableColumns = [];
 
     /**
-     * The state of the results being iterated ($references, $metadataList, $mutableColumns): a result read while
-     * another is iterated (a hydrator kept as a service) does not change the state of the other
+     * @var array<string, array<string, string>> alias => column name read => the name its metadata give it (see
+     *                                           withColumnOfMetadata()), for the current result: every row of a
+     *                                           result has the same columns
+     */
+    private array $columnsOfMetadata = [];
+
+    /**
+     * The state of the results being iterated ($references, $metadataList, $mutableColumns, $columnsOfMetadata): a
+     * result read while another is iterated (a hydrator kept as a service) does not change the state of the other
      *
-     * @var \WeakMap<ResultInterface, array{0: array<string, object|null>, 1: array<string, Metadata<object>>, 2: array<string, array<string, string>>}>|null
+     * @var \WeakMap<ResultInterface, array{0: array<string, object|null>, 1: array<string, Metadata<object>>, 2: array<string, array<string, string>>, 3: array<string, array<string, string>>}>|null
      */
     private ?\WeakMap $resultStates = null;
 
@@ -133,10 +140,11 @@ class Hydrator implements HydratorInterface
         // An alias names another table, or the same one of another database, in another result
         $this->metadataList = [];
         $this->mutableColumns = [];
+        $this->columnsOfMetadata = [];
         // Another read: its rows may have changed, and the unit of work may have been reset since (worker mode)
         $this->references = [];
         $this->resultStates ??= new \WeakMap();
-        $this->resultStates[$result] = [[], [], []];
+        $this->resultStates[$result] = [[], [], [], []];
         return $this;
     }
 
@@ -177,14 +185,20 @@ class Hydrator implements HydratorInterface
             // The state of this result, which another result read meanwhile may have replaced. Moved, not copied:
             // the arrays are then modified in place
             if (isset($this->resultStates[$result])) {
-                [$this->references, $this->metadataList, $this->mutableColumns] = $this->resultStates[$result];
+                [$this->references, $this->metadataList, $this->mutableColumns, $this->columnsOfMetadata]
+                    = $this->resultStates[$result];
                 unset($this->resultStates[$result]);
             }
 
             try {
                 $row = $this->hydrateColumns($connectionName, $database, $columns);
             } finally {
-                $this->resultStates[$result] = [$this->references, $this->metadataList, $this->mutableColumns];
+                $this->resultStates[$result] = [
+                    $this->references,
+                    $this->metadataList,
+                    $this->mutableColumns,
+                    $this->columnsOfMetadata,
+                ];
             }
 
             yield $key => $row;
@@ -568,15 +582,22 @@ class Hydrator implements HydratorInterface
     private function withColumnOfMetadata(array $column, array $columns): array
     {
         $metadata = $this->metadataList[$column['table']] ?? null;
-        $orgName = $metadata?->findColumn($column['orgName']);
-        if ($orgName === null || $orgName === $column['orgName']) {
+        if ($metadata === null) {
             return $column;
         }
 
-        foreach ($columns as $other) {
-            if ($other['table'] === $column['table'] && $other['orgName'] === $orgName) {
-                return $column;
+        $orgName = $this->columnsOfMetadata[$column['table']][$column['orgName']] ?? null;
+        if ($orgName === null) {
+            $orgName = $metadata->findColumn($column['orgName']) ?? $column['orgName'];
+            if ($orgName !== $column['orgName']) {
+                foreach ($columns as $other) {
+                    if ($other['table'] === $column['table'] && $other['orgName'] === $orgName) {
+                        $orgName = $column['orgName'];
+                        break;
+                    }
+                }
             }
+            $this->columnsOfMetadata[$column['table']][$column['orgName']] = $orgName;
         }
         $column['orgName'] = $orgName;
 

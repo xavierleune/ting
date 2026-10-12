@@ -1954,6 +1954,49 @@ class HydratorTest extends TestCase
         }
     }
 
+    public function testHydrateShouldMatchTheColumnsOfEachResultOnItsOwnColumns()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('users');
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'Name', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata(BouhRepository::class, $metadata);
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $resultOf = function (array $row): CacheResult {
+            $columns = [];
+            foreach ($row as $orgName => $value) {
+                $columns[] = [
+                    'name' => $orgName,
+                    'orgName' => $orgName,
+                    'table' => 'b',
+                    'orgTable' => 'users',
+                    'schema' => '',
+                    'value' => $value,
+                ];
+            }
+            $result = new CacheResult();
+            $result->setConnectionName('main');
+            $result->setDatabase('bouh_world');
+            $result->setResult(new \ArrayIterator([$columns, $columns]));
+
+            return $result;
+        };
+
+        // The same hydrator: name is another column in the first result, the column "Name" in the second one
+        $first = $hydrator->setResult($resultOf(['Name' => 'Display', 'name' => 'legacy']))->getIterator();
+        $this->assertSame('Display', $first->current()['b']->getName());
+        foreach ($hydrator->setResult($resultOf(['name' => 'folded'])) as $row) {
+            $this->assertSame('folded', $row['b']->getName());
+        }
+        $first->next();
+        $this->assertSame('Display', $first->current()['b']->getName());
+    }
+
     public function testHydrateShouldThrowWhenSeveralColumnsDifferOnlyByCase()
     {
         $this->assertThrows(
