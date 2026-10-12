@@ -416,6 +416,12 @@ class ResultTest extends TestCase
                 ['articles', 'articles'],
                 [$column('id', 'a', 'tenant_a'), $column('title', 'a', 'tenant_a')],
             ],
+            'a table after the ON condition of a join' => [
+                'SELECT total, qty FROM users u JOIN shop.orders o ON o.uid = u.id AND o.x IN (1, 2), app.carts c'
+                . ' WHERE c.uid = u.id',
+                ['orders', 'carts'],
+                [$column('total', 'o', 'shop'), $column('qty', 'c', 'app')],
+            ],
             'the same table under another alias in EXISTS' => [
                 'SELECT id FROM users u WHERE EXISTS (SELECT 1 FROM users v)',
                 ['users'],

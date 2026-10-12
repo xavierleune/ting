@@ -74,6 +74,21 @@ class Result implements ResultInterface
         . '|[a-z_][a-z0-9_$]*+(?:\s*\.\s*[a-z_][a-z0-9_$]*+)?(?:\s*\([\d\s,]*+\))?)(?:\s*\[\s*\d*+\s*\])*+';
 
     /**
+     * States of a depth of parentheses for the table search: no SELECT, the select list of a SELECT, its FROM clause
+     */
+    private const NO_SELECT = 0;
+    private const SELECT_LIST = 1;
+    private const FROM_CLAUSE = 2;
+
+    /**
+     * The keywords ending a FROM clause: its commas no longer separate tables after them
+     */
+    private const AFTER_FROM_CLAUSE = [
+        'where', 'group', 'having', 'window', 'order', 'limit', 'offset', 'fetch', 'for', 'union', 'intersect',
+        'except', 'returning',
+    ];
+
+    /**
      * A column of [database.]schema.table.column
      */
     private const QUALIFIED_NAME = '/^(?:(?:"(?:[^"]++|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)++'
@@ -374,48 +389,54 @@ class Result implements ResultInterface
         // outside of its parentheses (the next SELECT of a UNION) the furthest
         $tableDistance = [];
         $aliasDistance = [];
-        // Whether each depth of parentheses holds a SELECT
-        $selects = [false];
+        // At each depth of parentheses: no SELECT, its select list, or its FROM clause (until the clause after it)
+        $states = [self::NO_SELECT];
 
         foreach ($tokens as $index => $token) {
             if ($token === '(' || $token === '[') {
-                $selects[] = false;
+                $states[] = self::NO_SELECT;
                 continue;
             }
             if ($token === ')' || $token === ']') {
-                if (\count($selects) > 1) {
-                    array_pop($selects);
+                if (\count($states) > 1) {
+                    array_pop($states);
                 }
                 continue;
             }
+            $top = array_key_last($states);
             if ($token === 'select') {
-                $selects[array_key_last($selects)] = true;
+                $states[$top] = self::SELECT_LIST;
                 continue;
             }
-            $isFrom = $token === 'from' && !isset($comparisonFroms[$index]) && $selects[array_key_last($selects)];
-            if ($token !== 'join' && !$isFrom) {
+            if ($states[$top] === self::FROM_CLAUSE && \in_array($token, self::AFTER_FROM_CLAUSE, true)) {
+                $states[$top] = self::SELECT_LIST;
                 continue;
             }
 
-            $depth = \count($selects) - 1;
+            // An item follows a FROM, a JOIN, or a comma of the FROM clause (FROM a, b; JOIN b ON ..., c)
+            $isFrom = $token === 'from' && !isset($comparisonFroms[$index]) && $states[$top] !== self::NO_SELECT;
+            if ($token !== 'join' && !$isFrom && ($token !== ',' || $states[$top] !== self::FROM_CLAUSE)) {
+                continue;
+            }
+            if ($isFrom) {
+                $states[$top] = self::FROM_CLAUSE;
+            }
+
+            $depth = \count($states) - 1;
             $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
-            $position = $index;
-            do {
-                $item = self::readFromItem($tokensWithCase, $tokens, $position);
-                if ($item['table'] !== null) {
-                    $table = $this->identifierKey($item['table']);
-                    $alias = $item['alias'] !== null ? $this->identifierKey($item['alias']) : $table;
-                    if ($distance <= ($tableDistance[$table] ?? \PHP_INT_MAX)) {
-                        $tableToAlias[$table] = $alias;
-                        $tableDistance[$table] = $distance;
-                    }
-                    if ($distance <= ($aliasDistance[$alias] ?? \PHP_INT_MAX)) {
-                        $aliasToSchema[$alias] = $item['schema'] !== null ? $this->identifierKey($item['schema']) : '';
-                        $aliasDistance[$alias] = $distance;
-                    }
+            $item = self::readFromItem($tokensWithCase, $tokens, $index);
+            if ($item['table'] !== null) {
+                $table = $this->identifierKey($item['table']);
+                $alias = $item['alias'] !== null ? $this->identifierKey($item['alias']) : $table;
+                if ($distance <= ($tableDistance[$table] ?? \PHP_INT_MAX)) {
+                    $tableToAlias[$table] = $alias;
+                    $tableDistance[$table] = $distance;
                 }
-                $position = $item['end'];
-            } while (($tokens[$position] ?? '') === ',');
+                if ($distance <= ($aliasDistance[$alias] ?? \PHP_INT_MAX)) {
+                    $aliasToSchema[$alias] = $item['schema'] !== null ? $this->identifierKey($item['schema']) : '';
+                    $aliasDistance[$alias] = $distance;
+                }
+            }
         }
 
         return [$tableToAlias, $aliasToSchema];
