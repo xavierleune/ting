@@ -115,55 +115,84 @@ class MetadataRepository
         array $preferredRepositories = []
     ): void {
 
-        $connectionKey = $connectionName . '#' . $table;
+        // The metadata of the table of the same case, of the schema and the database read
+        $sameCase = $this->tableWithConnectionToMetadata[$connectionName . '#' . $table] ?? [];
+        $candidates = $this->candidatesOfSchema($sameCase, $database, $schema);
+        $exactMatch = $candidates !== [];
 
-        // The table of the same case first, else the only table whose case differs
-        if (isset($this->tableWithConnectionToMetadata[$connectionKey]) === false) {
-            $tables = array_keys($this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? []);
-            if (\count($tables) > 1) {
-                throw new HydratorException(sprintf(
-                    'The table %s of the connection %s matches the metadata of several tables, whose case differs: %s',
-                    $table,
-                    $connectionName,
-                    implode(', ', $tables)
-                ));
+        // Else the metadata of every table whose name differs only by case (a table created quoted "Users" declared
+        // setTable('users'), as 3.x lowercased every table): those of the schema and the database read first, else
+        // those of a preferred repository, else those of the same case, else all of them
+        if ($exactMatch === false) {
+            $anyCase = [];
+            foreach (array_keys($this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? []) as $variant) {
+                $anyCase += $this->tableWithConnectionToMetadata[$connectionName . '#' . $variant] ?? [];
             }
-            if ($tables === []) {
+            if ($anyCase === []) {
                 if ($callbackNotFound instanceof Closure) {
                     $callbackNotFound();
                 }
                 return;
             }
-            $table = (string) $tables[0];
-            $connectionKey = $connectionName . '#' . $table;
-        }
-
-        $repositories = $this->tableWithConnectionToMetadata[$connectionKey];
-        $candidates = array_keys($repositories, $schema . '#' . $database, true);
-        if ($candidates === []) {
-            foreach (array_keys($repositories) as $repository) {
-                $metadata = $this->metadataList[$repository];
-                if ($metadata->getDatabase() === $database && strcasecmp((string) $metadata->getSchema(), $schema) === 0) {
-                    $candidates[] = $repository;
+            $candidates = $this->candidatesOfSchema($anyCase, $database, $schema);
+            $exactMatch = $candidates !== [];
+            if ($exactMatch === false) {
+                $candidates = array_keys($anyCase);
+                $preferred = $this->preferredCandidates($candidates, $preferredRepositories);
+                if ($preferred === null && $sameCase !== []) {
+                    $candidates = array_keys($sameCase);
                 }
             }
         }
-        $exactMatch = $candidates !== [];
-        if ($exactMatch === false) {
-            $candidates = array_keys($repositories);
-        }
 
-        foreach ($preferredRepositories as $group) {
-            $preferred = array_values(array_intersect($candidates, $group));
-            if ($preferred !== []) {
-                $candidates = $preferred;
-                break;
-            }
-        }
+        $candidates = $this->preferredCandidates($candidates, $preferredRepositories) ?? $candidates;
 
         $repository = $this->findSingleCandidate($connectionName, $database, $schema, $table, $candidates, $exactMatch);
 
         $callbackFound($this->metadataList[$repository]);
+    }
+
+    /**
+     * The candidates of the first group of preferred repositories holding some, null when none does
+     *
+     * @param list<string> $candidates
+     * @param list<list<string>> $preferredRepositories
+     * @return list<string>|null
+     */
+    private function preferredCandidates(array $candidates, array $preferredRepositories): ?array
+    {
+        foreach ($preferredRepositories as $group) {
+            $preferred = array_values(array_intersect($candidates, $group));
+            if ($preferred !== []) {
+                return $preferred;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The repositories of the schema and the database read: the same schema, else the schema of another case
+     *
+     * @param array<string, string> $repositories repository => "schema#database"
+     * @return list<string>
+     */
+    private function candidatesOfSchema(array $repositories, string $database, string $schema): array
+    {
+        $candidates = array_keys($repositories, $schema . '#' . $database, true);
+        if ($candidates === []) {
+            foreach (array_keys($repositories) as $repository) {
+                $metadata = $this->metadataList[$repository];
+                if (
+                    $metadata->getDatabase() === $database
+                    && strcasecmp((string) $metadata->getSchema(), $schema) === 0
+                ) {
+                    $candidates[] = $repository;
+                }
+            }
+        }
+
+        return $candidates;
     }
 
     /**
@@ -215,11 +244,14 @@ class MetadataRepository
 
         $candidateList = [];
         foreach ($candidates as $repository) {
+            $metadata = $this->metadataList[$repository];
             $candidateList[] = sprintf(
-                '%s (database "%s", schema "%s")',
+                '%s (database "%s", schema "%s"%s)',
                 $repository,
-                $this->metadataList[$repository]->getDatabase(),
-                $this->metadataList[$repository]->getSchema()
+                $metadata->getDatabase(),
+                $metadata->getSchema(),
+                // A table whose name differs only by case
+                $metadata->getTable() !== $table ? sprintf(', table "%s"', $metadata->getTable()) : ''
             );
         }
 
