@@ -850,6 +850,21 @@ class ResultTest extends TestCase
         ];
     }
 
+    public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
+    {
+        // FOR ends a SELECT without FROM (FOR UPDATE), not COLLATION FOR (...)
+        $this->assertSame(
+            [['COLLATION FOR (u.name)', ''], ['id', 'u'], ['name', 'u']],
+            array_map(
+                fn (array $column) => [$column['orgName'], $column['table']],
+                $this->parseColumns(
+                    'SELECT COLLATION FOR (u.name), u.id, u.name FROM users u',
+                    [false, 'users', 'users']
+                )
+            )
+        );
+    }
+
     public static function expressionNameProvider(): array
     {
         return [
