@@ -123,7 +123,10 @@ A few rules:
 * Values are compared with `===`: setting the same value again is not a change. Objects are compared by identity: the
   same object given as old and new value is not a change, even if modified in place. A property set back to its
   original value before the save is not updated.
-* A property that never calls `propertyChanged()` is still written on `INSERT`, but its changes are never `UPDATE`d.
+* A property that never calls `propertyChanged()` is still written on `INSERT`. On a managed entity, the changes of
+  an immutable field without notification are never `UPDATE`d, while a [mutable](#mutable-values) field is compared
+  at each save and written when it differs, notified or not. An entity saved while not managed is updated with every
+  field (see [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)).
 * A property notified by `propertyChanged()` but not mapped in the metadata is ignored by the unit of work.
 * Make the `autoincrement` id nullable, `null` by default (`private ?int $id = null;`, `setId(?int $id)`): saved
   without being managed, an entity holding an id (`0` included) is taken as a stored row and updated, one with a
@@ -148,7 +151,23 @@ So Ting splits the fields in two:
   otherwise (inserted, updated as an entity not managed, passed to `manage()`), it keeps the value Ting would write.
   On save, a mutable field is unchanged when its current database value is the kept one, or the kept raw value
   unserialized then serialized again (the value Ting would write back once read); it is written otherwise, or when
-  its change was notified through its setter. After the `INSERT` or `UPDATE`, the value written is the kept one.
+  its change was notified through its setter. After the `INSERT` or `UPDATE`, the value written is the kept one. The
+  current database value is the value read from the entity (through its getter, see
+  [How Ting reads and writes properties](#how-ting-reads-and-writes-properties)), serialized: the value an `UPDATE`
+  would write.
+
+The comparison sees the entity through its accessors, as a write does. An accessor that transforms the value read
+makes it differ from the raw value, so the next save writes the transformed value, even when the code changed
+nothing: a getter returning `new \stdClass()` for a JSON `NULL` writes `{}`, a setter replacing `null` by a default
+writes the default, a setter converting a `\DateTime` to UTC writes the converted date. This is expected: it is the
+value the entity holds, and `isPropertyChanged()` reports it. Make the accessors return the value read when the column
+must stay as stored.
+
+A conversion that the read does not undo is an inconsistency of the application, which such saves make visible: a
+setter converting a `\DateTime` to UTC, while `Serializer\DateTime` reads the column in the PHP timezone (a column
+holding `10:00:00`, read in `Europe/Paris`, is set as `09:00` UTC and written `09:00:00`, then read as `09:00` in
+`Europe/Paris`...) shifts the date at each read and save. 3.x shifted it the same way at each write of the field.
+Store the dates in the PHP timezone, or set the PHP timezone to the one the dates are stored in.
 
 Comparing database values means that a value which does not survive a round trip is not rewritten by an unrelated
 save, as long as it is not modified: the microseconds of a `DATETIME(6)` column read by a `Y-m-d H:i:s` serializer, a
@@ -158,9 +177,11 @@ place or through the setter), the field is written with what Ting can write: the
 big integer are then lost.
 
 The kept values are packed into one string per entity, held weakly by the unit of work, for the managed entities that
-have a mutable field only: they take about the memory of the raw values. Hydrating costs nothing more; saving
-serializes the mutable fields as the `UPDATE` needs anyway, and unserializes a kept raw value only when it differs from
-the current database value.
+have a mutable field only: they take about the memory of the raw values. Hydrating such an entity costs one
+`serialize()` call packing its raw mutable values (as the driver returned them: no serializer of a field runs)
+and an entry in a `WeakMap`; an entity without mutable field costs nothing more. Saving unpacks them, serializes the
+mutable fields as the `UPDATE` needs anyway, and unserializes a kept raw value only when it differs from the current
+database value.
 
 Change tracking never makes a read fail, nor a save of other fields: a value Ting can read but not write back (a JSON
 number too large, decoded to `INF`; a document deeper than the encoding depth; a getter refusing `null`) is hydrated
