@@ -391,8 +391,9 @@ class Result implements ResultInterface
         $aliasDistance = [];
         // At each depth of parentheses: no SELECT, its select list, or its FROM clause (until the clause after it)
         $states = [self::NO_SELECT];
-        // The parentheses of the derived tables (not LATERAL): the aliases inside are not visible outside of them
-        $derivedTables = [];
+        // The derived tables (sub-queries of the FROM clause but LATERAL ones, bodies of the CTEs): the aliases inside
+        // are not visible outside of them. They nest: the end of the outermost one read so far is enough
+        $derivedUntil = -1;
 
         foreach ($tokens as $index => $token) {
             if ($token === '(' || $token === '[') {
@@ -405,6 +406,20 @@ class Result implements ResultInterface
                 }
                 continue;
             }
+            // The body of a CTE: name [(columns)] AS [NOT] [MATERIALIZED] (SELECT ...)
+            if ($token === 'as') {
+                $body = self::nextSignificant($tokens, $index);
+                if (($tokens[$body] ?? '') === 'not') {
+                    $body = self::nextSignificant($tokens, $body);
+                }
+                if (($tokens[$body] ?? '') === 'materialized') {
+                    $body = self::nextSignificant($tokens, $body);
+                }
+                if (self::isSubQuery($tokens, $body)) {
+                    $derivedUntil = max($derivedUntil, self::closingParenthesis($tokens, $body));
+                }
+            }
+
             $top = array_key_last($states);
             if ($token === 'select') {
                 $states[$top] = self::SELECT_LIST;
@@ -428,18 +443,14 @@ class Result implements ResultInterface
             $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
             $item = self::readFromItem($tokensWithCase, $tokens, $index);
             if ($item['derived'] !== null) {
-                $derivedTables[] = $item['derived'];
+                $derivedUntil = max($derivedUntil, $item['derived']);
             }
             if ($item['table'] !== null) {
                 $table = $this->identifierKey($item['table']);
-                $alias = $item['alias'] !== null ? $this->identifierKey($item['alias']) : $table;
                 // A table read only in a derived table: its columns are keyed by its name, as in 3.x
-                foreach ($derivedTables as [$opening, $closing]) {
-                    if ($index > $opening && $index < $closing) {
-                        $alias = $table;
-                        break;
-                    }
-                }
+                $alias = $item['alias'] !== null && $index > $derivedUntil
+                    ? $this->identifierKey($item['alias'])
+                    : $table;
                 if ($distance <= ($tableDistance[$table] ?? \PHP_INT_MAX)) {
                     $tableToAlias[$table] = $alias;
                     $tableDistance[$table] = $distance;
@@ -461,8 +472,8 @@ class Result implements ResultInterface
      *
      * @param list<string> $tokensWithCase
      * @param list<string> $tokens lowercase tokens
-     * @return array{table: ?string, schema: ?string, alias: ?string, end: int, derived: ?array{int, int}} end: the
-     *         first token after the item; derived: the parentheses of a derived table (a sub-query, not LATERAL)
+     * @return array{table: ?string, schema: ?string, alias: ?string, end: int, derived: ?int} end: the first token
+     *         after the item; derived: the closing parenthesis of a derived table (a sub-query, not LATERAL)
      */
     private static function readFromItem(array $tokensWithCase, array $tokens, int $position): array
     {
@@ -475,15 +486,10 @@ class Result implements ResultInterface
         }
 
         if (($tokens[$index] ?? '') === '(') {
-            $opening = $index;
+            $isSubQuery = self::isSubQuery($tokens, $index);
             $index = self::closingParenthesis($tokens, $index);
-            // A sub-query, not a parenthesized join: (SELECT ...), ((SELECT ...) UNION ...), (VALUES ...), (WITH ...)
-            $first = $opening;
-            do {
-                $first = self::nextSignificant($tokens, $first);
-            } while (($tokens[$first] ?? '') === '(');
-            if (!$lateral && \in_array($tokens[$first] ?? '', ['select', 'with', 'values'], true)) {
-                $item['derived'] = [$opening, $index];
+            if (!$lateral && $isSubQuery) {
+                $item['derived'] = $index;
             }
         } elseif (self::isIdentifier($tokensWithCase[$index] ?? '')) {
             $names = [$tokensWithCase[$index]];
@@ -536,6 +542,24 @@ class Result implements ResultInterface
         $item['end'] = $index;
 
         return $item;
+    }
+
+    /**
+     * Whether the parenthesis at $index opens a sub-query, not a parenthesized join: (SELECT ...),
+     * ((SELECT ...) UNION ...), (VALUES ...), (WITH ...), (TABLE ...)
+     *
+     * @param list<string> $tokens lowercase tokens
+     */
+    private static function isSubQuery(array $tokens, int $index): bool
+    {
+        if (($tokens[$index] ?? '') !== '(') {
+            return false;
+        }
+        do {
+            $index = self::nextSignificant($tokens, $index);
+        } while (($tokens[$index] ?? '') === '(');
+
+        return \in_array($tokens[$index] ?? '', ['select', 'with', 'values', 'table'], true);
     }
 
     /**
