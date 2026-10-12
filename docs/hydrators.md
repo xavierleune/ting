@@ -362,11 +362,19 @@ lowercase (`SELECT u.ID FROM Users u` reads the column `id` of the table `users`
 (`"Users"`). The hydrator matches them to the metadata exactly first, then case-insensitively: a table created as
 `"Users"` is found by `setTable('users')`, a column read as `id` by `'columnName' => 'ID'`.
 
-A table of the exact name wins when its metadata are of the database and the schema read, or of the database read
-when the query names no schema. Otherwise the metadata of every table whose name differs only by case are
-candidates, chosen as above: those of the database and the schema read first, then those of a preferred repository
-(see below), then those of the exact name;
-it throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming them only when they stay ambiguous. Several
+When several tables differ only by case, the metadata are looked up in this order:
+
+1. the metadata of the exact name, chosen among themselves as above, unless the query names a schema that contradicts
+   them: none of them is without schema or of that schema, and a table of another case has metadata of that schema
+   and of the database read, which are then taken. The database read alone never pulls the lookup to another case
+   (with MySQL, it is the current database of the connection, a guess for a table of another database), nor does a
+   preferred repository (see below): `FROM db2.Users` joined in a query of the repository of `db1.users` is hydrated
+   with the metadata of `Users`;
+2. without metadata of the exact name, the metadata of every table differing only by case, chosen as above: those of
+   the database and the schema read, then those of a preferred repository, then the only one of the same database,
+   else of the same schema, then any of them if they hydrate the same entity the same way.
+
+It throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming them only when they stay ambiguous. Several
 columns of the metadata differing from the column read only by case, none with its exact name, throw it too.
 
 The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()`, `mapAliasTo()`,
@@ -377,7 +385,7 @@ a `CCMBenchmark\Ting\Driver\QueryException`, rename one of them.
 The same fallback applies to MySQL results: a column read as `BOO_NAME` matches the metadata column `boo_name` (MySQL
 column names are case-insensitive), and a table read as `T_BOUH` the metadata of `t_bouh` when no metadata has the
 exact name. With `lower_case_table_names=0` (the Linux default), `T_BOUH` and `t_bouh` can be two distinct tables:
-declare the metadata of each one with its exact name: the exact name of the database (and schema) read always wins.
+declare the metadata of each one with its exact name, which always wins.
 
 ### Several repositories on the same table
 

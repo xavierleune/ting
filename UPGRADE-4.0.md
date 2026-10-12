@@ -911,8 +911,11 @@ Hydrators and Transactions
 * PostgreSQL identifiers are resolved as PostgreSQL does: quoted ones keep their case, unquoted ones are folded to
   lowercase. Nothing to change for a 3.x application: the hydrator matches tables and columns to the metadata exactly
   first, then case-insensitively, so a table created as `"Users"` with `setTable('users')`, or a column read as `id`
-  with `'columnName' => 'ID'`, is hydrated as in 3.x (and `setTable('Users')`, never matched by 3.x, now is). Several
-  case variants of a table are chosen from by the database and the schema read, then by the preferred repository; a
+  with `'columnName' => 'ID'`, is hydrated as in 3.x (and `setTable('Users')`, never matched by 3.x, now is). The
+  metadata of the exact table name win unless the query names a schema that none of them has (nor is without schema)
+  and a case variant has metadata of that schema and of the database read; neither the database read alone nor a
+  preferred repository chooses a case variant over the exact name. Without metadata of the exact name, the case
+  variants are chosen from by the database and the schema read, then by the preferred repository; a
   `HydratorException` is thrown only when they stay ambiguous, or when several columns of the metadata differ only by
   case from the column read. The aliases, keys of the row, stay in lowercase; a query reading the columns of two
   aliases differing only by case (`"U"` and `u`) throws a `QueryException`, where 3.x mixed their columns into one
@@ -922,7 +925,7 @@ Hydrators and Transactions
   column `boo_name` (MySQL column names are case-insensitive, 3.x left it unhydrated), and a table read as `T_BOUH`
   matches the metadata of `t_bouh` when no metadata has the exact name. Under `lower_case_table_names=0` (Linux
   default) `T_BOUH` and `t_bouh` can be two tables: declare the metadata of each one with its exact name, which wins
-  for the database (and schema) read.
+  (the database read, the current one of the connection, never chooses a case variant over it).
 * **Two repositories mapping the same table of the same database and schema** (a full entity and a lighter
   projection, e.g. `UserRepository` / `User` and `UserLightRepository` / `UserLight`): in 3.x, the last repository
   built (or the last metadata registered) hydrated the table for every read, so `UserRepository::get(1)` could return

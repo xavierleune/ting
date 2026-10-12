@@ -91,9 +91,11 @@ class MetadataRepository
      * - any of the remaining ones when they all hydrate the same entity with the same fields (the one registered
      *   under the first class name in alphabetical order).
      * Otherwise, the choice is ambiguous and a HydratorException is thrown: the last registered never wins.
-     * Case of the table name: a table of the exact name wins when its metadata are of the database and the schema read
-     * (of the database read when the query names no schema); otherwise the metadata of every table whose name differs
-     * only by case are pooled and chosen by the same rules, the exact name last.
+     * Case of the table name: the metadata of the exact name are the candidates, unless a schema read contradicts them
+     * (none of them is without schema or of that schema) and a table whose name differs only by case has metadata of
+     * the schema and the database read: those are then the candidates. Neither the database read alone (for MySQL, the
+     * current database: a guess) nor a preferred repository chooses a case variant over the exact name. Without
+     * metadata of the exact name, the candidates are those of every case variant, chosen by the same rules.
      *
      * @param string   $connectionName
      * @param string   $database
@@ -123,41 +125,32 @@ class MetadataRepository
         $candidates = $this->candidatesOfSchema($sameCase, $database, $schema);
         $exactMatch = $candidates !== [];
 
-        // Else the metadata of every table whose name differs only by case (a table created quoted "Users" declared
-        // setTable('users'), as 3.x lowercased every table): those of the schema and the database read first, else
-        // those of a preferred repository, else those of the same case, else all of them
+        // Else the metadata of the tables whose name differs only by case (a table created quoted "Users" declared
+        // setTable('users'), as 3.x lowercased every table), only when no metadata map the exact name or when a schema
+        // read contradicts them: none of them is without schema or of that schema, and the variant is of the schema
+        // and the database read. The database read alone (for MySQL, the current database: a guess) is not enough
         if ($exactMatch === false) {
-            $anyCase = [];
-            foreach (array_keys($this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? []) as $variant) {
-                $anyCase += $this->tableWithConnectionToMetadata[$connectionName . '#' . $variant] ?? [];
-            }
-            if ($anyCase === []) {
-                if ($callbackNotFound instanceof Closure) {
-                    $callbackNotFound();
+            $pool = $sameCase;
+            if ($sameCase === [] || ($schema !== '' && $this->contradictedBySchema($sameCase, $schema))) {
+                $anyCase = [];
+                $variants = $this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? [];
+                foreach (array_keys($variants) as $variant) {
+                    $anyCase += $this->tableWithConnectionToMetadata[$connectionName . '#' . $variant] ?? [];
                 }
-                return;
-            }
-
-            if ($schema === '' && $sameCase !== []) {
-                // A query without schema tells nothing about the schema: only the database read may pull the lookup
-                // away from the table of the same case
-                $candidates = $this->candidatesOfDatabase($sameCase, $database);
-                if ($candidates === []) {
-                    $candidates = $this->candidatesOfDatabase($anyCase, $database);
+                if ($anyCase === []) {
+                    if ($callbackNotFound instanceof Closure) {
+                        $callbackNotFound();
+                    }
+                    return;
                 }
-                if ($candidates === []) {
-                    $candidates = array_keys($sameCase);
-                }
-            } else {
                 $candidates = $this->candidatesOfSchema($anyCase, $database, $schema);
                 $exactMatch = $candidates !== [];
-                if ($exactMatch === false) {
-                    $candidates = array_keys($anyCase);
-                    $preferred = $this->preferredCandidates($candidates, $preferredRepositories);
-                    if ($preferred === null && $sameCase !== []) {
-                        $candidates = array_keys($sameCase);
-                    }
+                if ($sameCase === []) {
+                    $pool = $anyCase;
                 }
+            }
+            if ($exactMatch === false) {
+                $candidates = array_keys($pool);
             }
         }
 
@@ -188,21 +181,19 @@ class MetadataRepository
     }
 
     /**
-     * The repositories of the database read
-     *
      * @param array<string, string> $repositories repository => "schema#database"
-     * @return list<string>
+     * @return bool true when none of the metadata is without schema or of the schema read (whatever its case)
      */
-    private function candidatesOfDatabase(array $repositories, string $database): array
+    private function contradictedBySchema(array $repositories, string $schema): bool
     {
-        $candidates = [];
         foreach (array_keys($repositories) as $repository) {
-            if ($this->metadataList[$repository]->getDatabase() === $database) {
-                $candidates[] = $repository;
+            $metadataSchema = (string) $this->metadataList[$repository]->getSchema();
+            if ($metadataSchema === '' || strcasecmp($metadataSchema, $schema) === 0) {
+                return false;
             }
         }
 
-        return $candidates;
+        return true;
     }
 
     /**

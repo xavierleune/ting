@@ -1007,15 +1007,50 @@ class MetadataRepositoryTest extends TestCase
         $this->assertSame('ArchiveEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Users'));
         $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'users'));
 
-        // The database read still chooses
+        // Nor does the database read alone (for MySQL, the current database, a guess)
         $metadataRepository = $this->metadataRepositoryForTables(
             ['Db1User' => 'Users', 'Db2User' => 'users'],
             [],
             ['Db1User' => 'db1', 'Db2User' => 'db2']
         );
-        $this->assertSame('Db2UserEntity', $this->entityFoundForTable($metadataRepository, 'db2', '', 'Users'));
-        $this->assertSame('Db1UserEntity', $this->entityFoundForTable($metadataRepository, 'db1', '', 'users'));
+        $this->assertSame('Db1UserEntity', $this->entityFoundForTable($metadataRepository, 'db2', '', 'Users'));
+        $this->assertSame('Db2UserEntity', $this->entityFoundForTable($metadataRepository, 'db1', '', 'users'));
         $this->assertSame('Db1UserEntity', $this->entityFoundForTable($metadataRepository, 'db3', '', 'Users'));
+        // Even when a preferred repository maps the case variant (the repository running a query joining both)
+        $this->assertSame(
+            'Db1UserEntity',
+            $this->entityFoundForTable($metadataRepository, 'db2', '', 'Users', [['Db2User']])
+        );
+    }
+
+    /**
+     * A schema read pulls the lookup to a case variant only when it contradicts the metadata of the exact table name:
+     * metadata without schema are not contradicted, and a schema of no metadata contradicts nothing
+     */
+    public function testFindMetadataForTableShouldPreferTheExactNameUnlessTheSchemaReadContradictsIt(): void
+    {
+        $metadataRepository = $this->metadataRepositoryForTables(
+            ['User' => 'users', 'QuotedUser' => 'Users'],
+            ['User' => '', 'QuotedUser' => 'public']
+        );
+        $found = fn (array $preferred) => $this->entityFoundForTable(
+            $metadataRepository,
+            'bouh_world',
+            'public',
+            'users',
+            $preferred
+        );
+        $this->assertSame('UserEntity', $found([]));
+        $this->assertSame('UserEntity', $found([['User']]));
+        $this->assertSame('UserEntity', $found([['QuotedUser']]));
+
+        $metadataRepository = $this->metadataRepositoryForTables(
+            ['User' => 'users', 'QuotedUser' => 'Users'],
+            ['User' => 'public', 'QuotedUser' => 'public'],
+            ['User' => 'db2', 'QuotedUser' => 'db1']
+        );
+        $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'db1', 'tenant', 'users'));
+        $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'db1', '', 'users'));
     }
 
     public function testFindMetadataForTableShouldChooseAmongSeveralCaseVariantsBySchemaOrPreference(): void
