@@ -391,6 +391,8 @@ class Result implements ResultInterface
         $aliasDistance = [];
         // At each depth of parentheses: no SELECT, its select list, or its FROM clause (until the clause after it)
         $states = [self::NO_SELECT];
+        // The parentheses of the derived tables (not LATERAL): the aliases inside are not visible outside of them
+        $derivedTables = [];
 
         foreach ($tokens as $index => $token) {
             if ($token === '(' || $token === '[') {
@@ -425,9 +427,19 @@ class Result implements ResultInterface
             $depth = \count($states) - 1;
             $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
             $item = self::readFromItem($tokensWithCase, $tokens, $index);
+            if ($item['derived'] !== null) {
+                $derivedTables[] = $item['derived'];
+            }
             if ($item['table'] !== null) {
                 $table = $this->identifierKey($item['table']);
                 $alias = $item['alias'] !== null ? $this->identifierKey($item['alias']) : $table;
+                // A table read only in a derived table: its columns are keyed by its name, as in 3.x
+                foreach ($derivedTables as [$opening, $closing]) {
+                    if ($index > $opening && $index < $closing) {
+                        $alias = $table;
+                        break;
+                    }
+                }
                 if ($distance <= ($tableDistance[$table] ?? \PHP_INT_MAX)) {
                     $tableToAlias[$table] = $alias;
                     $tableDistance[$table] = $distance;
@@ -449,19 +461,30 @@ class Result implements ResultInterface
      *
      * @param list<string> $tokensWithCase
      * @param list<string> $tokens lowercase tokens
-     * @return array{table: ?string, schema: ?string, alias: ?string, end: int} end: the first token after the item
+     * @return array{table: ?string, schema: ?string, alias: ?string, end: int, derived: ?array{int, int}} end: the
+     *         first token after the item; derived: the parentheses of a derived table (a sub-query, not LATERAL)
      */
     private static function readFromItem(array $tokensWithCase, array $tokens, int $position): array
     {
-        $item = ['table' => null, 'schema' => null, 'alias' => null, 'end' => $position];
+        $item = ['table' => null, 'schema' => null, 'alias' => null, 'end' => $position, 'derived' => null];
 
         $index = self::nextSignificant($tokens, $position);
-        if (\in_array($tokens[$index] ?? '', ['only', 'lateral'], true)) {
+        $lateral = ($tokens[$index] ?? '') === 'lateral';
+        if ($lateral || ($tokens[$index] ?? '') === 'only') {
             $index = self::nextSignificant($tokens, $index);
         }
 
         if (($tokens[$index] ?? '') === '(') {
+            $opening = $index;
             $index = self::closingParenthesis($tokens, $index);
+            // A sub-query, not a parenthesized join: (SELECT ...), ((SELECT ...) UNION ...), (VALUES ...), (WITH ...)
+            $first = $opening;
+            do {
+                $first = self::nextSignificant($tokens, $first);
+            } while (($tokens[$first] ?? '') === '(');
+            if (!$lateral && \in_array($tokens[$first] ?? '', ['select', 'with', 'values'], true)) {
+                $item['derived'] = [$opening, $index];
+            }
         } elseif (self::isIdentifier($tokensWithCase[$index] ?? '')) {
             $names = [$tokensWithCase[$index]];
             $next = self::nextSignificant($tokens, $index);
