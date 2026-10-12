@@ -774,7 +774,7 @@ class ResultTest extends TestCase
                     $id,
                 ],
             ],
-            'casts of a column, named after the column' => [
+            'casts, named after the column or else the type' => [
                 'SELECT id::text, u.n::double precision, x::timestamp(0) with time zone, CAST(u.code AS varchar(10)),'
                 . ' t.tags::text[], y::int::text, "Name"::text, (a + b)::text, id::text || \'x\', d::date c FROM city',
                 [],
@@ -786,8 +786,8 @@ class ResultTest extends TestCase
                     ['name' => 'tags', 'orgName' => 't.tags::text[]', 'table' => '', 'schema' => ''],
                     ['name' => 'y', 'orgName' => 'y::int::text', 'table' => '', 'schema' => ''],
                     ['name' => 'Name', 'orgName' => 'Name"::text', 'table' => '', 'schema' => ''],
-                    ['name' => '?column?', 'orgName' => '(a + b)::text', 'table' => '', 'schema' => ''],
-                    ['name' => "id::text || 'x'", 'orgName' => "id::text || 'x'", 'table' => '', 'schema' => ''],
+                    ['name' => 'text', 'orgName' => '(a + b)::text', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => "id::text || 'x'", 'table' => '', 'schema' => ''],
                     ['name' => 'c', 'orgName' => 'd::date', 'table' => '', 'schema' => ''],
                 ],
             ],
@@ -825,7 +825,109 @@ class ResultTest extends TestCase
                     ['name' => 'name', 'orgName' => 'lower(name)', 'table' => '', 'schema' => ''],
                 ],
             ],
+            'a clause without FROM' => [
+                "SELECT 1 AS x, lower('A') WHERE true UNION SELECT 2, 'b' ORDER BY 1 LIMIT 1",
+                [],
+                [
+                    ['name' => 'x', 'orgName' => '1', 'table' => '', 'schema' => ''],
+                    ['name' => 'lower', 'orgName' => "lower('A')", 'table' => '', 'schema' => ''],
+                ],
+            ],
+            'names of a keyword of a clause' => [
+                'SELECT t.order, x AS limit, string_agg(y, \',\') WITHIN GROUP (ORDER BY y) FROM t',
+                [],
+                [
+                    ['name' => 'order', 'orgName' => 'order', 'table' => 't', 'schema' => ''],
+                    ['name' => 'limit', 'orgName' => 'x', 'table' => '', 'schema' => ''],
+                    [
+                        'name' => 'string_agg',
+                        'orgName' => "string_agg(y, ',') WITHIN GROUP (ORDER BY y)",
+                        'table' => '',
+                        'schema' => '',
+                    ],
+                ],
+            ],
         ];
+    }
+
+    public static function expressionNameProvider(): array
+    {
+        return [
+            'a cast of a function call' => ['now()::date', 'now'],
+            'a cast of an aggregate' => ['count(*)::int', 'count'],
+            'a cast of a schema-qualified function' => ['pg_catalog.max(u.x)::bigint', 'max'],
+            'a cast of a parenthesized column' => ['(u.id)::text', 'id'],
+            'a cast of a literal' => ["'x'::text", 'text'],
+            'a cast of an operator expression' => ['(a + b)::numeric(10, 2)', 'numeric'],
+            'a cast of CASE' => ['CASE WHEN u.x THEN 1 END::text', 'text'],
+            'a cast to a type of the grammar' => ['1::integer', 'int4'],
+            'a cast to a multi-word type' => ['x.y::double precision', 'y'],
+            'a cast of a literal to a multi-word type' => ["'1'::character varying(3)", 'varchar'],
+            'a cast to a time zone type' => ["'now'::timestamp(3) with time zone", 'timestamptz'],
+            'a cast to an array type' => ["'{}'::int[]", 'int4'],
+            'a cast to float(p)' => ['1::float(10)', 'float4'],
+            'a cast to a schema-qualified type' => ['NULL::public."MyType"', 'MyType'],
+            'a chain of casts' => ["'1'::text::bigint", 'int8'],
+            'CAST of a function call' => ['CAST(max(u.x) AS int)', 'max'],
+            'CAST of an operator expression' => ['CAST(a + b AS boolean)', 'bool'],
+            'a typed literal' => ["date '2026-01-01'", 'date'],
+            'a function call' => ['coalesce(u.a, u.b)', 'coalesce'],
+            'a name of non-ASCII letters' => ['prénom', 'prénom'],
+            'a cast of a name of non-ASCII letters' => ['u.prénom::text', 'prénom'],
+            'a quoted function name' => ['"MyFunc"(1)', 'MyFunc'],
+            'an aggregate with FILTER and OVER' => ['count(*) FILTER (WHERE x) OVER (PARTITION BY y)', 'count'],
+            'a window function over a named window' => ['row_number() OVER w', 'row_number'],
+            'an ordered-set aggregate' => ['percentile_cont(0.5) WITHIN GROUP (ORDER BY x)', 'percentile_cont'],
+            'TRIM' => ["TRIM(BOTH ' ' FROM name)", 'btrim'],
+            'TRIM LEADING' => ["trim(leading 'x' from name)", 'ltrim'],
+            'CASE' => ['CASE WHEN a THEN 1 ELSE 0 END', 'case'],
+            'CASE whose ELSE result is a column' => ['CASE WHEN a THEN 1 ELSE u.label END', 'label'],
+            'nested CASE' => ['CASE WHEN a THEN CASE WHEN b THEN x ELSE y END END', 'case'],
+            'COLLATE' => ['u.name COLLATE "C"', 'name'],
+            'COLLATE of a cast of a literal' => ["'a'::text COLLATE \"C\"", 'text'],
+            'AT TIME ZONE' => ["now() AT TIME ZONE 'UTC'", 'timezone'],
+            'AT TIME ZONE of literals' => ["'2026-01-01'::timestamp AT TIME ZONE 'UTC'::text", 'timezone'],
+            'a subscript' => ['u.tags[1]', 'tags'],
+            'a slice of a function call' => ['array_agg(x)[1:2]', 'array_agg'],
+            'a field of a composite' => ['(u.address).city', 'city'],
+            'ARRAY[]' => ['ARRAY[u.a, u.b]', 'array'],
+            'ARRAY()' => ['ARRAY(SELECT 1)', 'array'],
+            'ROW()' => ['ROW(u.a, u.b)', 'row'],
+            'an implicit row' => ['(u.a, u.b)', 'row'],
+            'EXISTS' => ['EXISTS (SELECT 1 FROM t)', 'exists'],
+            'a scalar sub-query' => ['(SELECT max(x) FROM t)', 'max'],
+            'a scalar sub-query with an alias' => ['(SELECT x + 1 AS n FROM t WHERE y)', 'n'],
+            'a scalar sub-query with an alias without AS' => ['(SELECT x + 1 n FROM t)', 'n'],
+            'a scalar sub-query of a CTE' => ['(WITH c AS (SELECT a FROM t) SELECT DISTINCT b FROM c)', 'b'],
+            'a scalar sub-query of an expression' => ['(SELECT x * 2 FROM t)', '?column?'],
+            'a cast of a scalar sub-query' => ['(SELECT 1)::text', '?column?'],
+            'an operator' => ['u.price * u.qty', '?column?'],
+            'an operator after a cast' => ["id::text || 'x'", '?column?'],
+            'a JSON operator' => ["u.data->>'k'", '?column?'],
+            'a unary minus' => ['-u.amount', '?column?'],
+            'NOT' => ['NOT (u.flag)', '?column?'],
+            'IS NULL' => ['u.id IS NULL', '?column?'],
+            'a literal' => ["'x'", '?column?'],
+            'a number' => ['1.5', '?column?'],
+            'NULL' => ['NULL', '?column?'],
+            'CASE in an operation' => ['CASE WHEN a THEN 1 ELSE 0 END + 2', '?column?'],
+        ];
+    }
+
+    /**
+     * An expression without alias is named as PostgreSQL names it (FigureColnameInternal), its unquoted names keeping
+     * the spelling of the query
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('expressionNameProvider')]
+    public function testSetQueryShouldNameExpressionsAsPostgresql(string $expression, string $name)
+    {
+        $this->assertSame(
+            [[$name, ''], ['id', 'u']],
+            array_map(
+                fn (array $column) => [$column['name'], $column['table']],
+                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'])
+            )
+        );
     }
 
     /**
@@ -993,7 +1095,7 @@ class ResultTest extends TestCase
                     'value' => 1
                 ],
                 [
-                    'name' => 'CASE WHEN a = 1 THEN 1 ELSE 0 END',
+                    'name' => 'case',
                     'orgName' => 'CASE WHEN a = 1 THEN 1 ELSE 0 END',
                     'table' => '',
                     'orgTable' => '',
@@ -1033,7 +1135,7 @@ class ResultTest extends TestCase
                     'value' => 7
                 ],
                 [
-                    'name' => 'CASE WHEN a = 1 THEN 6 ELSE 0 END + 2',
+                    'name' => '?column?',
                     'orgName' => 'CASE WHEN a = 1 THEN 6 ELSE 0 END + 2',
                     'table' => '',
                     'orgTable' => '',
