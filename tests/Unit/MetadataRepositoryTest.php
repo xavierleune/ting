@@ -907,7 +907,7 @@ class MetadataRepositoryTest extends TestCase
     /**
      * @param array<string, string> $tables repository => table of its metadata
      */
-    private function metadataRepositoryForTables(array $tables): MetadataRepository
+    private function metadataRepositoryForTables(array $tables, array $schemas = []): MetadataRepository
     {
         $services = new TingServices();
         $metadataRepository = new MetadataRepository($services->serializerFactory());
@@ -916,6 +916,7 @@ class MetadataRepositoryTest extends TestCase
             $metadata->setEntity($repository . 'Entity');
             $metadata->setConnectionName('main');
             $metadata->setDatabase('bouh_world');
+            $metadata->setSchema($schemas[$repository] ?? '');
             $metadata->setTable($table);
             $metadataRepository->addMetadata($repository, $metadata);
         }
@@ -954,8 +955,57 @@ class MetadataRepositoryTest extends TestCase
         $this->assertThrows(
             HydratorException::class,
             fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'USERS'),
-            'The table USERS of the connection main matches the metadata of several tables, whose case differs:'
-            . ' users, Users'
+            'Cannot choose the metadata of the table "USERS" read on the connection "main" from the database'
+            . ' "bouh_world" and the schema "": it can be QuotedUser (database "bouh_world", schema "", table "Users")'
+            . ' or User (database "bouh_world", schema "", table "users"). Name the database or the schema of its'
+            . ' alias with Hydrator::objectDatabaseIs() or Hydrator::objectSchemaIs(), or the repository whose'
+            . ' metadata to use with Hydrator::preferRepository().'
+        );
+    }
+
+    /**
+     * The schema read chooses among the case variants of a table, as when 3.x lowercased every table: metadata of a
+     * table of another case but of the schema read win over metadata of the same case in another schema
+     */
+    public function testFindMetadataForTableShouldPreferTheSchemaReadToTheCaseOfTheTable(): void
+    {
+        // "Users" created quoted in both schemas, declared setTable('users') in tenant_a (as for 3.x)
+        $metadataRepository = $this->metadataRepositoryForTables(
+            ['TenantA' => 'users', 'TenantB' => 'Users'],
+            ['TenantA' => 'tenant_a', 'TenantB' => 'tenant_b']
+        );
+
+        $found = fn (string $schema, string $table) => $this->entityFoundForTable(
+            $metadataRepository,
+            'bouh_world',
+            $schema,
+            $table
+        );
+
+        $this->assertSame('TenantAEntity', $found('tenant_a', 'Users'));
+        $this->assertSame('TenantBEntity', $found('tenant_b', 'Users'));
+        $this->assertSame('TenantAEntity', $found('tenant_a', 'users'));
+        $this->assertSame('TenantBEntity', $found('tenant_b', 'users'));
+        // No metadata of the schema read: the table of the same case
+        $this->assertSame('TenantBEntity', $found('other', 'Users'));
+    }
+
+    public function testFindMetadataForTableShouldChooseAmongSeveralCaseVariantsBySchemaOrPreference(): void
+    {
+        $metadataRepository = $this->metadataRepositoryForTables(
+            ['S1User' => 'Users', 'S2User' => 'USERS'],
+            ['S1User' => 's1', 'S2User' => 's2']
+        );
+
+        $this->assertSame('S1UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', 's1', 'users'));
+        $this->assertSame('S2UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', 's2', 'users'));
+        $this->assertSame(
+            'S2UserEntity',
+            $this->entityFoundForTable($metadataRepository, 'bouh_world', 'other', 'users', [['S2User']])
+        );
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', 'other', 'users')
         );
     }
 
