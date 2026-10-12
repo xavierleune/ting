@@ -448,6 +448,26 @@ class ResultTest extends TestCase
                 ['users', 'people'],
                 [$column('id', 'u'), ['name' => 'nm', 'orgName' => 'nm', 'table' => 'p', 'schema' => '']],
             ],
+            'a table read only in a CTE: keyed by its name' => [
+                'WITH c AS (SELECT name AS nm FROM people p) SELECT nm, u.id FROM users u, c',
+                ['people', 'users'],
+                [['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => ''], $column('id', 'u')],
+            ],
+            'tables read only in WITH RECURSIVE and several CTEs' => [
+                'WITH RECURSIVE c (nm) AS NOT MATERIALIZED (SELECT name FROM app.people p),'
+                . ' d AS MATERIALIZED (SELECT 1 FROM orders o), e AS (VALUES (1))'
+                . ' SELECT nm, (SELECT 1 FROM d) AS one FROM c',
+                ['people', false],
+                [
+                    ['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => 'app'],
+                    ['name' => 'one', 'orgName' => '(SELECT 1 FROM d)', 'table' => '', 'schema' => ''],
+                ],
+            ],
+            'a CTE whose alias differs only by case from a table of the query' => [
+                'WITH c AS (SELECT name AS nm FROM people "U") SELECT nm, u.id FROM users u JOIN c ON true',
+                ['people', 'users'],
+                [['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => ''], $column('id', 'u')],
+            ],
             'the same table under another alias in EXISTS' => [
                 'SELECT id FROM users u WHERE EXISTS (SELECT 1 FROM users v)',
                 ['users'],
