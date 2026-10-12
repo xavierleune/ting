@@ -299,6 +299,21 @@ class ResultTest extends TestCase
         );
     }
 
+    public function testSetQueryShouldIgnoreNestedComments()
+    {
+        // PostgreSQL nests block comments: the first */ does not end the outer one
+        $this->assertSame(
+            [
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'p', 'schema' => ''],
+                ['name' => 'name', 'orgName' => 'name', 'table' => 'p', 'schema' => ''],
+            ],
+            $this->parseColumns(
+                'SELECT p.id /* old: /* p.code */ , p.legacy /*/ x **/ */, p.name FROM people p /* /* */',
+                ['people', 'people']
+            )
+        );
+    }
+
     public function testSetQueryShouldParseTheMainSelectOfACte()
     {
         $this->assertSame(
