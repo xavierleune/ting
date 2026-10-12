@@ -904,6 +904,61 @@ class MetadataRepositoryTest extends TestCase
         }
     }
 
+    /**
+     * @param array<string, string> $tables repository => table of its metadata
+     */
+    private function metadataRepositoryForTables(array $tables): MetadataRepository
+    {
+        $services = new TingServices();
+        $metadataRepository = new MetadataRepository($services->serializerFactory());
+        foreach ($tables as $repository => $table) {
+            $metadata = new Metadata($services->serializerFactory());
+            $metadata->setEntity($repository . 'Entity');
+            $metadata->setConnectionName('main');
+            $metadata->setDatabase('bouh_world');
+            $metadata->setTable($table);
+            $metadataRepository->addMetadata($repository, $metadata);
+        }
+
+        return $metadataRepository;
+    }
+
+    public function testFindMetadataForTableShouldFindATableOfAnotherCase(): void
+    {
+        $metadataRepository = $this->metadataRepositoryForTables(['User' => 'users', 'Order' => 'orders']);
+
+        $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Users'));
+        $this->assertSame('OrderEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'ORDERS'));
+        $this->assertNull($this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Carts'));
+        // Metadata registered after a lookup are found too
+        $metadataRepository->addMetadata('Cart', (new Metadata((new TingServices())->serializerFactory()))
+            ->setEntity('CartEntity')->setConnectionName('main')->setDatabase('bouh_world')->setTable('carts'));
+        $this->assertSame('CartEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Carts'));
+    }
+
+    public function testFindMetadataForTableShouldPreferTheTableOfTheSameCase(): void
+    {
+        $metadataRepository = $this->metadataRepositoryForTables(['User' => 'users', 'QuotedUser' => 'Users']);
+
+        $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'users'));
+        $this->assertSame(
+            'QuotedUserEntity',
+            $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Users')
+        );
+    }
+
+    public function testFindMetadataForTableShouldThrowWhenSeveralTablesDifferOnlyByCase(): void
+    {
+        $metadataRepository = $this->metadataRepositoryForTables(['User' => 'users', 'QuotedUser' => 'Users']);
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'USERS'),
+            'The table USERS of the connection main matches the metadata of several tables, whose case differs:'
+            . ' users, Users'
+        );
+    }
+
     public function testFindMetadataForTableShouldApplyTheRulesToThePreferredRepositories(): void
     {
         $metadataRepository = $this->metadataRepositoryFor([
