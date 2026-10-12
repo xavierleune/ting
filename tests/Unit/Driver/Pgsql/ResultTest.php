@@ -422,6 +422,32 @@ class ResultTest extends TestCase
                 ['orders', 'carts'],
                 [$column('total', 'o', 'shop'), $column('qty', 'c', 'app')],
             ],
+            'a table read only in a derived table: keyed by its name' => [
+                'SELECT nm FROM (SELECT name AS nm FROM app.people p) s',
+                ['people'],
+                [['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => 'app']],
+            ],
+            'a table read only in a joined derived table' => [
+                'SELECT u.id, nm FROM users u LEFT JOIN (SELECT uid, name AS nm FROM people p) s ON s.uid = u.id',
+                ['users', 'people'],
+                [$column('id', 'u'), ['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => '']],
+            ],
+            'a table read only in a derived table after a comma' => [
+                'SELECT u.id, nm FROM users u, (SELECT name AS nm FROM (SELECT name FROM people p) q) s',
+                ['users', 'people'],
+                [$column('id', 'u'), ['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => '']],
+            ],
+            'a derived table whose alias differs only by case from a table of the query' => [
+                'SELECT u.id, nm FROM users u JOIN (SELECT name AS nm FROM people "U") s ON true',
+                ['users', 'people'],
+                [$column('id', 'u'), ['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => '']],
+            ],
+            'a table read only in a LATERAL sub-query: keyed by its alias' => [
+                'SELECT u.id, nm FROM users u'
+                . ' JOIN LATERAL (SELECT name AS nm FROM people p WHERE p.uid = u.id) s ON true',
+                ['users', 'people'],
+                [$column('id', 'u'), ['name' => 'nm', 'orgName' => 'nm', 'table' => 'p', 'schema' => '']],
+            ],
             'the same table under another alias in EXISTS' => [
                 'SELECT id FROM users u WHERE EXISTS (SELECT 1 FROM users v)',
                 ['users'],
@@ -501,6 +527,15 @@ class ResultTest extends TestCase
                 ['users', 'users']
             ),
             'Query invalid: the aliases U and u differ only by case, the key of their row: rename one of them'
+        );
+        // The alias of a LATERAL sub-query is the key of its columns
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $this->parseColumns(
+                'SELECT u.id, name FROM users u, LATERAL (SELECT "U".name FROM people "U" WHERE "U".id = u.id) x',
+                ['users', 'people']
+            ),
+            'Query invalid: the aliases u and U differ only by case, the key of their row: rename one of them'
         );
     }
 
