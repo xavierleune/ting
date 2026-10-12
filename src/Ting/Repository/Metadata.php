@@ -46,6 +46,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Serializer\Boolean as MysqliBoolean;
 use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Exceptions\ConfigException;
+use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Exceptions\SyntaxException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\Query\Generator;
@@ -128,6 +129,8 @@ class Metadata
     private array $propertiesNotRead = [];
     /** @var array<string, string>|null column name => property name, for the mutable fields; null until computed */
     private ?array $mutableColumns = null;
+    /** @var array<string, list<string>>|null lowercase column name => the column names; null until computed */
+    private ?array $columnsOfAnyCase = null;
     public PropertyAccessor $propertyAccessor;
 
     /**
@@ -344,6 +347,7 @@ class Metadata
         $this->fields[$params['columnName']] = $params;
         $this->propertiesNotRead = [];
         $this->mutableColumns = null;
+        $this->columnsOfAnyCase = null;
 
         return $this;
     }
@@ -577,6 +581,41 @@ class Metadata
     public function hasColumn(string $column): bool
     {
         return isset($this->fields[$column]);
+    }
+
+    /**
+     * The column of these metadata a result names $column: the column of the same name, else the only one whose
+     * name differs only by case (a column declared ID, read by an unquoted SELECT u.ID that PostgreSQL names id)
+     *
+     * @return string|null null when no column matches
+     * @throws HydratorException when several columns differ from $column only by case
+     *
+     * @internal
+     */
+    public function findColumn(string $column): ?string
+    {
+        if (isset($this->fields[$column])) {
+            return $column;
+        }
+
+        if ($this->columnsOfAnyCase === null) {
+            $this->columnsOfAnyCase = [];
+            foreach (array_keys($this->fields) as $columnName) {
+                $this->columnsOfAnyCase[strtolower((string) $columnName)][] = (string) $columnName;
+            }
+        }
+
+        $columns = $this->columnsOfAnyCase[strtolower($column)] ?? [];
+        if (\count($columns) > 1) {
+            throw new HydratorException(sprintf(
+                'The column %s of %s matches several columns of its metadata, whose case differs: %s',
+                $column,
+                (string) $this->table,
+                implode(', ', $columns)
+            ));
+        }
+
+        return $columns[0] ?? null;
     }
 
     /**
