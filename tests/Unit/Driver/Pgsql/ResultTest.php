@@ -602,6 +602,54 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function derivedTableNameProvider(): array
+    {
+        $id = ['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => ''];
+        $nm = ['name' => 'nm', 'orgName' => 'nm', 'table' => '', 'schema' => ''];
+
+        return [
+            'a derived table' => [
+                'SELECT u.id, nm FROM users u JOIN (SELECT name AS nm FROM "U") s ON true',
+                ['users', 'U'],
+                [$id, $nm],
+            ],
+            'a derived table read first' => [
+                'SELECT nm, u.id FROM (SELECT name AS nm FROM app."U") s, users u',
+                ['U', 'users'],
+                [$nm, $id],
+            ],
+            'a CTE' => [
+                'WITH c AS (SELECT name AS nm FROM "U") SELECT u.id, nm FROM users u, c',
+                ['users', 'U'],
+                [$id, $nm],
+            ],
+            'two derived tables' => [
+                'SELECT nm, n2 FROM (SELECT name AS nm FROM "U") s, (SELECT name AS n2 FROM u) t',
+                ['U', 'u'],
+                [
+                    ['name' => 'nm', 'orgName' => 'nm', 'table' => 'u', 'schema' => ''],
+                    ['name' => 'n2', 'orgName' => 'n2', 'table' => '', 'schema' => ''],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * A table read only in a derived table or a CTE is keyed by its name, which the query cannot rename: when it
+     * differs only by case from another key of the row, its columns are keyed by no table rather than throwing
+     *
+     * @param list<string> $tables
+     * @param list<array<string, string>> $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('derivedTableNameProvider')]
+    public function testSetQueryShouldNotKeyADerivedTableNameDifferingOnlyByCase(
+        string $query,
+        array $tables,
+        array $expected
+    ) {
+        $this->assertSame($expected, $this->parseColumns($query, $tables));
+    }
+
     public function testSetQueryShouldAcceptAliasesDifferingOnlyByCaseWithoutColumns()
     {
         // Only the aliases of the columns read are keys of the row

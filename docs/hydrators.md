@@ -383,7 +383,9 @@ columns of the metadata differing from the column read only by case, none with i
 The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()`, `mapAliasTo()`,
 `objectDatabaseIs()` and `objectSchemaIs()`: they are in lowercase, quoted or not (`FROM "MyUsers" "U"` gives the key
 `u`). Two aliases differing only by case (`"U"` and `u`) whose columns are read would share that key: the query throws
-a `CCMBenchmark\Ting\Driver\QueryException`, rename one of them.
+a `CCMBenchmark\Ting\Driver\QueryException`, rename one of them. The columns of a table read only in a derived table or
+a CTE are keyed by the name of the table, which the query cannot rename: when it differs only by case from another key
+(`FROM users u JOIN (SELECT name AS nm FROM "U") s`), they are keyed by no table and land in the `0` object.
 
 The same fallback applies to MySQL results: a column read as `BOO_NAME` matches the metadata column `boo_name` (MySQL
 column names are case-insensitive), and a table read as `T_BOUH` the metadata of `t_bouh` when no metadata has the
