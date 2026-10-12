@@ -59,6 +59,12 @@ class MetadataRepository
     private array $tableWithConnectionToMetadata = [];
 
     /**
+     * @var array<string, array<string, true>> "connection#lowercase table" => the tables of metadata of that name,
+     *      whatever their case
+     */
+    private array $tablesOfAnyCase = [];
+
+    /**
      * @var array<string, array<string, list<Metadata<object>>>> entity class => property name => the metadata of the
      *      class mapping it
      */
@@ -111,11 +117,25 @@ class MetadataRepository
 
         $connectionKey = $connectionName . '#' . $table;
 
+        // The table of the same case first, else the only table whose case differs
         if (isset($this->tableWithConnectionToMetadata[$connectionKey]) === false) {
-            if ($callbackNotFound instanceof Closure) {
-                $callbackNotFound();
+            $tables = array_keys($this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? []);
+            if (\count($tables) > 1) {
+                throw new HydratorException(sprintf(
+                    'The table %s of the connection %s matches the metadata of several tables, whose case differs: %s',
+                    $table,
+                    $connectionName,
+                    implode(', ', $tables)
+                ));
             }
-            return;
+            if ($tables === []) {
+                if ($callbackNotFound instanceof Closure) {
+                    $callbackNotFound();
+                }
+                return;
+            }
+            $table = (string) $tables[0];
+            $connectionKey = $connectionName . '#' . $table;
         }
 
         $repositories = $this->tableWithConnectionToMetadata[$connectionKey];
@@ -352,6 +372,8 @@ class MetadataRepository
         // By repository: registered again (a repository registers its metadata when built), it is not duplicated
         $this->tableWithConnectionToMetadata[$metadata->getConnectionName() . '#' . $metadata->getTable()]
             [$repositoryClass] = $metadata->getSchema() . '#' . $metadata->getDatabase();
+        $this->tablesOfAnyCase[$metadata->getConnectionName() . '#' . strtolower((string) $metadata->getTable())]
+            [(string) $metadata->getTable()] = true;
         $entity = $metadata->getEntity();
         if ($entity !== null) {
             $this->entityToRepository[$entity] = $repositoryClass;
