@@ -990,6 +990,18 @@ class MetadataRepositoryTest extends TestCase
         $this->assertSame('TenantBEntity', $found('other', 'Users'));
     }
 
+    public function testFindMetadataForTableShouldPreferTheTableOfTheSameCaseWhenNoSchemaIsRead(): void
+    {
+        // A query without schema tells nothing: the metadata without schema of a case variant don't win
+        $metadataRepository = $this->metadataRepositoryForTables(
+            ['Archive' => 'Users', 'User' => 'users'],
+            ['Archive' => 'archive', 'User' => '']
+        );
+
+        $this->assertSame('ArchiveEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Users'));
+        $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'users'));
+    }
+
     public function testFindMetadataForTableShouldChooseAmongSeveralCaseVariantsBySchemaOrPreference(): void
     {
         $metadataRepository = $this->metadataRepositoryForTables(

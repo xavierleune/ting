@@ -122,8 +122,11 @@ class MetadataRepository
 
         // Else the metadata of every table whose name differs only by case (a table created quoted "Users" declared
         // setTable('users'), as 3.x lowercased every table): those of the schema and the database read first, else
-        // those of a preferred repository, else those of the same case, else all of them
-        if ($exactMatch === false) {
+        // those of a preferred repository, else those of the same case, else all of them. A query without schema
+        // tells nothing: the table of the same case is not pulled away by a case variant without schema
+        if ($exactMatch === false && $schema === '' && $sameCase !== []) {
+            $candidates = array_keys($sameCase);
+        } elseif ($exactMatch === false) {
             $anyCase = [];
             foreach (array_keys($this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? []) as $variant) {
                 $anyCase += $this->tableWithConnectionToMetadata[$connectionName . '#' . $variant] ?? [];
