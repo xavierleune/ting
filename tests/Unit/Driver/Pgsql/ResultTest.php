@@ -261,6 +261,14 @@ class ResultTest extends TestCase
 
         return [
             'a block comment' => ["SELECT u.id /* $big */, u.name FROM users u", 'name'],
+            'a block comment of slashes' => [
+                'SELECT u.id /* ' . str_repeat('a/b ', 250_000) . ' */, u.name FROM users u',
+                'name',
+            ],
+            'a block comment of runs of slashes' => [
+                'SELECT u.id /* ' . str_repeat('//// ', 200_000) . ' */, u.name FROM users u',
+                'name',
+            ],
             'a dollar-quoted string' => ["SELECT u.id, \$\$ $big \$\$ AS s FROM users u", "\$\$ $big \$\$"],
             'a tagged dollar-quoted string' => [
                 "SELECT u.id, \$t\$ \$ $big \$t\$ AS s FROM users u",
