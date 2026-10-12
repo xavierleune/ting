@@ -78,11 +78,17 @@ class Hydrator implements HydratorInterface
     private array $mutableColumns = [];
 
     /**
-     * @var array<string, array<string, string>> alias => column name read => the name its metadata give it (see
-     *                                           withColumnOfMetadata()), for the current result: every row of a
-     *                                           result has the same columns
+     * @var array<string, array<string, string>> alias => column name read => the column of its metadata of the same
+     *                                           name or of another case (see withColumnOfMetadata()), for the current
+     *                                           result
      */
     private array $columnsOfMetadata = [];
+
+    /**
+     * @var array<string, array<string, true>>|null alias => column name => true, the columns of the row being
+     *                                              hydrated, built only when a column falls back to another case
+     */
+    private ?array $exactNamesOfRow = null;
 
     /**
      * The state of the results being iterated ($references, $metadataList, $mutableColumns, $columnsOfMetadata): a
@@ -387,6 +393,7 @@ class Hydrator implements HydratorInterface
             );
         }
 
+        $this->exactNamesOfRow = null;
         $result        = [];
         $tmpEntities   = []; // Temporary entity when all properties are null for the moment (LEFT/RIGHT JOIN)
         $validEntities = []; // Entity marked as valid will fill an object
@@ -586,18 +593,19 @@ class Hydrator implements HydratorInterface
             return $column;
         }
 
-        $orgName = $this->columnsOfMetadata[$column['table']][$column['orgName']] ?? null;
-        if ($orgName === null) {
-            $orgName = $metadata->findColumn($column['orgName']) ?? $column['orgName'];
-            if ($orgName !== $column['orgName']) {
+        $orgName = $this->columnsOfMetadata[$column['table']][$column['orgName']]
+            ??= $metadata->findColumn($column['orgName']) ?? $column['orgName'];
+        if ($orgName !== $column['orgName']) {
+            // Each row on its own columns: a subclass may give hydrateColumns() rows of different columns
+            if ($this->exactNamesOfRow === null) {
+                $this->exactNamesOfRow = [];
                 foreach ($columns as $other) {
-                    if ($other['table'] === $column['table'] && $other['orgName'] === $orgName) {
-                        $orgName = $column['orgName'];
-                        break;
-                    }
+                    $this->exactNamesOfRow[$other['table']][$other['orgName']] = true;
                 }
             }
-            $this->columnsOfMetadata[$column['table']][$column['orgName']] = $orgName;
+            if (isset($this->exactNamesOfRow[$column['table']][$orgName])) {
+                return $column;
+            }
         }
         $column['orgName'] = $orgName;
 

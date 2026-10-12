@@ -1997,6 +1997,58 @@ class HydratorTest extends TestCase
         $this->assertSame('Display', $first->current()['b']->getName());
     }
 
+    public function testHydrateColumnsShouldMatchTheColumnsOfEachRowOnItsOwnColumns()
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('users');
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'name', 'type' => 'string']);
+        $services->metadataRepository()->addMetadata(BouhRepository::class, $metadata);
+        $columnsOf = function (array $row): array {
+            $columns = [];
+            foreach ($row as $orgName => $value) {
+                $columns[] = [
+                    'name' => $orgName,
+                    'orgName' => $orgName,
+                    'table' => 'b',
+                    'orgTable' => 'users',
+                    'schema' => '',
+                    'value' => $value,
+                ];
+            }
+
+            return $columns;
+        };
+        $withBoth = $columnsOf(['name' => 'exact', 'Name' => 'other']);
+        $withOther = $columnsOf(['Name' => 'folded']);
+
+        // A subclass hydrating rows of its own: "Name" is another column only in the rows holding name
+        foreach ([[$withBoth, $withOther], [$withOther, $withBoth]] as $rows) {
+            $hydrator = new class () extends Hydrator {
+                /**
+                 * @param list<array<string, mixed>> $columns
+                 * @return array<int|string, object|null>
+                 */
+                public function row(array $columns): array
+                {
+                    return $this->hydrateColumns('main', 'bouh_world', $columns);
+                }
+            };
+            $hydrator->setMetadataRepository($services->metadataRepository());
+            $hydrator->setUnitOfWork($services->unitOfWork());
+
+            foreach ($rows as $columns) {
+                $this->assertSame(
+                    $columns === $withBoth ? 'exact' : 'folded',
+                    $hydrator->row($columns)['b']->getName()
+                );
+            }
+        }
+    }
+
     public function testHydrateShouldThrowWhenSeveralColumnsDifferOnlyByCase()
     {
         $this->assertThrows(
