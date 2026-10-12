@@ -193,6 +193,12 @@ After a rollback, the rows written in the transaction no longer exist, or no lon
   your changes to the fresh objects. Or `detachAll()` (or `detach()` them) first: no longer managed, they are then
   saved as [entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field.
 
+A `commit()` failing because the connection was lost (MySQL "server has gone away" or "lost connection", a broken
+PostgreSQL connection) has an **unknown outcome**: the server may have committed before its reply was lost. Ting
+treats it as a rollback, so a retry inserts the entities of the transaction again, which creates duplicate rows if the
+server had committed. After such a failure, check the rows before retrying (or rely on a natural or unique key that
+rejects the duplicate).
+
 This protection needs a driver implementing `CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface`, as the
 Mysqli and Pgsql drivers do. With a driver that does not implement it (a driver of your own), an entity inserted in a
 rolled back transaction stays managed, as if its row existed: saved again, it writes nothing. `detach()` it (or

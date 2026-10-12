@@ -959,7 +959,10 @@ Queries, Entities and the Unit of Work
   - an entity inserted in a transaction rolled back is inserted again by its next save, its id replaced: the Mysqli and
     Pgsql drivers tell the unit of work (new optional `Driver\RollbackListenerAwareDriverInterface`); with a driver of
     your own not implementing it, the entity stays managed and its next save writes nothing: `detach()` it (or
-    `detachAll()`), then set its id back to `null` before retrying.
+    `detachAll()`), then set its id back to `null` before retrying. A `commit()` failing because the connection was
+    lost has an unknown outcome (the server may have committed before its reply was lost), but is treated as a
+    rollback: the retry inserts the entities again, which duplicates their rows if the server had committed. Check
+    the rows (or use a natural / unique key) before retrying after such a failure.
 
   See [Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed) and
   [Transactions](docs/unit-of-work.md#transactions).
