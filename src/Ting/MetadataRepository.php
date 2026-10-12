@@ -91,6 +91,9 @@ class MetadataRepository
      * - any of the remaining ones when they all hydrate the same entity with the same fields (the one registered
      *   under the first class name in alphabetical order).
      * Otherwise, the choice is ambiguous and a HydratorException is thrown: the last registered never wins.
+     * Case of the table name: a table of the exact name wins when its metadata are of the database and the schema read
+     * (of the database read when the query names no schema); otherwise the metadata of every table whose name differs
+     * only by case are pooled and chosen by the same rules, the exact name last.
      *
      * @param string   $connectionName
      * @param string   $database
