@@ -1825,6 +1825,32 @@ class HydratorTest extends TestCase
         $this->assertTrue($unitOfWork->isManaged($second));
     }
 
+    public function testAnEntityReadPartiallyShouldBeManagedAgainWithoutItsFieldsNotRead()
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->addMetadata(CityRepository::class, CityRepository::initMetadata($services->serializerFactory()));
+        $unitOfWork = $services->unitOfWork();
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($unitOfWork);
+        $hydrator->identityMap(true);
+        $notRead = fn (object $entity): array => (fn (): array => $this->propertiesNotRead[$entity] ?? [])
+            ->call($unitOfWork);
+
+        $rows = $hydrator->setResult(
+            $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['1', 'Paris'], ['1', 'Paris']])
+        )->getIterator();
+        $first = $rows->current()['x'];
+        $fieldsNotRead = $notRead($first);
+        $unitOfWork->detach($first);
+        $rows->next();
+        $second = $rows->current()['x'];
+
+        $this->assertSame($first, $second);
+        $this->assertArrayHasKey('zipcode', $fieldsNotRead);
+        $this->assertSame($fieldsNotRead, $notRead($second));
+    }
+
     private function field(string $name, string $orgName, string $table, string $orgTable, int $type = MYSQLI_TYPE_VAR_STRING): \stdClass
     {
         $field = new \stdClass();
