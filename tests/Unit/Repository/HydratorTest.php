@@ -1836,4 +1836,98 @@ class HydratorTest extends TestCase
 
         return $field;
     }
+
+    /**
+     * A Bouh metadata on $table with the given columns (column name => field name), and the row of $orgTable
+     *
+     * @param array<string, string> $fields column name => field name
+     * @param array<string, string> $row column name read => value
+     * @return array<int|string, mixed> the hydrated row
+     */
+    private function hydrateRowOf(string $table, array $fields, string $orgTable, array $row): array
+    {
+        $services = new TingServices();
+        $metadata = new Metadata($services->serializerFactory());
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable($table);
+        foreach ($fields as $columnName => $fieldName) {
+            $metadata->addField(['fieldName' => $fieldName, 'columnName' => $columnName, 'type' => 'string']);
+        }
+        $services->metadataRepository()->addMetadata(BouhRepository::class, $metadata);
+
+        $columns = [];
+        foreach ($row as $orgName => $value) {
+            $columns[] = [
+                'name' => $orgName,
+                'orgName' => $orgName,
+                'table' => 'b',
+                'orgTable' => $orgTable,
+                'schema' => '',
+                'value' => $value,
+            ];
+        }
+        $result = new CacheResult();
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+        $result->setResult(new \ArrayIterator([$columns]));
+
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+
+        return $hydrator->setResult($result)->getIterator()->current();
+    }
+
+    public function testHydrateShouldFindTheTableOfAnotherCase()
+    {
+        // A table created quoted ("Users") with metadata declared in lowercase, as 3.x matched it
+        $data = $this->hydrateRowOf('users', ['boo_name' => 'name'], 'Users', ['boo_name' => 'Robez']);
+
+        $this->assertInstanceOf(Bouh::class, $data['b']);
+        $this->assertSame('Robez', $data['b']->getName());
+    }
+
+    public function testHydrateShouldFindTheColumnOfAnotherCase()
+    {
+        // Metadata column ID, read by an unquoted SELECT u.ID that PostgreSQL folds to id
+        $data = $this->hydrateRowOf(
+            'users',
+            ['BOO_NAME' => 'name', 'boo_firstname' => 'firstname'],
+            'users',
+            ['boo_name' => 'Robez', 'boo_firstname' => 'Sylvain']
+        );
+
+        $this->assertSame('Robez', $data['b']->getName());
+        $this->assertSame('Sylvain', $data['b']->getFirstname());
+        $this->assertArrayNotHasKey(0, $data);
+    }
+
+    public function testHydrateShouldPreferTheColumnOfTheSameCase()
+    {
+        $data = $this->hydrateRowOf(
+            'users',
+            ['boo_name' => 'name', 'BOO_NAME' => 'firstname'],
+            'users',
+            ['BOO_NAME' => 'Sylvain']
+        );
+
+        $this->assertSame('Sylvain', $data['b']->getFirstname());
+        $this->assertNull($data['b']->getName());
+    }
+
+    public function testHydrateShouldThrowWhenSeveralColumnsDifferOnlyByCase()
+    {
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->hydrateRowOf(
+                'users',
+                ['boo_name' => 'name', 'BOO_NAME' => 'firstname'],
+                'users',
+                ['Boo_Name' => 'Sylvain']
+            ),
+            'The column Boo_Name of users matches several columns of its metadata, whose case differs: boo_name, BOO_NAME'
+        );
+    }
 }

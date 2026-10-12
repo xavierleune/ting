@@ -382,6 +382,7 @@ class Hydrator implements HydratorInterface
         $readColumns    = []; // Columns set on each entity created by this row
         $rawValues      = []; // Raw values of the mutable fields set on each entity created by this row
         foreach ($columns as $column) {
+            $column = $this->withColumnOfMetadata($column);
 
             // Bypass if an entity has already been hydrated with this column
             if (
@@ -415,6 +416,7 @@ class Hydrator implements HydratorInterface
                         $this->queryRepository !== null ? [$this->queryRepository] : [],
                     ]
                 );
+                $column = $this->withColumnOfMetadata($column);
             }
 
             if (isset($this->metadataList[$column['table']])) {
@@ -554,6 +556,23 @@ class Hydrator implements HydratorInterface
     }
 
     /**
+     * The column with the name its metadata give it (orgName): the same, or the only one whose case differs
+     *
+     * @param Column $column
+     * @return Column
+     * @throws HydratorException when several columns of the metadata differ from it only by case
+     */
+    private function withColumnOfMetadata(array $column): array
+    {
+        $metadata = $this->metadataList[$column['table']] ?? null;
+        if ($metadata !== null) {
+            $column['orgName'] = $metadata->findColumn($column['orgName']) ?? $column['orgName'];
+        }
+
+        return $column;
+    }
+
+    /**
      * Identity map key of the entity of $table in the row: every primary value, read from the columns
      *
      * @param Row $columns
@@ -564,7 +583,7 @@ class Hydrator implements HydratorInterface
         $values = [];
         foreach ($this->metadataList[$table]->getPrimaries() as $columnName => $primary) {
             foreach ($columns as $column) {
-                if ($column['table'] === $table && $column['orgName'] === $columnName) {
+                if ($column['table'] === $table && $this->withColumnOfMetadata($column)['orgName'] === $columnName) {
                     if ($column['value'] === null) {
                         return false;
                     }
