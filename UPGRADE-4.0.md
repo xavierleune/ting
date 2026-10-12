@@ -921,6 +921,18 @@ Hydrators and Transactions
   aliases differing only by case (`"U"` and `u`) throws a `QueryException`, where 3.x mixed their columns into one
   entity. See
   [Case of the table and column names](docs/hydrators.md#case-of-the-table-and-column-names).
+* **PostgreSQL: some keys of the rows change.** The Pgsql driver now reads the query as PostgreSQL does:
+  - An expression without alias is named as PostgreSQL names it, where 3.x took its last identifier or its whole
+    text: `price * qty` was `qty` and is `?column?`, `count(id)` was `count(id)` and is `count`, `now()::date` is
+    `now`, `'x'::text` is `text`, `CASE ... END` is `case` (see
+    [Columns without metadata](docs/hydrators.md#columns-without-metadata)). This name is the key of the column in the
+    `0` object of `Hydrator`, in the arrays of `HydratorArray`, and the property `HydratorValueObject` sets: alias such
+    expressions (`price * qty AS total`), as with MySQL, to keep the key you read.
+  - The alias of a table is the key of its entity also when 3.x lost it: for the last table of a statement ending with
+    `;` (`FROM app.users u;`) and for the tables of a FROM list separated by commas (`FROM users u, orders o`,
+    `JOIN orders o ON ..., carts c`), the columns without table prefix were keyed by the table name (`users`) or by no
+    table; they are keyed by the alias (`u`, `o`, `c`). Use the alias in `mapObjectTo()`, `mapAliasTo()`,
+    `objectDatabaseIs()`, `objectSchemaIs()` and when reading the row.
 * The same case-insensitive fallback applies to MySQL results: a column read as `BOO_NAME` now matches the metadata
   column `boo_name` (MySQL column names are case-insensitive, 3.x left it unhydrated), and a table read as `T_BOUH`
   matches the metadata of `t_bouh` when no metadata has the exact name. Under `lower_case_table_names=0` (Linux
