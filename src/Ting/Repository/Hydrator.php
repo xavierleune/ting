@@ -382,7 +382,7 @@ class Hydrator implements HydratorInterface
         $readColumns    = []; // Columns set on each entity created by this row
         $rawValues      = []; // Raw values of the mutable fields set on each entity created by this row
         foreach ($columns as $column) {
-            $column = $this->withColumnOfMetadata($column);
+            $column = $this->withColumnOfMetadata($column, $columns);
 
             // Bypass if an entity has already been hydrated with this column
             if (
@@ -416,7 +416,7 @@ class Hydrator implements HydratorInterface
                         $this->queryRepository !== null ? [$this->queryRepository] : [],
                     ]
                 );
-                $column = $this->withColumnOfMetadata($column);
+                $column = $this->withColumnOfMetadata($column, $columns);
             }
 
             if (isset($this->metadataList[$column['table']])) {
@@ -556,18 +556,28 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * The column with the name its metadata give it (orgName): the same, or the only one whose case differs
+     * The column with the name its metadata give it (orgName): the same, or the only one whose case differs when the
+     * row holds no column of the alias under that exact name (PostgreSQL "Name" and name are two columns)
      *
      * @param Column $column
+     * @param Row $columns the row
      * @return Column
      * @throws HydratorException when several columns of the metadata differ from it only by case
      */
-    private function withColumnOfMetadata(array $column): array
+    private function withColumnOfMetadata(array $column, array $columns): array
     {
         $metadata = $this->metadataList[$column['table']] ?? null;
-        if ($metadata !== null) {
-            $column['orgName'] = $metadata->findColumn($column['orgName']) ?? $column['orgName'];
+        $orgName = $metadata?->findColumn($column['orgName']);
+        if ($orgName === null || $orgName === $column['orgName']) {
+            return $column;
         }
+
+        foreach ($columns as $other) {
+            if ($other['table'] === $column['table'] && $other['orgName'] === $orgName) {
+                return $column;
+            }
+        }
+        $column['orgName'] = $orgName;
 
         return $column;
     }
@@ -583,7 +593,10 @@ class Hydrator implements HydratorInterface
         $values = [];
         foreach ($this->metadataList[$table]->getPrimaries() as $columnName => $primary) {
             foreach ($columns as $column) {
-                if ($column['table'] === $table && $this->withColumnOfMetadata($column)['orgName'] === $columnName) {
+                if (
+                    $column['table'] === $table
+                    && $this->withColumnOfMetadata($column, $columns)['orgName'] === $columnName
+                ) {
                     if ($column['value'] === null) {
                         return false;
                     }

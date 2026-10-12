@@ -1917,6 +1917,17 @@ class HydratorTest extends TestCase
         $this->assertNull($data['b']->getName());
     }
 
+    public function testHydrateShouldNotTakeAColumnOfAnotherCaseForAColumnReadUnderItsExactName()
+    {
+        // PostgreSQL table t(id, "Name", name): only "Name" is mapped, name is another column
+        foreach ([['Name' => 'Display', 'name' => 'legacy'], ['name' => 'legacy', 'Name' => 'Display']] as $row) {
+            $data = $this->hydrateRowOf('users', ['Name' => 'name'], 'users', $row);
+
+            $this->assertSame('Display', $data['b']->getName());
+            $this->assertSame('legacy', $data[0]->name);
+        }
+    }
+
     public function testHydrateShouldThrowWhenSeveralColumnsDifferOnlyByCase()
     {
         $this->assertThrows(
