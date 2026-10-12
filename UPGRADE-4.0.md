@@ -239,7 +239,8 @@ Cache: doctrine/cache Replaced by Symfony Cache Contracts
   `NullAdapter` replaces `VoidCache`. Pools come from `symfony/cache` (suggested, not required).
 * `CCMBenchmark\Ting\Cache\CacheInterface` now extends Symfony's `CacheInterface` instead of Doctrine's.
   `CCMBenchmark\Ting\Cache\Cache` exposes `get()` and `delete()`: `fetch()`, `contains()`, `save()` and
-  `getStats()` have been removed.
+  `getStats()` have been removed. The parameter of `delete()` is renamed `$key` (was `$id`): a call with the named
+  argument `id:` throws an `Error` (unknown named parameter).
 
 ```php
 // Before (3.x):
@@ -460,6 +461,9 @@ PostgreSQL Driver
 
 * The PostgreSQL driver now uses native PHP 8.1+ `PgSql\Connection` and `PgSql\Result` classes instead of resources.
 * This is an **internal change** and should not affect most user code.
+* The first parameter of `Driver\Pgsql\Driver::execute()` is renamed `$sql` (was `$originalSQL`), as in
+  `DriverInterface` and the Mysqli driver: a call with the named argument `originalSQL:` throws an `Error` (unknown
+  named parameter).
 * If you were using reflection or type checking on internal driver properties, update your code:
 
 ```php
