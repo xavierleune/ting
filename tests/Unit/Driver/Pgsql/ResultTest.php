@@ -501,6 +501,18 @@ class ResultTest extends TestCase
                 ['users'],
                 [$column('id', 'users')],
             ],
+            'non-ASCII letters in unquoted names' => [
+                'SELECT ü.id, ü.prénom, prénom, ü.id AS clé, count(*) AS total_é, ü.name nöm FROM app.usérs AS ü',
+                ['usérs', 'usérs', 'usérs', 'usérs', false, false],
+                [
+                    $column('id', 'ü', 'app'),
+                    $column('prénom', 'ü', 'app'),
+                    $column('prénom', 'ü', 'app'),
+                    ['name' => 'clé', 'orgName' => 'id', 'table' => 'ü', 'schema' => 'app'],
+                    ['name' => 'total_é', 'orgName' => 'count(*)', 'table' => '', 'schema' => ''],
+                    ['name' => 'nöm', 'orgName' => 'ü.name', 'table' => '', 'schema' => ''],
+                ],
+            ],
             'a parenthesized join starting with a derived table' => [
                 'SELECT p.id, p.name FROM ((SELECT 1 AS one) s JOIN tenant_a.people p ON true)'
                 . ' WHERE p.id NOT IN (SELECT p.id FROM tenant_b.people p)',
