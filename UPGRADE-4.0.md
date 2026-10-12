@@ -898,6 +898,14 @@ Hydrators and Transactions
   [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
   still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
   exact match (PostgreSQL folds an unquoted schema of the query to lowercase).
+* PostgreSQL identifiers are resolved as PostgreSQL does: quoted ones keep their case, unquoted ones are folded to
+  lowercase. Nothing to change for a 3.x application: the hydrator matches tables and columns to the metadata exactly
+  first, then case-insensitively, so a table created as `"Users"` with `setTable('users')`, or a column read as `id`
+  with `'columnName' => 'ID'`, is hydrated as in 3.x (and `setTable('Users')`, never matched by 3.x, now is). It
+  throws a `HydratorException` when several tables or columns of the metadata differ only by case and none has the
+  exact name. The aliases, keys of the row, stay in lowercase; a query reading the columns of two aliases differing
+  only by case (`"U"` and `u`) throws a `QueryException`, where 3.x mixed their columns into one entity. See
+  [Case of the table and column names](docs/hydrators.md#case-of-the-table-and-column-names).
 * **Two repositories mapping the same table of the same database and schema** (a full entity and a lighter
   projection, e.g. `UserRepository` / `User` and `UserLightRepository` / `UserLight`): in 3.x, the last repository
   built (or the last metadata registered) hydrated the table for every read, so `UserRepository::get(1)` could return

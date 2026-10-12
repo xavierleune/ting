@@ -355,6 +355,20 @@ Otherwise it can't choose and throws a `CCMBenchmark\Ting\Exceptions\HydratorExc
 candidate repositories: set `objectDatabaseIs()` or `objectSchemaIs()` on the alias, or `preferRepository()` (see
 below).
 
+### Case of the table and column names
+
+A result names its tables and columns as the database does. With PostgreSQL, an unquoted identifier is folded to
+lowercase (`SELECT u.ID FROM Users u` reads the column `id` of the table `users`) and a quoted one keeps its case
+(`"Users"`). The hydrator matches them to the metadata exactly first, then case-insensitively: a table created as
+`"Users"` is found by `setTable('users')`, a column read as `id` by `'columnName' => 'ID'`. When several tables, or
+several columns of the metadata, differ from the name read only by case and none has its exact name, it throws a
+`CCMBenchmark\Ting\Exceptions\HydratorException` naming them.
+
+The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()`, `mapAliasTo()`,
+`objectDatabaseIs()` and `objectSchemaIs()`: they are in lowercase, quoted or not (`FROM "MyUsers" "U"` gives the key
+`u`). Two aliases differing only by case (`"U"` and `u`) whose columns are read would share that key: the query throws
+a `CCMBenchmark\Ting\Driver\QueryException`, rename one of them.
+
 ### Several repositories on the same table
 
 Two repositories can map the same table of the same database and schema: a full entity and a lighter projection

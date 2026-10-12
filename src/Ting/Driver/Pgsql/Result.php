@@ -299,6 +299,8 @@ class Result implements ResultInterface
             throw new QueryException('Query invalid: can\'t parse columns');
         }
 
+        // Lowercase key of the row => the alias read
+        $aliasOfKey = [];
         foreach ($columnsMatches as $match) {
             $stdClass = new stdClass();
             $stdClass->orgname = $match['column'];
@@ -310,7 +312,7 @@ class Result implements ResultInterface
                 $table = '';
             }
             // The name of the table as created: lowercase unless created quoted ("Users")
-            $stdClass->orgtable = $match['complex'] === false ? $table : '';
+            $stdClass->orgtable = $match['complex'] === false ? (string) $table : '';
 
             if ($match['table'] !== '') {
                 $stdClass->table = $this->identifierKey($match['table']);
@@ -323,8 +325,22 @@ class Result implements ResultInterface
 
             $stdClass->schema = $aliasToSchema[$stdClass->table] ?? '';
 
-            // The table, the schema and orgtable (from pg_field_table()) are unquoted already. The name keeps the
-            // spelling of the query; a column is folded to lowercase unless quoted, as PostgreSQL names it
+            // The alias is the key of the entity in the row, an application key rather than a database name: in
+            // lowercase, as in 3.x, whether quoted or not ("U" and u are both u). Two aliases of the row differing
+            // only by case would share that key and mix their columns in one entity
+            $key = strtolower($stdClass->table);
+            $aliasOfKey[$key] ??= $stdClass->table;
+            if ($aliasOfKey[$key] !== $stdClass->table) {
+                throw new QueryException(sprintf(
+                    'Query invalid: the aliases %s and %s differ only by case, the key of their row: rename one of them',
+                    $aliasOfKey[$key],
+                    $stdClass->table
+                ));
+            }
+            $stdClass->table = $key;
+
+            // The schema and orgtable (from pg_field_table()) are unquoted already. The name keeps the spelling of the
+            // query; a column is folded to lowercase unless quoted, as PostgreSQL names it
             $stdClass->name     = $this->unescapeField($stdClass->name);
             $stdClass->orgname  = $match['complex'] === false
                 ? $this->identifierKey($stdClass->orgname)
