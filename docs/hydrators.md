@@ -362,8 +362,8 @@ lowercase (`SELECT u.ID FROM Users u` reads the column `id` of the table `users`
 (`"Users"`). The hydrator matches them to the metadata exactly first, then case-insensitively: a table created as
 `"Users"` is found by `setTable('users')`, a column read as `id` by `'columnName' => 'ID'`.
 
-A table of the exact name wins when its metadata are of the database and the schema read, or when the query names no
-schema. Otherwise the metadata of every table whose name differs only by case are candidates, chosen as above: those of
+A table of the exact name wins when its metadata are of the database and the schema read, or of the database read
+when the query names no schema. Otherwise the metadata of every table whose name differs only by case are candidates, chosen as above: those of
 the database and the schema read first, then those of a preferred repository (see below), then those of the exact name;
 it throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming them only when they stay ambiguous. Several
 columns of the metadata differing from the column read only by case, none with its exact name, throw it too.

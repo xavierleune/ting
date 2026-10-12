@@ -906,8 +906,14 @@ class MetadataRepositoryTest extends TestCase
 
     /**
      * @param array<string, string> $tables repository => table of its metadata
+     * @param array<string, string> $schemas repository => schema of its metadata, '' by default
+     * @param array<string, string> $databases repository => database of its metadata, bouh_world by default
      */
-    private function metadataRepositoryForTables(array $tables, array $schemas = []): MetadataRepository
+    private function metadataRepositoryForTables(
+        array $tables,
+        array $schemas = [],
+        array $databases = []
+    ): MetadataRepository
     {
         $services = new TingServices();
         $metadataRepository = new MetadataRepository($services->serializerFactory());
@@ -915,7 +921,7 @@ class MetadataRepositoryTest extends TestCase
             $metadata = new Metadata($services->serializerFactory());
             $metadata->setEntity($repository . 'Entity');
             $metadata->setConnectionName('main');
-            $metadata->setDatabase('bouh_world');
+            $metadata->setDatabase($databases[$repository] ?? 'bouh_world');
             $metadata->setSchema($schemas[$repository] ?? '');
             $metadata->setTable($table);
             $metadataRepository->addMetadata($repository, $metadata);
@@ -1000,6 +1006,16 @@ class MetadataRepositoryTest extends TestCase
 
         $this->assertSame('ArchiveEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'Users'));
         $this->assertSame('UserEntity', $this->entityFoundForTable($metadataRepository, 'bouh_world', '', 'users'));
+
+        // The database read still chooses
+        $metadataRepository = $this->metadataRepositoryForTables(
+            ['Db1User' => 'Users', 'Db2User' => 'users'],
+            [],
+            ['Db1User' => 'db1', 'Db2User' => 'db2']
+        );
+        $this->assertSame('Db2UserEntity', $this->entityFoundForTable($metadataRepository, 'db2', '', 'Users'));
+        $this->assertSame('Db1UserEntity', $this->entityFoundForTable($metadataRepository, 'db1', '', 'users'));
+        $this->assertSame('Db1UserEntity', $this->entityFoundForTable($metadataRepository, 'db3', '', 'Users'));
     }
 
     public function testFindMetadataForTableShouldChooseAmongSeveralCaseVariantsBySchemaOrPreference(): void

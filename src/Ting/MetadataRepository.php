@@ -122,11 +122,8 @@ class MetadataRepository
 
         // Else the metadata of every table whose name differs only by case (a table created quoted "Users" declared
         // setTable('users'), as 3.x lowercased every table): those of the schema and the database read first, else
-        // those of a preferred repository, else those of the same case, else all of them. A query without schema
-        // tells nothing: the table of the same case is not pulled away by a case variant without schema
-        if ($exactMatch === false && $schema === '' && $sameCase !== []) {
-            $candidates = array_keys($sameCase);
-        } elseif ($exactMatch === false) {
+        // those of a preferred repository, else those of the same case, else all of them
+        if ($exactMatch === false) {
             $anyCase = [];
             foreach (array_keys($this->tablesOfAnyCase[$connectionName . '#' . strtolower($table)] ?? []) as $variant) {
                 $anyCase += $this->tableWithConnectionToMetadata[$connectionName . '#' . $variant] ?? [];
@@ -137,13 +134,26 @@ class MetadataRepository
                 }
                 return;
             }
-            $candidates = $this->candidatesOfSchema($anyCase, $database, $schema);
-            $exactMatch = $candidates !== [];
-            if ($exactMatch === false) {
-                $candidates = array_keys($anyCase);
-                $preferred = $this->preferredCandidates($candidates, $preferredRepositories);
-                if ($preferred === null && $sameCase !== []) {
+
+            if ($schema === '' && $sameCase !== []) {
+                // A query without schema tells nothing about the schema: only the database read may pull the lookup
+                // away from the table of the same case
+                $candidates = $this->candidatesOfDatabase($sameCase, $database);
+                if ($candidates === []) {
+                    $candidates = $this->candidatesOfDatabase($anyCase, $database);
+                }
+                if ($candidates === []) {
                     $candidates = array_keys($sameCase);
+                }
+            } else {
+                $candidates = $this->candidatesOfSchema($anyCase, $database, $schema);
+                $exactMatch = $candidates !== [];
+                if ($exactMatch === false) {
+                    $candidates = array_keys($anyCase);
+                    $preferred = $this->preferredCandidates($candidates, $preferredRepositories);
+                    if ($preferred === null && $sameCase !== []) {
+                        $candidates = array_keys($sameCase);
+                    }
                 }
             }
         }
@@ -172,6 +182,24 @@ class MetadataRepository
         }
 
         return null;
+    }
+
+    /**
+     * The repositories of the database read
+     *
+     * @param array<string, string> $repositories repository => "schema#database"
+     * @return list<string>
+     */
+    private function candidatesOfDatabase(array $repositories, string $database): array
+    {
+        $candidates = [];
+        foreach (array_keys($repositories) as $repository) {
+            if ($this->metadataList[$repository]->getDatabase() === $database) {
+                $candidates[] = $repository;
+            }
+        }
+
+        return $candidates;
     }
 
     /**
