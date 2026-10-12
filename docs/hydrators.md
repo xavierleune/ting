@@ -369,6 +369,11 @@ The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()
 `u`). Two aliases differing only by case (`"U"` and `u`) whose columns are read would share that key: the query throws
 a `CCMBenchmark\Ting\Driver\QueryException`, rename one of them.
 
+The same fallback applies to MySQL results: a column read as `BOO_NAME` matches the metadata column `boo_name` (MySQL
+column names are case-insensitive), and a table read as `T_BOUH` the metadata of `t_bouh` when no metadata has the
+exact name. With `lower_case_table_names=0` (the Linux default), `T_BOUH` and `t_bouh` can be two distinct tables:
+declare the metadata of each one with its exact name, an exact name always wins.
+
 ### Several repositories on the same table
 
 Two repositories can map the same table of the same database and schema: a full entity and a lighter projection
