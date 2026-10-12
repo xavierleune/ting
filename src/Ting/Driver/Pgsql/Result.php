@@ -404,6 +404,7 @@ class Result implements ResultInterface
         // The derived tables (sub-queries of the FROM clause but LATERAL ones, bodies of the CTEs): the aliases inside
         // are not visible outside of them. They nest: the end of the outermost one read so far is enough
         $derivedUntil = -1;
+        [$closing, $subQueries] = self::matchParentheses($tokens);
 
         foreach ($tokens as $index => $token) {
             $isJoin = isset($joins[$index]);
@@ -431,8 +432,8 @@ class Result implements ResultInterface
                 if (($tokens[$body] ?? '') === 'materialized') {
                     $body = self::nextSignificant($tokens, $body);
                 }
-                if (self::isSubQuery($tokens, $body)) {
-                    $derivedUntil = max($derivedUntil, self::closingParenthesis($tokens, $body));
+                if (isset($subQueries[$body])) {
+                    $derivedUntil = max($derivedUntil, $closing[$body]);
                 }
             }
 
@@ -458,7 +459,7 @@ class Result implements ResultInterface
 
             $depth = $depths[$top];
             $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
-            $item = self::readFromItem($tokensWithCase, $tokens, $index);
+            $item = self::readFromItem($tokensWithCase, $tokens, $closing, $subQueries, $index);
             if ($item['derived'] !== null) {
                 $derivedUntil = max($derivedUntil, $item['derived']);
             }
@@ -492,12 +493,19 @@ class Result implements ResultInterface
      *
      * @param list<string> $tokensWithCase
      * @param list<string> $tokens lowercase tokens
+     * @param array<int, int> $closing opening parenthesis => closing parenthesis
+     * @param array<int, true> $subQueries opening parentheses of the sub-queries
      * @return array{table: ?string, schema: ?string, alias: ?string, end: int, derived: ?int, join: ?int} end: the
      *         first token after the item; derived: the closing parenthesis of a derived table (a sub-query, not
      *         LATERAL); join: the opening parenthesis of a parenthesized join
      */
-    private static function readFromItem(array $tokensWithCase, array $tokens, int $position): array
-    {
+    private static function readFromItem(
+        array $tokensWithCase,
+        array $tokens,
+        array $closing,
+        array $subQueries,
+        int $position
+    ): array {
         $item = [
             'table' => null,
             'schema' => null,
@@ -514,11 +522,11 @@ class Result implements ResultInterface
         }
 
         if (($tokens[$index] ?? '') === '(') {
-            $isSubQuery = self::isSubQuery($tokens, $index);
+            $isSubQuery = isset($subQueries[$index]);
             if (!$isSubQuery && !$lateral) {
                 $item['join'] = $index;
             }
-            $index = self::closingParenthesis($tokens, $index);
+            $index = $closing[$index];
             if (!$lateral && $isSubQuery) {
                 $item['derived'] = $index;
             }
@@ -536,7 +544,7 @@ class Result implements ResultInterface
 
             if (($tokens[$next] ?? '') === '(') {
                 // A function call
-                $index = self::closingParenthesis($tokens, $next);
+                $index = $closing[$next];
             } else {
                 $item['table'] = array_pop($names);
                 $item['schema'] = array_pop($names);
@@ -567,7 +575,7 @@ class Result implements ResultInterface
             $index = self::nextSignificant($tokens, $index);
             // The column aliases: AS t (a, b)
             if (($tokens[$index] ?? '') === '(') {
-                $index = self::nextSignificant($tokens, self::closingParenthesis($tokens, $index));
+                $index = self::nextSignificant($tokens, $closing[$index]);
             }
         }
         $item['end'] = $index;
@@ -576,58 +584,57 @@ class Result implements ResultInterface
     }
 
     /**
-     * Whether the parenthesis at $index opens a sub-query, not a parenthesized join: (SELECT ...),
-     * ((SELECT ...) UNION ...), (VALUES ...), (WITH ...), (TABLE ...); not ((SELECT ...) s JOIN t ON ...)
+     * The parentheses and brackets of the query, matched once: the position closing each opening one (past the last
+     * token when it is never closed), and the opening parentheses of the sub-queries: (SELECT ...),
+     * ((SELECT ...) UNION ...), (VALUES ...), (WITH ...), (TABLE ...); not a parenthesized join, as
+     * ((SELECT ...) s JOIN t ON ...), whose first parenthesized SELECT an alias or a join follows
      *
      * @param list<string> $tokens lowercase tokens
+     * @return array{array<int, int>, array<int, true>} opening position => closing position, sub-query => true
      */
-    private static function isSubQuery(array $tokens, int $index): bool
+    private static function matchParentheses(array $tokens): array
     {
-        if (($tokens[$index] ?? '') !== '(') {
-            return false;
-        }
-        $depth = 0;
-        do {
-            $depth++;
-            $index = self::nextSignificant($tokens, $index);
-        } while (($tokens[$index] ?? '') === '(');
-        if (!\in_array($tokens[$index] ?? '', ['select', 'with', 'values', 'table'], true)) {
-            return false;
-        }
-
-        // Each parenthesis opened at the start but the first one closes a SELECT followed by a set operation, a
-        // clause (ORDER BY, LIMIT...) or another closing parenthesis: an alias or a join follows a derived table
-        for ($leading = $depth; $leading > 1 && isset($tokens[$index]); $index++) {
-            if ($tokens[$index] === '(' || $tokens[$index] === '[') {
-                $depth++;
-            } elseif (($tokens[$index] === ')' || $tokens[$index] === ']') && --$depth < $leading) {
-                $leading = $depth;
-                if (!\in_array($tokens[self::nextSignificant($tokens, $index)] ?? '', self::AFTER_SUB_QUERY, true)) {
-                    return false;
-                }
+        $closing = [];
+        $opened = [];
+        foreach ($tokens as $index => $token) {
+            if ($token === '(' || $token === '[') {
+                $opened[] = $index;
+            } elseif (($token === ')' || $token === ']') && $opened !== []) {
+                $closing[array_pop($opened)] = $index;
             }
         }
-
-        return true;
-    }
-
-    /**
-     * Position of the parenthesis closing the one at $index (the last token when it is never closed)
-     *
-     * @param list<string> $tokens
-     */
-    private static function closingParenthesis(array $tokens, int $index): int
-    {
-        $depth = 0;
-        for ($count = \count($tokens); $index < $count; $index++) {
-            if ($tokens[$index] === '(' || $tokens[$index] === '[') {
-                $depth++;
-            } elseif (($tokens[$index] === ')' || $tokens[$index] === ']') && --$depth === 0) {
-                return $index;
-            }
+        foreach ($opened as $index) {
+            $closing[$index] = \count($tokens);
         }
 
-        return $index;
+        // From the end: whether a parenthesis opens a sub-query depends on the one it starts with
+        $subQueries = [];
+        $next = \count($tokens);
+        for ($index = $next - 1; $index >= 0; $index--) {
+            if (trim($tokens[$index]) === '') {
+                continue;
+            }
+            $first = $tokens[$next] ?? '';
+            if (
+                $tokens[$index] === '('
+                && (
+                    \in_array($first, ['select', 'with', 'values', 'table'], true)
+                    || (
+                        isset($subQueries[$next])
+                        && \in_array(
+                            $tokens[self::nextSignificant($tokens, $closing[$next] ?? $next)] ?? '',
+                            self::AFTER_SUB_QUERY,
+                            true
+                        )
+                    )
+                )
+            ) {
+                $subQueries[$index] = true;
+            }
+            $next = $index;
+        }
+
+        return [$closing, $subQueries];
     }
 
     /**
