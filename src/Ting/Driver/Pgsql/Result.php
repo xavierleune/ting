@@ -40,8 +40,8 @@ class Result implements ResultInterface
      * A column, table.column, with an optional alias: each part is a quoted identifier (any character, "" for a
      * double quote) or a name, unquoted
      */
-    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]++|"")+"|[a-z_][a-z0-9_$]*)\.)?(?P<column>"(?:[^"]++|"")+"|[a-z_][a-z0-9_$]*)(?:\s+as\s+(?P<alias>"(?:[^"]++|"")+"|[a-z_][a-z0-9_$]*))?\s*$/i';
-    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")+"|(?<![\w$])[a-z_][a-z0-9_$]*+)?\s*$/i';
+    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]++|"")+"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)\.)?(?P<column>"(?:[^"]++|"")+"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)(?:\s+as\s+(?P<alias>"(?:[^"]++|"")+"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*))?\s*$/i';
+    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")+"|(?<![\w$\x80-\xff])[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)?\s*$/i';
 
     /**
      * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$), a quoted identifier,
@@ -51,10 +51,10 @@ class Result implements ResultInterface
         ~
             --[^\n]*
           | (?<comment>/\*[^*/]*+(?:(?:/++(?!\*)|/(?=/)|\*++(?!/)|\*(?=\*)|(?&comment))[^*/]*+)*+(?:\*/|\z))
-          | (?<![\w$])[eE]'(?:[^'\\]++|\\.|'')*+(?:'|\z)
+          | (?<![\w$\x80-\xff])[eE]'(?:[^'\\]++|\\.|'')*+(?:'|\z)
           | '(?:[^']++|'')*+(?:'|\z)
           | "(?:[^"]++|"")*+(?:"|\z)
-          | (?<![\w$])(?<tag>\$(?:[a-zA-Z_]\w*+)?\$)(?:[^$]++|(?!\k<tag>)\$)*+(?:\k<tag>|\z)
+          | (?<![\w$\x80-\xff])(?<tag>\$(?:[a-zA-Z_]\w*+)?\$)(?:[^$]++|(?!\k<tag>)\$)*+(?:\k<tag>|\z)
           | [\w\x80-\xff][\w$\x80-\xff]*
           | .
         ~sx
@@ -114,7 +114,7 @@ class Result implements ResultInterface
     /**
      * A whole column made of an asterisk: *, alias.* or DISTINCT *
      */
-    private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]++|"")*+"|\w++)\s*\.\s*)?\*$/i';
+    private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]++|"")*+"|[\w\x80-\xff]++)\s*\.\s*)?\*$/i';
 
     protected ?string $connectionName = null;
     protected ?string $database = null;
@@ -1113,9 +1113,9 @@ class Result implements ResultInterface
      */
     private static function endsWithOperand(string $expression): bool
     {
-        return self::match('/[\w$"\')\]]$/', $expression)
+        return self::match('/[\w$\x80-\xff"\')\]]$/', $expression)
             && !self::match(
-                '/(?:^|[^\w$."])(?:not|and|or|is|like|ilike|similar|to|between|symmetric|escape|collate|from|when|then'
+                '/(?:^|[^\w$."\x80-\xff])(?:not|and|or|is|like|ilike|similar|to|between|symmetric|escape|collate|from|when|then'
                 . '|else|case|any|some|all|distinct|overlaps|at\s+time\s+zone)$/i',
                 $expression
             );
