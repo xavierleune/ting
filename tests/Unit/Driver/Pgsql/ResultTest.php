@@ -462,8 +462,8 @@ class ResultTest extends TestCase
                 'SELECT id, "Users".name FROM "App"."Users"',
                 ['Users', 'Users'],
                 [
-                    ['id', 'id', 'Users', 'Users', 'App'],
-                    ['name', 'name', 'Users', 'Users', 'App'],
+                    ['id', 'id', 'users', 'Users', 'App'],
+                    ['name', 'name', 'users', 'Users', 'App'],
                 ],
             ],
             'unquoted identifiers folded to lowercase' => [
@@ -475,15 +475,36 @@ class ResultTest extends TestCase
                     ['Mail', 'email', 'u', 'users', 'app'],
                 ],
             ],
-            'a quoted alias keeps its case' => [
-                'SELECT "U".id, u.name FROM users "U" JOIN users u ON true',
-                ['users', 'users'],
+            'a quoted alias, the key of the row in lowercase' => [
+                'SELECT "U".id, name FROM "MyUsers" "U"',
+                ['MyUsers', 'MyUsers'],
                 [
-                    ['id', 'id', 'U', 'users', ''],
-                    ['name', 'name', 'u', 'users', ''],
+                    ['id', 'id', 'u', 'MyUsers', ''],
+                    ['name', 'name', 'u', 'MyUsers', ''],
                 ],
             ],
         ];
+    }
+
+    public function testSetQueryShouldRaiseExceptionOnAliasesDifferingOnlyByCase()
+    {
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $this->parseColumns(
+                'SELECT "U".id, u.name FROM users "U" JOIN users u ON true',
+                ['users', 'users']
+            ),
+            'Query invalid: the aliases U and u differ only by case, the key of their row: rename one of them'
+        );
+    }
+
+    public function testSetQueryShouldAcceptAliasesDifferingOnlyByCaseWithoutColumns()
+    {
+        // Only the aliases of the columns read are keys of the row
+        $this->assertSame(
+            [['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => '']],
+            $this->parseColumns('SELECT u.id FROM users u JOIN orders "U" ON true', ['users'])
+        );
     }
 
     /**
