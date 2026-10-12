@@ -360,7 +360,10 @@ below).
 A result names its tables and columns as the database does. With PostgreSQL, an unquoted identifier is folded to
 lowercase (`SELECT u.ID FROM Users u` reads the column `id` of the table `users`) and a quoted one keeps its case
 (`"Users"`). The hydrator matches them to the metadata exactly first, then case-insensitively: a table created as
-`"Users"` is found by `setTable('users')`, a column read as `id` by `'columnName' => 'ID'`.
+`"Users"` is found by `setTable('users')`, a column read as `id` by `'columnName' => 'ID'`. A column is matched
+case-insensitively only when the row holds no column of its alias under the exact name: `SELECT *` from a table with
+the columns `"Name"` and `name`, only `"Name"` mapped, hydrates the field from `"Name"`, and `name` is an unmapped
+column (in the object `0`).
 
 When several tables differ only by case, the metadata are looked up in this order:
 
