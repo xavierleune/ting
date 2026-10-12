@@ -539,11 +539,12 @@ $cityRepository->commit();
 ```
 
 To retry after a rollback (a deadlock, say), push the new entities again as they are: inserted in the rolled back
-transaction, they are no longer managed and are inserted again, their id replaced by the new one. The entities you
-updated, pushed again as they are, write nothing: their changes were forgotten, and setting the same value again is not
-a change. Read them again and apply your changes to the fresh objects, or `detachAll()` first: they are then saved as
-entities not managed, by an `UPDATE` of every field. See
-[Transactions](unit-of-work.md#transactions) in the unit of work.
+transaction, they are no longer managed and are inserted again, their id replaced by the new one. A copy of the old id
+in another entity (a foreign key such as `$ticket->setEventId($event->getId())`) is not replaced: set the references
+again in the retry, after the new ids are generated. The entities you updated, pushed again as they are, write
+nothing: their changes were forgotten, and setting the same value again is not a change. Read them again and apply
+your changes to the fresh objects, or `detachAll()` first: they are then saved as entities not managed, by an `UPDATE`
+of every field. See [Transactions](unit-of-work.md#transactions) in the unit of work.
 
 Starting a transaction while another one is open on the same connection, or committing / rolling back without one,
 throws a `CCMBenchmark\Ting\Exceptions\TransactionException`. So does a `START TRANSACTION`, `COMMIT` or `ROLLBACK`
@@ -551,6 +552,20 @@ refused by the database (its error is in the message), including the `COMMIT` of
 failed query, which the server answers with a `ROLLBACK`. A failed `commit()` or `rollback()` leaves no transaction
 open: don't call `rollback()` after a failed `commit()` (it would throw "Cannot rollback no transaction"), which is why
 `commit()` is outside the `try` above.
+
+Ting follows the transaction only through `startTransaction()`, `commit()` and `rollback()`: end it with them, never
+behind their back, or the unit of work no longer knows which rows exist:
+
+* a statement committing implicitly (with MySQL, DDL such as `CREATE TABLE` or `ALTER TABLE`, `LOCK TABLES`), or a
+  `COMMIT` sent as a query, commits the rows already written, but a later `rollback()` still tells the unit of work
+  that the entities inserted in the transaction were rolled back: pushed again, they are inserted again, creating
+  duplicate rows. A `ROLLBACK` (or `ROLLBACK TO SAVEPOINT`) sent as a query does the opposite: the rows (written after
+  the savepoint) are gone, but their entities stay managed with the id of a row that does not exist, and saving them
+  again writes nothing;
+* with MySQL, a deadlock rolls the whole transaction back on the server. Calling `commit()` after it instead of
+  `rollback()` (catching the exception and going on) succeeds without committing anything, and the entities inserted
+  before the deadlock stay managed with the id of a row that does not exist. Call `rollback()` after any failed query
+  in a transaction, as above.
 
 A transaction lives in the database session: when the connection is lost, the server rolls it back. When the driver
 replaces or closes the connection while a transaction is open (`ping()` or `reconnect()` re-establishing a lost

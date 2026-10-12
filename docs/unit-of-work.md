@@ -186,7 +186,10 @@ After a rollback, the rows written in the transaction no longer exist, or no lon
   generated one. This holds whatever ended the transaction: `rollback()`, a failed `commit()` (or a PostgreSQL
   `COMMIT` of an aborted transaction), or the connection lost or closed (`ping()` reconnecting, `close()`,
   `ConnectionPool::reset()`). It survives `detach()`, `detachAll()` and `reset()`: the retry can push the same objects.
-  A queued save of such an entity becomes an `INSERT`, a queued deletion is dropped;
+  A queued save of such an entity becomes an `INSERT`, a queued deletion is dropped. Only the id of the entity itself
+  is replaced: an id generated in the rolled back transaction and copied into another entity
+  (`$ticket->setEventId($event->getId())`) keeps the old value, so the retry would write a reference to a row that
+  does not exist. Run the code copying the generated ids again in each attempt, after the save generating them;
 * **the entities updated** in the transaction stay managed, but their changes are forgotten (written, then rolled
   back): their objects no longer match the database. Pushed again as they are, they **write nothing**: no change is
   left, and setting the same value again is not a change. To retry (after a deadlock, say), read them again and apply
@@ -198,6 +201,11 @@ PostgreSQL connection) has an **unknown outcome**: the server may have committed
 treats it as a rollback, so a retry inserts the entities of the transaction again, which creates duplicate rows if the
 server had committed. After such a failure, check the rows before retrying (or rely on a natural or unique key that
 rejects the duplicate).
+
+The unit of work learns that a transaction ended only from `commit()` and `rollback()`: a transaction ended by another
+statement (an implicit commit of MySQL DDL or `LOCK TABLES`, a `COMMIT` or `ROLLBACK` sent as a query), or a MySQL
+deadlock followed by `commit()` instead of `rollback()`, leaves it with entities inserted twice or managed without a
+row. See [Transactions](repositories.md#transactions).
 
 This protection needs a driver implementing `CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface`, as the
 Mysqli and Pgsql drivers do. With a driver that does not implement it (a driver of your own), an entity inserted in a
