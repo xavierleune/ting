@@ -892,8 +892,8 @@ Hydrators and Transactions
 * When several metadata share a table on a connection (one per database or schema, e.g. `City` in `world` and
   `CityArchive` in `world_archive`, both on `T_CITY_CIT`) and none matches the database and schema of the result, the
   hydrator no longer takes the first metadata registered (an order that depends on the files found or on the service
-  configuration). It takes the only metadata of the same database, else the only one of the same schema, and otherwise
-  throws a `CCMBenchmark\Ting\Exceptions\HydratorException` listing the candidates: name the database or the schema
+  configuration). It takes the only metadata of the same database, or when none shares the database, the only one of
+  the same schema, and otherwise throws a `CCMBenchmark\Ting\Exceptions\HydratorException` listing the candidates: name the database or the schema
   of the alias with `Hydrator::objectDatabaseIs()` / `objectSchemaIs()`, see
   [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
   still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
