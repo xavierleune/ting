@@ -101,6 +101,12 @@ class Result implements ResultInterface
     ];
 
     /**
+     * The keywords of a clause that are part of an expression after another keyword, outside of parentheses:
+     * WITHIN GROUP (ORDER BY ...), COLLATION FOR (...)
+     */
+    private const NOT_A_CLAUSE_AFTER = ['group' => ['within'], 'for' => ['collation']];
+
+    /**
      * The tokens following a parenthesized SELECT in a sub-query: a set operation, a clause, or its end
      */
     private const AFTER_SUB_QUERY = [')', 'union', 'intersect', 'except', 'order', 'limit', 'offset', 'fetch', 'for'];
@@ -223,7 +229,7 @@ class Result implements ResultInterface
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
                         && !\in_array(
                             $tokens[self::previousSignificant($tokens, $index)],
-                            $token === 'group' ? ['.', 'as', 'within'] : ['.', 'as'],
+                            ['.', 'as', ...(self::NOT_A_CLAUSE_AFTER[$token] ?? [])],
                             true
                         )
                     );
