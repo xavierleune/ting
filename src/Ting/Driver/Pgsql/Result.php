@@ -171,7 +171,12 @@ class Result implements ResultInterface
         $comparisonFroms = self::findComparisonFroms($tokens);
         $selectDepth = self::findMainSelectDepth($tokens);
 
-        [$tableToAlias, $aliasToSchema] = $this->findTables($tokensWithCase, $tokens, $comparisonFroms, $selectDepth);
+        [$tableToAlias, $aliasToSchema, $derivedTables] = $this->findTables(
+            $tokensWithCase,
+            $tokens,
+            $comparisonFroms,
+            $selectDepth
+        );
 
         $startCapture = false;
         // The tokens of the main SELECT before its first column: DISTINCT, ALL, DISTINCT ON (...)
@@ -319,8 +324,8 @@ class Result implements ResultInterface
             throw new QueryException('Query invalid: can\'t parse columns');
         }
 
-        // Lowercase key of the row => the alias read
-        $aliasOfKey = [];
+        // Whether each column is keyed by the name of a table read only in a derived table
+        $byDerivedTable = [];
         foreach ($columnsMatches as $match) {
             $stdClass = new stdClass();
             $stdClass->orgname = $match['column'];
@@ -344,20 +349,7 @@ class Result implements ResultInterface
             }
 
             $stdClass->schema = $aliasToSchema[$stdClass->table] ?? '';
-
-            // The alias is the key of the entity in the row, an application key rather than a database name: in
-            // lowercase, as in 3.x, whether quoted or not ("U" and u are both u). Two aliases of the row differing
-            // only by case would share that key and mix their columns in one entity
-            $key = strtolower($stdClass->table);
-            $aliasOfKey[$key] ??= $stdClass->table;
-            if ($aliasOfKey[$key] !== $stdClass->table) {
-                throw new QueryException(sprintf(
-                    'Query invalid: the aliases %s and %s differ only by case, the key of their row: rename one of them',
-                    $aliasOfKey[$key],
-                    $stdClass->table
-                ));
-            }
-            $stdClass->table = $key;
+            $byDerivedTable[] = $match['table'] === '' && isset($derivedTables[$stdClass->orgtable]);
 
             // The schema and orgtable (from pg_field_table()) are unquoted already. The name keeps the spelling of the
             // query; a column is folded to lowercase unless quoted, as PostgreSQL names it
@@ -369,14 +361,42 @@ class Result implements ResultInterface
             $fields[] = $stdClass;
         }
 
+        // The alias is the key of the entity in the row, an application key rather than a database name: in
+        // lowercase, as in 3.x, whether quoted or not ("U" and u are both u). Two aliases of the row differing only by
+        // case would share that key and mix their columns in one entity: the query throws. The name of a table read
+        // only in a derived table cannot be renamed: differing only by case from another key, it keys no column
+        $aliasOfKey = [];
+        foreach ([false, true] as $derived) {
+            foreach ($fields as $index => $field) {
+                if ($byDerivedTable[$index] !== $derived) {
+                    continue;
+                }
+                $key = strtolower($field->table);
+                $aliasOfKey[$key] ??= $field->table;
+                if ($aliasOfKey[$key] === $field->table) {
+                    $field->table = $key;
+                } elseif ($derived) {
+                    $field->table = '';
+                    $field->schema = '';
+                } else {
+                    throw new QueryException(sprintf(
+                        'Query invalid: the aliases %s and %s differ only by case, the key of their row: rename one '
+                        . 'of them',
+                        $aliasOfKey[$key],
+                        $field->table
+                    ));
+                }
+            }
+        }
+
         $this->fields = $fields;
     }
 
     /**
-     * The tables of the FROM clauses and of the joins, read from the tokens: the alias of each table, and the schema
-     * of each alias. A FROM belongs to a SELECT at the same depth of parentheses (not to extract(year FROM x), nor to
-     * IS [NOT] DISTINCT FROM); a FROM clause lists its items separated by commas. Neither a sub-query nor a function
-     * names a table.
+     * The tables of the FROM clauses and of the joins, read from the tokens: the alias of each table, the schema of
+     * each alias, and the tables read only in a derived table. A FROM belongs to a SELECT at the same depth of
+     * parentheses (not to extract(year FROM x), nor to IS [NOT] DISTINCT FROM); a FROM clause lists its items
+     * separated by commas. Neither a sub-query nor a function names a table.
      * A table or an alias read at several depths (a sub-query, a LATERAL join, IN (SELECT ...), EXISTS, a CTE) is
      * the one of the main SELECT: a table read deeper never replaces one read closer to the main SELECT
      *
@@ -384,12 +404,14 @@ class Result implements ResultInterface
      * @param list<string> $tokens lowercase tokens
      * @param array<int, true> $comparisonFroms
      * @param int $selectDepth depth of the parentheses around the main SELECT
-     * @return array{array<string, string>, array<string, string>} table => alias, alias => schema
+     * @return array{array<string, string>, array<string, string>, array<string, true>} table => alias,
+     *         alias => schema, table read only in a derived table (keyed by its name) => true
      */
     private function findTables(array $tokensWithCase, array $tokens, array $comparisonFroms, int $selectDepth): array
     {
         $tableToAlias = [];
         $aliasToSchema = [];
+        $derivedTables = [];
         // How far from the main SELECT each table and each alias was read: 0 at its depth, deeper further, and
         // outside of its parentheses (the next SELECT of a UNION) the furthest
         $tableDistance = [];
@@ -475,6 +497,11 @@ class Result implements ResultInterface
                 if ($distance <= ($tableDistance[$table] ?? \PHP_INT_MAX)) {
                     $tableToAlias[$table] = $alias;
                     $tableDistance[$table] = $distance;
+                    if ($index > $derivedUntil) {
+                        unset($derivedTables[$table]);
+                    } else {
+                        $derivedTables[$table] = true;
+                    }
                 }
                 if ($distance <= ($aliasDistance[$alias] ?? \PHP_INT_MAX)) {
                     $aliasToSchema[$alias] = $item['schema'] !== null ? $this->identifierKey($item['schema']) : '';
@@ -483,7 +510,7 @@ class Result implements ResultInterface
             }
         }
 
-        return [$tableToAlias, $aliasToSchema];
+        return [$tableToAlias, $aliasToSchema, $derivedTables];
     }
 
     /**
