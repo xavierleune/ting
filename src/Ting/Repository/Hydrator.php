@@ -431,6 +431,7 @@ class Hydrator implements HydratorInterface
                     $result[$column['table']] = $this->references[$ref];
                     $validEntities[$column['table']]  = true;
                     $fromReferences[$column['table']] = true;
+                    $this->keepPropertiesNotReadOfDetached($column['table'], $result[$column['table']], $columns);
                     continue;
                 }
 
@@ -580,6 +581,35 @@ class Hydrator implements HydratorInterface
         $column['orgName'] = $orgName;
 
         return $column;
+    }
+
+    /**
+     * An entity of the identity map detached since it was read is managed again (see manageIfYouCan()): without the
+     * fields its row did not read, the same columns as the row of this result giving it again
+     *
+     * @param Row $columns
+     */
+    private function keepPropertiesNotReadOfDetached(string $table, ?object $entity, array $columns): void
+    {
+        if (
+            $entity instanceof NotifyPropertyInterface === false
+            || $this->unitOfWork === null
+            || $this->unitOfWork->isManaged($entity)
+        ) {
+            return;
+        }
+
+        $metadata = $this->metadataList[$table];
+        $read = [];
+        foreach ($columns as $column) {
+            if ($column['table'] === $table) {
+                $orgName = $this->withColumnOfMetadata($column, $columns)['orgName'];
+                if ($metadata->hasColumn($orgName)) {
+                    $read[$orgName] = true;
+                }
+            }
+        }
+        $this->unitOfWork->setPropertiesNotRead($entity, $metadata->getPropertiesNotRead($read));
     }
 
     /**
