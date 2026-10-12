@@ -425,6 +425,14 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     public function detach(NotifyPropertyInterface $entity): void
     {
         unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+        $this->forget($entity);
+    }
+
+    /**
+     * Forget everything tracked of the entity but its place in the queue
+     */
+    private function forget(NotifyPropertyInterface $entity): void
+    {
         $this->entitiesChanged->offsetUnset($entity);
         $this->mutableValues->offsetUnset($entity);
         $this->propertiesNotRead->offsetUnset($entity);
@@ -551,8 +559,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     /**
      * The transaction in which the entity was inserted ended without being committed (rolled back, failed COMMIT,
      * lost with the connection): its row does not exist. The entity is left as it is, its generated id included, but
-     * is no longer managed, and its next save inserts it again. Queued for a save, it is queued for its INSERT; queued
-     * for a deletion, it is unqueued.
+     * is no longer managed, and its next save inserts it again. Queued for a save, it is queued for its INSERT, in its
+     * place; queued for a deletion, it is unqueued.
      *
      * @internal called by the drivers implementing RollbackListenerAwareDriverInterface, see processNew()
      */
@@ -562,12 +570,16 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             return;
         }
 
-        $hash = spl_object_hash($subject);
-        $queued = $this->entitiesShouldBePersisted[$hash] ?? null;
-        $this->detach($subject);
+        $this->forget($subject);
         $this->insertsRolledBack[$subject] = true;
-        if ($queued !== null && $queued['state'] !== self::STATE_DELETE) {
-            $this->entitiesShouldBePersisted[$hash] = ['state' => self::STATE_NEW] + $queued;
+        // Queued, it keeps its place in the queue (a parent before its child)
+        $hash = spl_object_hash($subject);
+        if (isset($this->entitiesShouldBePersisted[$hash])) {
+            if ($this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_DELETE) {
+                unset($this->entitiesShouldBePersisted[$hash]);
+            } else {
+                $this->entitiesShouldBePersisted[$hash]['state'] = self::STATE_NEW;
+            }
         }
     }
 

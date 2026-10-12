@@ -1168,6 +1168,29 @@ class UnitOfWorkTest extends TestCase
     }
 
     #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityQueuedBeforeARollbackShouldKeepItsPlaceInTheQueue()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $parent = new Bouh();
+        $parent->setName('parent');
+        $child = new Bouh();
+        $child->setName('child');
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($parent)->process();
+        $parent->setName('parent again');
+        // The parent before the child (a foreign key)
+        $unitOfWork->pushSave($parent)->pushSave($child);
+        $driver->rollback();
+        $unitOfWork->process();
+
+        $this->assertSame(
+            ['parent', 'parent again', 'child'],
+            array_map(fn (array $queryParams): mixed => $queryParams['v2_boo_name'] ?? null, $params)
+        );
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
     public function testResetShouldKeepTheEntitiesWhoseInsertWasRolledBack()
     {
         $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
