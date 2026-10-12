@@ -478,6 +478,34 @@ class ResultTest extends TestCase
                 ['users'],
                 [$column('id', 'users')],
             ],
+            'a parenthesized join starting with a derived table' => [
+                'SELECT p.id, p.name FROM ((SELECT 1 AS one) s JOIN tenant_a.people p ON true)'
+                . ' WHERE p.id NOT IN (SELECT p.id FROM tenant_b.people p)',
+                ['people', 'people'],
+                [$column('id', 'p', 'tenant_a'), $column('name', 'p', 'tenant_a')],
+            ],
+            'a parenthesized join starting with VALUES' => [
+                'SELECT id, name FROM ((VALUES (1)) v (one) JOIN app.people p ON true)',
+                ['people', 'people'],
+                [$column('id', 'p', 'app'), $column('name', 'p', 'app')],
+            ],
+            'the first table of a parenthesized join' => [
+                'SELECT p.id, o.total FROM (tenant_a.people p JOIN orders o ON true)'
+                . ' WHERE p.id NOT IN (SELECT p.id FROM tenant_b.people p)',
+                ['people', 'orders'],
+                [$column('id', 'p', 'tenant_a'), $column('total', 'o')],
+            ],
+            'nested parenthesized joins' => [
+                'SELECT name, total FROM (((SELECT 1) s JOIN app.people p ON true) LEFT JOIN (shop.orders o'
+                . ' JOIN items i ON true) ON true) WHERE EXISTS (SELECT 1 FROM tenant_b.people p, x.orders o)',
+                ['people', 'orders'],
+                [$column('name', 'p', 'app'), $column('total', 'o', 'shop')],
+            ],
+            'a sub-query starting with a parenthesized SELECT' => [
+                'SELECT nm FROM (((SELECT name AS nm FROM app.people p)) UNION SELECT 1) s',
+                ['people'],
+                [['name' => 'nm', 'orgName' => 'nm', 'table' => 'people', 'schema' => 'app']],
+            ],
             'the same table in the second SELECT of a parenthesized UNION' => [
                 '(SELECT id FROM city c) UNION ALL (SELECT 1) UNION ALL SELECT id FROM app.city d',
                 ['city'],
