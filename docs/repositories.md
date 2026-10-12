@@ -559,9 +559,11 @@ behind their back, or the unit of work no longer knows which rows exist:
 * a statement committing implicitly (with MySQL, DDL such as `CREATE TABLE` or `ALTER TABLE`, `LOCK TABLES`), or a
   `COMMIT` sent as a query, commits the rows already written, but a later `rollback()` still tells the unit of work
   that the entities inserted in the transaction were rolled back: pushed again, they are inserted again, creating
-  duplicate rows. A `ROLLBACK` (or `ROLLBACK TO SAVEPOINT`) sent as a query does the opposite: the rows (written after
-  the savepoint) are gone, but their entities stay managed with the id of a row that does not exist, and saving them
-  again writes nothing;
+  duplicate rows. A `ROLLBACK` (or `ROLLBACK TO SAVEPOINT`) sent as a query, followed by `commit()`, does the
+  opposite: the rows (written after the savepoint) are gone, but their entities stay managed with the id of a row that
+  does not exist, and saving them again writes nothing (followed by `rollback()`, the unit of work is told, as usual).
+  After such a statement, the connection may also be back in autocommit: the writes made before `commit()` are then
+  committed one by one;
 * with MySQL, a deadlock rolls the whole transaction back on the server. Calling `commit()` after it instead of
   `rollback()` (catching the exception and going on) succeeds without committing anything, and the entities inserted
   before the deadlock stay managed with the id of a row that does not exist. Call `rollback()` after any failed query

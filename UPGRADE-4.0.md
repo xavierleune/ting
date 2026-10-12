@@ -370,6 +370,11 @@ UnitOfWork
   `Serializer\Json` decoding objects (without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag), or a serializer of your
   own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
   trade-offs.
+* The database value of a mutable field is compared with what its getter returns: a getter or a setter transforming
+  the value read (a getter returning `new \stdClass()` for `null`, a setter replacing `null` or converting a date to
+  UTC) makes the next save write the transformed value, even when nothing else changed — Ting 3 only wrote it with a
+  notified change. A setter converting dates to another timezone than the one they are read in shifts them at each
+  read and save: see [mutable values](docs/entities.md#mutable-values).
 * A mutable field is only written when its value is known: read from the database, set through its setter, or
   inserted. An entity read partially (a query selecting some of its columns, a join selecting some columns of the
   joined entity) does not write the mutable fields it did not read, so their PHP default (`null`, or a value set by
@@ -897,7 +902,8 @@ Hydrators and Transactions
   `CityArchive` in `world_archive`, both on `T_CITY_CIT`) and none matches the database and schema of the result, the
   hydrator no longer takes the first metadata registered (an order that depends on the files found or on the service
   configuration). It takes the only metadata of the same database, or when none shares the database, the only one of
-  the same schema, and otherwise throws a `CCMBenchmark\Ting\Exceptions\HydratorException` listing the candidates: name the database or the schema
+  the same schema, and otherwise throws a `CCMBenchmark\Ting\Exceptions\HydratorException` listing the candidates:
+  name the database or the schema
   of the alias with `Hydrator::objectDatabaseIs()` / `objectSchemaIs()`, see
   [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
   still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
