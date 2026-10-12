@@ -89,6 +89,11 @@ class Result implements ResultInterface
     ];
 
     /**
+     * The tokens following a parenthesized SELECT in a sub-query: a set operation, a clause, or its end
+     */
+    private const AFTER_SUB_QUERY = [')', 'union', 'intersect', 'except', 'order', 'limit', 'offset', 'fetch', 'for'];
+
+    /**
      * A column of [database.]schema.table.column
      */
     private const QUALIFIED_NAME = '/^(?:(?:"(?:[^"]++|"")*+"|[a-z_][a-z0-9_$]*+)\s*\.\s*)++'
@@ -391,18 +396,29 @@ class Result implements ResultInterface
         $aliasDistance = [];
         // At each depth of parentheses: no SELECT, its select list, or its FROM clause (until the clause after it)
         $states = [self::NO_SELECT];
+        // At each depth of parentheses, the depth of the SELECT it belongs to: the parentheses of a join, as
+        // FROM (a JOIN b ON ...), hold items of the FROM clause around them
+        $depths = [0];
+        // The opening parentheses of the parenthesized joins read
+        $joins = [];
         // The derived tables (sub-queries of the FROM clause but LATERAL ones, bodies of the CTEs): the aliases inside
         // are not visible outside of them. They nest: the end of the outermost one read so far is enough
         $derivedUntil = -1;
 
         foreach ($tokens as $index => $token) {
+            $isJoin = isset($joins[$index]);
             if ($token === '(' || $token === '[') {
-                $states[] = self::NO_SELECT;
-                continue;
+                $states[] = $isJoin ? self::FROM_CLAUSE : self::NO_SELECT;
+                $depths[] = $isJoin ? end($depths) : end($depths) + 1;
+                // The first item of a parenthesized join follows its parenthesis
+                if (!$isJoin) {
+                    continue;
+                }
             }
             if ($token === ')' || $token === ']') {
                 if (\count($states) > 1) {
                     array_pop($states);
+                    array_pop($depths);
                 }
                 continue;
             }
@@ -430,20 +446,24 @@ class Result implements ResultInterface
                 continue;
             }
 
-            // An item follows a FROM, a JOIN, or a comma of the FROM clause (FROM a, b; JOIN b ON ..., c)
+            // An item follows a FROM, a JOIN, a comma of the FROM clause (FROM a, b; JOIN b ON ..., c) or the
+            // parenthesis of a join
             $isFrom = $token === 'from' && !isset($comparisonFroms[$index]) && $states[$top] !== self::NO_SELECT;
-            if ($token !== 'join' && !$isFrom && ($token !== ',' || $states[$top] !== self::FROM_CLAUSE)) {
+            if (!$isJoin && $token !== 'join' && !$isFrom && ($token !== ',' || $states[$top] !== self::FROM_CLAUSE)) {
                 continue;
             }
             if ($isFrom) {
                 $states[$top] = self::FROM_CLAUSE;
             }
 
-            $depth = \count($states) - 1;
+            $depth = $depths[$top];
             $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
             $item = self::readFromItem($tokensWithCase, $tokens, $index);
             if ($item['derived'] !== null) {
                 $derivedUntil = max($derivedUntil, $item['derived']);
+            }
+            if ($item['join'] !== null) {
+                $joins[$item['join']] = true;
             }
             if ($item['table'] !== null) {
                 $table = $this->identifierKey($item['table']);
@@ -472,12 +492,20 @@ class Result implements ResultInterface
      *
      * @param list<string> $tokensWithCase
      * @param list<string> $tokens lowercase tokens
-     * @return array{table: ?string, schema: ?string, alias: ?string, end: int, derived: ?int} end: the first token
-     *         after the item; derived: the closing parenthesis of a derived table (a sub-query, not LATERAL)
+     * @return array{table: ?string, schema: ?string, alias: ?string, end: int, derived: ?int, join: ?int} end: the
+     *         first token after the item; derived: the closing parenthesis of a derived table (a sub-query, not
+     *         LATERAL); join: the opening parenthesis of a parenthesized join
      */
     private static function readFromItem(array $tokensWithCase, array $tokens, int $position): array
     {
-        $item = ['table' => null, 'schema' => null, 'alias' => null, 'end' => $position, 'derived' => null];
+        $item = [
+            'table' => null,
+            'schema' => null,
+            'alias' => null,
+            'end' => $position,
+            'derived' => null,
+            'join' => null,
+        ];
 
         $index = self::nextSignificant($tokens, $position);
         $lateral = ($tokens[$index] ?? '') === 'lateral';
@@ -487,6 +515,9 @@ class Result implements ResultInterface
 
         if (($tokens[$index] ?? '') === '(') {
             $isSubQuery = self::isSubQuery($tokens, $index);
+            if (!$isSubQuery && !$lateral) {
+                $item['join'] = $index;
+            }
             $index = self::closingParenthesis($tokens, $index);
             if (!$lateral && $isSubQuery) {
                 $item['derived'] = $index;
@@ -546,7 +577,7 @@ class Result implements ResultInterface
 
     /**
      * Whether the parenthesis at $index opens a sub-query, not a parenthesized join: (SELECT ...),
-     * ((SELECT ...) UNION ...), (VALUES ...), (WITH ...), (TABLE ...)
+     * ((SELECT ...) UNION ...), (VALUES ...), (WITH ...), (TABLE ...); not ((SELECT ...) s JOIN t ON ...)
      *
      * @param list<string> $tokens lowercase tokens
      */
@@ -555,11 +586,29 @@ class Result implements ResultInterface
         if (($tokens[$index] ?? '') !== '(') {
             return false;
         }
+        $depth = 0;
         do {
+            $depth++;
             $index = self::nextSignificant($tokens, $index);
         } while (($tokens[$index] ?? '') === '(');
+        if (!\in_array($tokens[$index] ?? '', ['select', 'with', 'values', 'table'], true)) {
+            return false;
+        }
 
-        return \in_array($tokens[$index] ?? '', ['select', 'with', 'values', 'table'], true);
+        // Each parenthesis opened at the start but the first one closes a SELECT followed by a set operation, a
+        // clause (ORDER BY, LIMIT...) or another closing parenthesis: an alias or a join follows a derived table
+        for ($leading = $depth; $leading > 1 && isset($tokens[$index]); $index++) {
+            if ($tokens[$index] === '(' || $tokens[$index] === '[') {
+                $depth++;
+            } elseif (($tokens[$index] === ')' || $tokens[$index] === ']') && --$depth < $leading) {
+                $leading = $depth;
+                if (!\in_array($tokens[self::nextSignificant($tokens, $index)] ?? '', self::AFTER_SUB_QUERY, true)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /**
