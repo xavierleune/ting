@@ -210,10 +210,37 @@ final class HydratorRelational extends Hydrator
         // The roots receive entities without being given to another one: one row per distinct combination of roots
         $roots     = array_unique(array_diff(array_column($relations, 'target'), $sources));
 
+        // Read in a setter called while another result is hydrated (a lookup with this hydrator): the references and
+        // the resources of the other one are given back once this result is read
+        $previous = [$this->referencesRelation, $this->resources];
         $this->referencesRelation = [];
         $this->resources          = [];
-        $results                  = [];
 
+        try {
+            $results = $this->collect($relations, $sources, $roots);
+            $this->assignResourcesToReferences($relations);
+        } finally {
+            [$this->referencesRelation, $this->resources] = $previous;
+        }
+
+        foreach ($results as $result) {
+            yield $this->finalizeAggregate($result);
+        }
+    }
+
+    /**
+     * Hydrates every row, collecting the entities of the relations, and returns one row per distinct combination of
+     * roots
+     *
+     * @param list<array{source: string, target: string, targetSetter: string, many: bool}> $relations
+     * @param array<string> $sources
+     * @param array<string> $roots
+     * @return array<string, array<int|string, object|null>>
+     * @throws Exception
+     */
+    private function collect(array $relations, array $sources, array $roots): array
+    {
+        $results = [];
         $checked = false;
         foreach ($this->hydratedRows() as $result) {
             if ($checked === false) {
@@ -255,11 +282,7 @@ final class HydratorRelational extends Hydrator
             $results[serialize($rootKeys)] ??= $result;
         }
 
-        $this->assignResourcesToReferences($relations);
-
-        foreach ($results as $result) {
-            yield $this->finalizeAggregate($result);
-        }
+        return $results;
     }
 
     /**

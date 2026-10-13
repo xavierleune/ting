@@ -53,6 +53,7 @@ use tests\fixtures\Serializer\CountingJson;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
 use tests\fixtures\model\City;
+use tests\fixtures\model\CityLookingUp;
 use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\PrimaryOnMultiField;
 
@@ -1722,14 +1723,14 @@ class HydratorTest extends TestCase
     }
 
     /**
-     * @param list<array{0: string, 1: string}> $columns [column name, table] of each column, aliased "x"
+     * @param list<array{0: string, 1: string}> $columns [column name, table] of each column, aliased $alias
      * @param list<list<string>> $rows
      */
-    private function resultOf(array $columns, array $rows): Result
+    private function resultOf(array $columns, array $rows, string $alias = 'x'): Result
     {
         $mockMysqliResult = new MysqliResult($rows);
         $mockMysqliResult->setFields(array_map(
-            fn (array $column): \stdClass => $this->field($column[0], $column[0], 'x', $column[1]),
+            fn (array $column): \stdClass => $this->field($column[0], $column[0], $alias, $column[1]),
             $columns
         ));
         $result = new Result();
@@ -1801,6 +1802,119 @@ class HydratorTest extends TestCase
         $this->assertContainsOnlyInstancesOf(City::class, $cities);
         $this->assertSame($cities[0], $cities[1]);
         $this->assertNotSame($cities[0], $cities[2]);
+    }
+
+    /**
+     * @return array<string, array{0: bool}>
+     */
+    public static function identityMapProvider(): array
+    {
+        return ['with identity map' => [true], 'without identity map' => [false]];
+    }
+
+    /**
+     * A hydrator kept as a service, the metadata of City hydrating CityLookingUp, and of Bouh
+     */
+    private function hydratorLookingUp(bool $identityMap): Hydrator
+    {
+        $services = new TingServices();
+        $cityMetadata = CityRepository::initMetadata($services->serializerFactory());
+        $cityMetadata->setEntity(CityLookingUp::class);
+        $services->metadataRepository()->addMetadata(CityRepository::class, $cityMetadata);
+        $services->metadataRepository()->addMetadata(BouhRepository::class, BouhRepository::initMetadata($services->serializerFactory()));
+        $hydrator = new Hydrator();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->identityMap($identityMap);
+
+        return $hydrator;
+    }
+
+    #[DataProvider('identityMapProvider')]
+    public function testAReadNestedInASetterShouldNotChangeTheRowBeingHydrated(bool $identityMap)
+    {
+        $hydrator = $this->hydratorLookingUp($identityMap);
+        $innerRows = [];
+        // A lookup in a setter with the same hydrator, while the hydrator sets the fields of the row
+        CityLookingUp::$lookup = function () use ($hydrator, &$innerRows): void {
+            $inner = $this->resultOf([['boo_id', 'T_BOUH_BOO'], ['boo_name', 'T_BOUH_BOO']], [['9', 'Sylvain']], 'b');
+            foreach ($hydrator->setResult($inner) as $row) {
+                $innerRows[] = $row;
+            }
+        };
+
+        try {
+            $outer = $this->resultOf(
+                [['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT'], ['cit_zipcode', 'T_CITY_CIT']],
+                [['1', 'Paris', '75000'], ['2', 'Lyon', '69000']]
+            );
+            $rows = iterator_to_array($hydrator->setResult($outer)->getIterator());
+        } finally {
+            CityLookingUp::$lookup = null;
+        }
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(['x'], array_keys($rows[0]));
+        $this->assertSame([1, 'Paris', '75000'], [$rows[0]['x']->getId(), $rows[0]['x']->getName(), $rows[0]['x']->getZipcode()]);
+        $this->assertSame([2, 'Lyon', '69000'], [$rows[1]['x']->getId(), $rows[1]['x']->getName(), $rows[1]['x']->getZipcode()]);
+        $this->assertCount(1, $innerRows);
+        $this->assertSame(['b'], array_keys($innerRows[0]));
+        $this->assertInstanceOf(Bouh::class, $innerRows[0]['b']);
+        $this->assertSame('Sylvain', $innerRows[0]['b']->getName());
+    }
+
+    public function testAReadNestedInASetterAndStoppedShouldNotChangeTheRowBeingHydrated()
+    {
+        $hydrator = $this->hydratorLookingUp(true);
+        $first = null;
+        // Only the first row of the lookup is read: its iteration is stopped
+        CityLookingUp::$lookup = function () use ($hydrator, &$first): void {
+            $inner = $this->resultOf([['boo_id', 'T_BOUH_BOO'], ['boo_name', 'T_BOUH_BOO']], [['9', 'Sylvain'], ['10', 'Xavier']], 'b');
+            $first = $hydrator->setResult($inner)->getIterator()->current();
+        };
+
+        try {
+            $outer = $this->resultOf(
+                [['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT'], ['cit_zipcode', 'T_CITY_CIT']],
+                [['1', 'Paris', '75000'], ['1', 'Paris', '75000']]
+            );
+            $rows = iterator_to_array($hydrator->setResult($outer)->getIterator());
+        } finally {
+            CityLookingUp::$lookup = null;
+        }
+
+        $this->assertSame($rows[0]['x'], $rows[1]['x']);
+        $this->assertSame(['Paris', '75000'], [$rows[0]['x']->getName(), $rows[0]['x']->getZipcode()]);
+        $this->assertSame('Sylvain', $first['b']->getName());
+    }
+
+    public function testAReadNestedInASetterShouldKeepItsOwnIdentityMap()
+    {
+        $hydrator = $this->hydratorLookingUp(true);
+        $innerRows = [];
+        // The same alias, the same table and the same primary key as the row being hydrated
+        CityLookingUp::$lookup = function () use ($hydrator, &$innerRows): void {
+            $inner = $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['1', 'Inner']]);
+            foreach ($hydrator->setResult($inner) as $row) {
+                $innerRows[] = $row;
+            }
+        };
+
+        try {
+            $outer = $this->resultOf(
+                [['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT'], ['cit_zipcode', 'T_CITY_CIT']],
+                [['1', 'Paris', '75000'], ['1', 'Paris', '75000']]
+            );
+            $rows = iterator_to_array($hydrator->setResult($outer)->getIterator());
+        } finally {
+            CityLookingUp::$lookup = null;
+        }
+
+        $this->assertSame($rows[0]['x'], $rows[1]['x']);
+        $this->assertSame(['Paris', '75000'], [$rows[0]['x']->getName(), $rows[0]['x']->getZipcode()]);
+        $this->assertCount(1, $innerRows);
+        $this->assertNotSame($rows[0]['x'], $innerRows[0]['x']);
+        $this->assertSame('Inner', $innerRows[0]['x']->getName());
     }
 
     public function testAnEntityOfTheIdentityMapShouldBeManagedAgainOnceDetached()

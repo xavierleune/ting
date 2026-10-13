@@ -98,6 +98,12 @@ class Hydrator implements HydratorInterface
      */
     private ?\WeakMap $resultStates = null;
 
+    /**
+     * The number of rows being hydrated by hydrateColumns(): above 0, a result read now is read in the hydration of a
+     * row (a setter running a lookup with this hydrator), whose state must be left as it is
+     */
+    private int $rowsBeingHydrated = 0;
+
     protected ?ResultInterface $result = null;
 
     protected ?MetadataRepository $metadataRepository = null;
@@ -143,12 +149,16 @@ class Hydrator implements HydratorInterface
     public function setResult(ResultInterface $result): static
     {
         $this->result = $result;
-        // An alias names another table, or the same one of another database, in another result
-        $this->metadataList = [];
-        $this->mutableColumns = [];
-        $this->columnsOfMetadata = [];
-        // Another read: its rows may have changed, and the unit of work may have been reset since (worker mode)
-        $this->references = [];
+        // Given in the hydration of a row, the state is the one of that row: hydratedRows() loads the state of this
+        // result
+        if ($this->rowsBeingHydrated === 0) {
+            // An alias names another table, or the same one of another database, in another result
+            $this->metadataList = [];
+            $this->mutableColumns = [];
+            $this->columnsOfMetadata = [];
+            // Another read: its rows may have changed, and the unit of work may have been reset since (worker mode)
+            $this->references = [];
+        }
         $this->resultStates ??= new \WeakMap();
         $this->resultStates[$result] = [[], [], [], []];
         return $this;
@@ -179,35 +189,58 @@ class Hydrator implements HydratorInterface
         }
 
         $this->resultStates ??= new \WeakMap();
-        foreach ($result as $key => $columns) {
-            $connectionName = $result->getConnectionName();
-            $database = $result->getDatabase();
-            if ($connectionName === null || $database === null) {
-                throw new HydratorException(
-                    'Cannot hydrate a row of a result without connection name or database: its metadata cannot be found'
-                );
-            }
+        // Read in the hydration of a row of another result (a setter running a lookup with this hydrator): the state
+        // of that row is given back once this result is read, or its iteration stopped (break, exception)
+        $stateOfRowBeingHydrated = $this->rowsBeingHydrated > 0 ? [
+            $this->references,
+            $this->metadataList,
+            $this->mutableColumns,
+            $this->columnsOfMetadata,
+            $this->exactNamesOfRow,
+        ] : null;
 
-            // The state of this result, which another result read meanwhile may have replaced. Moved, not copied:
-            // the arrays are then modified in place
-            if (isset($this->resultStates[$result])) {
-                [$this->references, $this->metadataList, $this->mutableColumns, $this->columnsOfMetadata]
-                    = $this->resultStates[$result];
-                unset($this->resultStates[$result]);
-            }
+        try {
+            foreach ($result as $key => $columns) {
+                $connectionName = $result->getConnectionName();
+                $database = $result->getDatabase();
+                if ($connectionName === null || $database === null) {
+                    throw new HydratorException(
+                        'Cannot hydrate a row of a result without connection name or database: its metadata cannot be '
+                        . 'found'
+                    );
+                }
 
-            try {
-                $row = $this->hydrateColumns($connectionName, $database, $columns);
-            } finally {
-                $this->resultStates[$result] = [
+                // The state of this result, which another result read meanwhile may have replaced. Moved, not copied:
+                // the arrays are then modified in place
+                if (isset($this->resultStates[$result])) {
+                    [$this->references, $this->metadataList, $this->mutableColumns, $this->columnsOfMetadata]
+                        = $this->resultStates[$result];
+                    unset($this->resultStates[$result]);
+                }
+
+                try {
+                    $row = $this->hydrateColumns($connectionName, $database, $columns);
+                } finally {
+                    $this->resultStates[$result] = [
+                        $this->references,
+                        $this->metadataList,
+                        $this->mutableColumns,
+                        $this->columnsOfMetadata,
+                    ];
+                }
+
+                yield $key => $row;
+            }
+        } finally {
+            if ($stateOfRowBeingHydrated !== null) {
+                [
                     $this->references,
                     $this->metadataList,
                     $this->mutableColumns,
                     $this->columnsOfMetadata,
-                ];
+                    $this->exactNamesOfRow,
+                ] = $stateOfRowBeingHydrated;
             }
-
-            yield $key => $row;
         }
     }
 
@@ -385,6 +418,22 @@ class Hydrator implements HydratorInterface
      * @throws HydratorException when the metadata repository or the unit of work is not set
      */
     protected function hydrateColumns(string $connectionName, string $database, array $columns): array
+    {
+        ++$this->rowsBeingHydrated;
+        try {
+            return $this->hydrateRow($connectionName, $database, $columns);
+        } finally {
+            --$this->rowsBeingHydrated;
+        }
+    }
+
+    /**
+     * @param Row $columns
+     *
+     * @return array<int|string, object|null>
+     * @throws HydratorException
+     */
+    private function hydrateRow(string $connectionName, string $database, array $columns): array
     {
         $metadataRepository = $this->metadataRepository;
         if ($metadataRepository === null) {
