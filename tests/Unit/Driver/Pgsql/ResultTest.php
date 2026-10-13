@@ -854,6 +854,16 @@ class ResultTest extends TestCase
                     ['name' => 'name', 'orgName' => 'lower(name)', 'table' => '', 'schema' => ''],
                 ],
             ],
+            'aliases named normalized' => [
+                'SELECT u.name normalized, f(x) normalized, x || y normalized, x IS NOT NFKD NORMALIZED FROM users u',
+                ['users'],
+                [
+                    ['name' => 'normalized', 'orgName' => 'u.name', 'table' => '', 'schema' => ''],
+                    ['name' => 'normalized', 'orgName' => 'f(x)', 'table' => '', 'schema' => ''],
+                    ['name' => 'normalized', 'orgName' => 'x || y', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => 'x IS NOT NFKD NORMALIZED', 'table' => '', 'schema' => ''],
+                ],
+            ],
             'an alias after CASE, last of the query' => [
                 'SELECT CASE WHEN a THEN 1 END total',
                 [],
