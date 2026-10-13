@@ -39,6 +39,9 @@ use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\model\BouhRepository;
+use tests\fixtures\model\CityLookingUp;
+use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\CityWithPublicPropertiesRepository;
 use tests\fixtures\model\CountryWithPublicPropertiesRepository;
 
@@ -1292,5 +1295,80 @@ class HydratorRelationalTest extends TestCase
         $hydrator->setResult($result);
 
         return $hydrator;
+    }
+
+    /**
+     * @param list<list<int|string>> $rows [boo_id, boo_name, cit_id, cit_name] of each row
+     */
+    private function resultOfBouhsAndCities(array $rows): Result
+    {
+        $field = static function (string $orgName, string $table, string $orgTable): \stdClass {
+            $field = new \stdClass();
+            $field->name     = $orgName;
+            $field->orgname  = $orgName;
+            $field->table    = $table;
+            $field->orgtable = $orgTable;
+            $field->type     = MYSQLI_TYPE_VAR_STRING;
+
+            return $field;
+        };
+        $mysqliResult = new MysqliResult($rows);
+        $mysqliResult->setFields([
+            $field('boo_id', 'bouh', 'T_BOUH_BOO'),
+            $field('boo_name', 'bouh', 'T_BOUH_BOO'),
+            $field('cit_id', 'c', 'T_CITY_CIT'),
+            $field('cit_name', 'c', 'T_CITY_CIT'),
+        ]);
+        $result = new Result();
+        $result->setResult($mysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        return $result;
+    }
+
+    public function testAReadNestedInASetterShouldNotChangeTheRelationsBeingHydrated(): void
+    {
+        $services = new TingServices();
+        $cityMetadata = CityRepository::initMetadata($services->serializerFactory());
+        $cityMetadata->setEntity(CityLookingUp::class);
+        $services->metadataRepository()->addMetadata(CityRepository::class, $cityMetadata);
+        $services->metadataRepository()->addMetadata(BouhRepository::class, BouhRepository::initMetadata($services->serializerFactory()));
+        // Kept as a service, say
+        $hydrator = new HydratorRelational();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+        $innerRows = [];
+        // In the second row: the relations of the first one are being collected
+        CityLookingUp::$lookup = $lookup = function (?string $name) use ($hydrator, &$innerRows, &$lookup): void {
+            if ($name !== 'Palaiseau') {
+                CityLookingUp::$lookup = $lookup;
+
+                return;
+            }
+            $inner = $this->resultOfBouhsAndCities([[3, 'Robez-Masson', 3, 'Montbéliard'], [3, 'Robez-Masson', 4, 'Luxiol']]);
+            foreach ($hydrator->setResult($inner) as $row) {
+                $innerRows[] = $row;
+            }
+        };
+
+        try {
+            $outer = $this->resultOfBouhsAndCities([[4, 'Leune', 1, 'Boulogne-Billancourt'], [4, 'Leune', 2, 'Palaiseau']]);
+            $rows = iterator_to_array($hydrator->setResult($outer)->getIterator(), false);
+        } finally {
+            CityLookingUp::$lookup = null;
+        }
+
+        $names = static fn (array $cities): array => array_values(array_map(
+            static fn (object $city): ?string => $city->getName(),
+            $cities
+        ));
+        $this->assertCount(1, $rows);
+        $this->assertSame('Leune', $rows[0]['bouh']->getName());
+        $this->assertSame(['Boulogne-Billancourt', 'Palaiseau'], $names($rows[0]['bouh']->getCities()));
+        $this->assertCount(1, $innerRows);
+        $this->assertSame('Robez-Masson', $innerRows[0]['bouh']->getName());
+        $this->assertSame(['Montbéliard', 'Luxiol'], $names($innerRows[0]['bouh']->getCities()));
     }
 }
