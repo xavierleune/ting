@@ -66,15 +66,17 @@ class Result implements ResultInterface
     private const NAME = '(?:"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)';
 
     /**
-     * The type of a cast: a type of several words, an interval with its fields, or a [schema.]name with its
-     * modifiers, then its array bounds
+     * The type of a cast: a time zone type; an interval with its fields; a type of several words or a
+     * [schema.]name, with its modifiers; then its array bounds ([], [3], ARRAY, ARRAY[3]). The longest types come
+     * first: the casts are possessive
      */
-    private const TYPE_NAME = '(?:double\s+precision|(?:character|char|bit)\s+varying'
-        . '|(?:timestamp|time)(?:\s*\(\s*\d+\s*\))?\s+with(?:out)?\s+time\s+zone'
+    private const TYPE_NAME = '(?:(?:timestamp|time)(?:\s*\(\s*\d+\s*\))?\s+with(?:out)?\s+time\s+zone'
         . '|interval(?:\s*\(\s*\d+\s*\))?\s+(?:year|month|day|hour|minute|second)'
-        . '(?:\s+to\s+(?:month|hour|minute|second))?'
-        . '(?:\s*\(\s*\d+\s*\))?'
-        . '|' . self::NAME . '(?:\s*\.\s*' . self::NAME . ')?(?:\s*\([\d\s,]*+\))?)(?:\s*\[\s*\d*+\s*\])*+';
+        . '(?:\s+to\s+(?:month|hour|minute|second))?(?:\s*\(\s*\d+\s*\))?'
+        . '|(?:double\s+precision|(?:national\s+)?(?:character|char)\s+varying'
+        . '|national\s+(?:character|char)|nchar\s+varying|bit\s+varying'
+        . '|' . self::NAME . '(?:\s*\.\s*' . self::NAME . ')?)(?:\s*\([\d\s,]*+\))?'
+        . ')(?:\s*\[\s*\d*+\s*\])*+(?:\s+array(?:\s*\[\s*\d*+\s*\])?)?';
 
     /**
      * Casts, ending an expression
@@ -258,8 +260,6 @@ class Result implements ResultInterface
                     $isClosed
                     || ($brackets === $selectDepth && ($token === ',' || $isEnd || $index === $totalTokens - 1))
                 ) {
-                    $cases = 0;
-
                     if (!$isClosed && $index === $totalTokens - 1 && $token !== ';') {
                         $column .= $tokensWithCase[$index];
                         // The last token of the query, as any other one of the column, ends a CASE before an alias
@@ -267,6 +267,7 @@ class Result implements ResultInterface
                             $noAlias = false;
                         }
                     }
+                    $cases = 0;
 
                     // Only a whole column is forbidden: COUNT(*) or 2 * id are not
                     if (self::match(self::ASTERISK_COLUMN, trim($column))) {
@@ -309,7 +310,8 @@ class Result implements ResultInterface
                         $expression = trim(substr($column, 0, \strlen($column) - \strlen($prefix . $alias)));
 
                         // Without AS, an identifier is an alias only after an operand: in price * qty, NOT flag,
-                        // a IS DISTINCT FROM t.b, b::double precision or count(*) OVER w, it ends the expression
+                        // a IS DISTINCT FROM t.b, b::double precision or count(*) OVER w, it ends the expression,
+                        // as a postfix operator does (x NOTNULL, x ISNULL, x IS NFC NORMALIZED)
                         if (
                             $alias !== ''
                             && $prefix === ''
@@ -317,6 +319,7 @@ class Result implements ResultInterface
                                 $expression === ''
                                 || !self::endsWithOperand($expression)
                                 || self::match(self::NO_ALIAS_END, $column)
+                                || \in_array(strtolower($alias), ['notnull', 'isnull', 'normalized'], true)
                             )
                         ) {
                             $alias = '';
