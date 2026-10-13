@@ -77,7 +77,16 @@ queue, including entities pushed earlier.
 
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
-removed from the queue (its tracked changes are kept, so saving it again retries) and the following ones stay queued.
+removed from the queue (its tracked changes are kept, so saving it again retries) and the following ones stay queued,
+in their order: the next `process()` writes them, then the entities pushed since.
+
+An entity still queued keeps its place when it is pushed again. Pushing the whole batch again after a failure, without
+emptying the queue first, writes the entities left queued **before** the ones pushed ahead of them in the batch (a
+child before its parent). To retry the batch in its order, correct the failing entity, empty the queue with
+`detachAll()`, then push every entity again in the order of the batch: the entities managed are then saved as
+[entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field (see
+[Transactions](#transactions) for a batch rolled back). When the order does not matter, push the failing entity again
+and call `process()`: the entities left queued are written first.
 
 ### Saving an entity not managed
 
@@ -195,6 +204,10 @@ After a rollback, the rows written in the transaction no longer exist, or no lon
   left, and setting the same value again is not a change. To retry (after a deadlock, say), read them again and apply
   your changes to the fresh objects. Or `detachAll()` (or `detach()` them) first: no longer managed, they are then
   saved as [entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field.
+
+When the transaction was rolled back because a query of `process()` failed, the entities after that query are still
+queued: call `detachAll()` before pushing the batch again, so that it is written in its order (see
+[Saving and deleting](#saving-and-deleting)).
 
 A `commit()` failing because the connection was lost (MySQL "server has gone away" or "lost connection", a broken
 PostgreSQL connection) has an **unknown outcome**: the server may have committed before its reply was lost. Ting

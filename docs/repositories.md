@@ -539,7 +539,11 @@ $cityRepository->commit();
 ```
 
 To retry after a rollback (a deadlock, say), push the new entities again as they are: inserted in the rolled back
-transaction, they are no longer managed and are inserted again, their id replaced by the new one. A copy of the old id
+transaction, they are no longer managed and are inserted again, their id replaced by the new one. When the failure
+comes from a `process()` writing several entities (the unit of work, or a `save()` writing entities pushed earlier),
+the entities after the failed query are still queued, and an entity still queued keeps its place when it is pushed
+again: call `detachAll()` before pushing the entities again, or they are not written in the order of the retry (see
+[Saving and deleting](unit-of-work.md#saving-and-deleting)). A copy of the old id
 in another entity (a foreign key such as `$ticket->setEventId($event->getId())`) is not replaced: set the references
 again in the retry, after the new ids are generated. The entities you updated, pushed again as they are, write
 nothing: their changes were forgotten, and setting the same value again is not a change. Read them again and apply
