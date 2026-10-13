@@ -1061,6 +1061,62 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function severalStatementsProvider(): array
+    {
+        return [
+            'two SELECT without FROM' => ['SELECT 1 AS a; SELECT 2 AS b', [], [['b', '2', '']]],
+            'two SELECT ended by a semicolon' => [
+                "SELECT 1 AS a; SELECT 2 AS b, 3 AS c;\n",
+                [],
+                [['b', '2', ''], ['c', '3', '']],
+            ],
+            'a setting then a SELECT' => [
+                "SELECT set_config('x', 'y', true); SELECT u.id, u.name FROM users u",
+                ['users', 'users'],
+                [['id', 'id', 'u'], ['name', 'name', 'u']],
+            ],
+            'two SELECT with FROM' => ['SELECT id FROM t; SELECT name FROM u', ['u'], [['name', 'name', 'u']]],
+            'two semicolons' => ['SELECT 1 AS a;; ', [], [['a', '1', '']]],
+            'a semicolon in a string' => ["SELECT 'a;b' AS x; ", [], [['x', "'a;b'", '']]],
+            'a semicolon in an escape string' => ["SELECT E'\\';' AS x", [], [['x', "E'\\';'", '']]],
+            'a semicolon in a dollar-quoted string' => ['SELECT $t$;$t$ AS x;', [], [['x', '$t$;$t$', '']]],
+            'a semicolon in a quoted identifier' => ['SELECT "a;b" FROM t', ['t'], [['a;b', 'a;b', 't']]],
+            'a semicolon in a block comment' => ['SELECT 1 /* ; SELECT 2 AS b */ AS a', [], [['a', '1', '']]],
+            'a semicolon in a line comment' => ["SELECT 1 AS a -- ; SELECT 2 AS b\n", [], [['a', '1', '']]],
+            'a statement after a comment' => ["SELECT 1 AS a; -- x\nSELECT 2 AS b", [], [['b', '2', '']]],
+        ];
+    }
+
+    /**
+     * A query of several statements gives the result of the last one, as pg_query() returns it
+     *
+     * @param array<int, string|false> $tables
+     * @param list<array{string, string, string}> $expected name, orgName, table
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('severalStatementsProvider')]
+    public function testSetQueryShouldReadTheColumnsOfTheLastStatement(string $query, array $tables, array $expected)
+    {
+        $this->assertSame(
+            $expected,
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
+                $this->parseColumns($query, $tables)
+            )
+        );
+    }
+
+    public function testSetQueryShouldRaiseExceptionWhenTheLastStatementHasNoColumn()
+    {
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $result->setQuery('BEGIN; SELECT id FROM t; COMMIT'),
+            'Query invalid: can\'t parse columns'
+        );
+    }
+
     public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
     {
         // FOR ends a SELECT without FROM (FOR UPDATE), not COLLATION FOR (...)
