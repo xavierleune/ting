@@ -2095,6 +2095,40 @@ class HydratorTest extends TestCase
         $this->assertArrayNotHasKey(0, $data);
     }
 
+    /**
+     * @return array<string, array{0: array<string, string>, 1: array<string, string>, 2: string}>
+     */
+    public static function severalColumnsOfOneColumnProvider(): array
+    {
+        return [
+            'none under the exact name' => [
+                ['name' => 'name'],
+                ['NAME' => 'upper', 'Name' => 'mixed'],
+                'The columns NAME, Name of users match the same column name of its metadata, whose case differs',
+            ],
+            'the other candidate under its exact name' => [
+                ['Name' => 'name', 'name' => 'firstname'],
+                ['Name' => 'A', 'NAME' => 'upper', 'nAME' => 'mixed'],
+                'The columns NAME, nAME of users match the same column name of its metadata, whose case differs',
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, string> $fields
+     * @param array<string, string> $row
+     */
+    #[DataProvider('severalColumnsOfOneColumnProvider')]
+    public function testHydrateShouldThrowWhenSeveralColumnsReadMatchTheSameColumn(array $fields, array $row, string $message)
+    {
+        // PostgreSQL table t("NAME", "Name"): one value would be lost
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => $this->hydrateRowOf('users', $fields, 'users', $row),
+            $message
+        );
+    }
+
     public function testHydrateShouldMatchTheColumnsOfEachResultOnItsOwnColumns()
     {
         $services = new TingServices();

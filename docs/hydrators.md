@@ -399,7 +399,8 @@ When several tables differ only by case, the metadata are looked up in this orde
 
 It throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming them only when they stay ambiguous. Several
 columns of the metadata differing from the column read only by case, none with its exact name and the row holding
-none of them under its exact name, throw it too.
+none of them under its exact name, throw it too, as do several columns of the row matching the same column of the
+metadata, none under its exact name (`"NAME"` and `"Name"` read, `name` mapped): one of their values would be lost.
 
 The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()`, `mapAliasTo()`,
 `objectDatabaseIs()` and `objectSchemaIs()`: they are in lowercase, quoted or not (`FROM "MyUsers" "U"` gives the key
