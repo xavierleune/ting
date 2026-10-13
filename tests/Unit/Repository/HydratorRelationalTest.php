@@ -1300,7 +1300,7 @@ class HydratorRelationalTest extends TestCase
     /**
      * @param list<list<int|string>> $rows [boo_id, boo_name, cit_id, cit_name] of each row
      */
-    private function resultOfBouhsAndCities(array $rows): Result
+    private function resultOfBouhsAndCities(array $rows, bool $citiesFirst = false): Result
     {
         $field = static function (string $orgName, string $table, string $orgTable): \stdClass {
             $field = new \stdClass();
@@ -1312,13 +1312,18 @@ class HydratorRelationalTest extends TestCase
 
             return $field;
         };
-        $mysqliResult = new MysqliResult($rows);
-        $mysqliResult->setFields([
+        $fields = [
             $field('boo_id', 'bouh', 'T_BOUH_BOO'),
             $field('boo_name', 'bouh', 'T_BOUH_BOO'),
             $field('cit_id', 'c', 'T_CITY_CIT'),
             $field('cit_name', 'c', 'T_CITY_CIT'),
-        ]);
+        ];
+        if ($citiesFirst) {
+            $fields = [$fields[2], $fields[3], $fields[0], $fields[1]];
+            $rows = array_map(static fn (array $row): array => [$row[2], $row[3], $row[0], $row[1]], $rows);
+        }
+        $mysqliResult = new MysqliResult($rows);
+        $mysqliResult->setFields($fields);
         $result = new Result();
         $result->setResult($mysqliResult);
         $result->setConnectionName('main');
@@ -1370,5 +1375,42 @@ class HydratorRelationalTest extends TestCase
         $this->assertCount(1, $innerRows);
         $this->assertSame('Robez-Masson', $innerRows[0]['bouh']->getName());
         $this->assertSame(['Montbéliard', 'Luxiol'], $names($innerRows[0]['bouh']->getCities()));
+    }
+
+    public function testAReadNestedInASetterAndKeptShouldHydrateItsOwnRelations(): void
+    {
+        $services = new TingServices();
+        $cityMetadata = CityRepository::initMetadata($services->serializerFactory());
+        $cityMetadata->setEntity(CityLookingUp::class);
+        $services->metadataRepository()->addMetadata(CityRepository::class, $cityMetadata);
+        $services->metadataRepository()->addMetadata(BouhRepository::class, BouhRepository::initMetadata($services->serializerFactory()));
+        $hydrator = new HydratorRelational();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+        $kept = null;
+        // In the first row, the cities read first: the row being hydrated holds no bouh yet
+        CityLookingUp::$lookup = function () use ($hydrator, &$kept): void {
+            $kept = $hydrator->setResult(
+                $this->resultOfBouhsAndCities([[3, 'Robez-Masson', 3, 'Montbéliard'], [3, 'Robez-Masson', 4, 'Luxiol']])
+            )->getIterator();
+            $kept->current();
+        };
+
+        try {
+            $outer = $this->resultOfBouhsAndCities([[4, 'Leune', 1, 'Boulogne-Billancourt'], [4, 'Leune', 2, 'Palaiseau']], true);
+            $rows = iterator_to_array($hydrator->setResult($outer)->getIterator(), false);
+        } finally {
+            CityLookingUp::$lookup = null;
+        }
+
+        $names = static fn (array $cities): array => array_values(array_map(
+            static fn (object $city): ?string => $city->getName(),
+            $cities
+        ));
+        $this->assertCount(1, $rows);
+        $this->assertSame(['Boulogne-Billancourt', 'Palaiseau'], $names($rows[0]['bouh']->getCities()));
+        $this->assertSame('Robez-Masson', $kept->current()['bouh']->getName());
+        $this->assertSame(['Montbéliard', 'Luxiol'], $names($kept->current()['bouh']->getCities()));
     }
 }
