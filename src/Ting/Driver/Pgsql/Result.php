@@ -262,6 +262,10 @@ class Result implements ResultInterface
 
                     if (!$isClosed && $index === $totalTokens - 1 && $token !== ';') {
                         $column .= $tokensWithCase[$index];
+                        // The last token of the query, as any other one of the column, ends a CASE before an alias
+                        if ($cases === 0 && $token !== 'end' && trim($token) !== '') {
+                            $noAlias = false;
+                        }
                     }
 
                     // Only a whole column is forbidden: COUNT(*) or 2 * id are not
