@@ -349,6 +349,14 @@ class ResultTest extends TestCase
             'a string' => ["SELECT u.id, '$big''' AS s FROM users u", "'$big'''"],
             'an escape string' => ["SELECT u.id, E'$big\\'' AS s FROM users u", "E'$big\\''"],
             'a quoted identifier' => ["SELECT u.id, u.\"$big\" FROM users u", $big],
+            'a quoted identifier of doubled quotes' => [
+                'SELECT u.id, u."' . str_repeat('a""', 100_000) . '" FROM users u',
+                str_repeat('a"', 100_000),
+            ],
+            'a quoted alias of doubled quotes' => [
+                'SELECT u.id, count(*) AS "' . str_repeat('a""', 100_000) . '" FROM users u',
+                'count(*)',
+            ],
         ];
     }
 
