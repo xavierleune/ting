@@ -78,22 +78,27 @@ queue, including entities pushed earlier.
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
 removed from the queue (its tracked changes are kept, so saving it again retries) and the following ones stay queued,
-in their order: the next `process()` writes them, then the entities pushed since.
+in their order: the next `process()` writes them, then the entities pushed since. See
+[Retrying a failed batch](#retrying-a-failed-batch).
 
-An entity still queued keeps its place when it is pushed again. Pushing the whole batch again after a failure, without
-emptying the queue first, writes the entities left queued **before** the ones pushed ahead of them in the batch (a
-child before its parent). To retry the batch in its order, correct the failing entity, empty the queue with
-`detachAll()`, then push every entity again in the order of the batch. The entities that were managed are then saved as
-[entities not managed](#saving-an-entity-not-managed): by an `UPDATE` of every field when their `autoincrement`
-property holds their id, but by an `INSERT` when their primary key is not `autoincrement` (a natural or composite key),
-which fails on a duplicate key. Read such entities again and apply your changes to the fresh objects instead of
-detaching them (or rebuild the whole batch from fresh reads).
+### Retrying a failed batch
 
-When the order does not matter, push the failing entity again and call `process()`: the entities left queued are
-written first. This holds only when the writes done before the failure were kept: outside a transaction, or in a
-transaction that is not rolled back. After a rollback, the entities written before the failure must be written again,
-which pushing the failing entity alone does not do (no error, the writes are lost): use the `detachAll()` recipe above
-(see [Transactions](#transactions)).
+An entity still queued keeps its place when it is pushed again: pushing a failed batch again as it is writes the
+entities left queued **before** the ones pushed ahead of them in the batch (a child before its parent). To retry a
+batch in its order:
+
+1. call `detachAll()`: the queue is emptied, and no entity is managed any more;
+2. then read again the entities whose primary key is not `autoincrement` (a natural or composite key), and apply your
+   changes to the fresh objects. Read them after `detachAll()`, not before: it would detach the fresh objects too. A
+   detached entity is saved as an [entity not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field
+   when its `autoincrement` property holds its id, but by an `INSERT` otherwise, which fails on a duplicate key when
+   its row exists;
+3. correct the failing entity, and push the entities again in the order of the batch:
+   * after a rollback (the batch ran in a [transaction](#transactions) rolled back), nothing written before the
+     failure is kept: push the whole batch. The entities inserted in the transaction are inserted again;
+   * outside a transaction, the writes done before the failure are kept: push the failing entity and the ones after
+     it. Leave out the entities written before the failure, or read them again in step 2 when their key is not
+     `autoincrement` (pushed again once detached, an entity with its `autoincrement` id rewrites its row).
 
 ### Saving an entity not managed
 
@@ -209,19 +214,12 @@ After a rollback, the rows written in the transaction no longer exist, or no lon
 * **the entities updated** in the transaction stay managed, but their changes are forgotten (written, then rolled
   back): their objects no longer match the database. Pushed again as they are, they **write nothing**: no change is
   left, and setting the same value again is not a change. To retry (after a deadlock, say), read them again and apply
-  your changes to the fresh objects. Or `detachAll()` (or `detach()` them) first: no longer managed, they are then
-  saved as [entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field when their
-  `autoincrement` property holds their id. An entity whose primary key is not `autoincrement` (a natural or composite
-  key) is inserted instead, which fails on a duplicate key: read it again rather than detaching it;
+  your changes to the fresh objects (for a batch, see [Retrying a failed batch](#retrying-a-failed-batch));
 * **the entities read** in the transaction stay managed too, with the values they were read with: a row inserted or
   updated in the transaction and read again (another object than the one saved, a hydrator result) no longer exists,
   or no longer holds those values. Only the objects inserted by the unit of work are told of the rollback: an object
   read again for a row inserted in the transaction keeps its id, and saving it runs an `UPDATE` that matches no row,
   silently. Read again, after the rollback, the entities read during a transaction that does not commit.
-
-When the transaction was rolled back because a query of `process()` failed, the entities after that query are still
-queued: call `detachAll()` before pushing the batch again, so that it is written in its order, and read again the
-entities whose key is not `autoincrement` (see [Saving and deleting](#saving-and-deleting)).
 
 A `commit()` failing because the connection was lost (MySQL "server has gone away" or "lost connection", a broken
 PostgreSQL connection) has an **unknown outcome**: the server may have committed before its reply was lost. Ting
@@ -276,9 +274,10 @@ Without `manage()`, saving it would update every field (see
 
 `detach()` stops tracking an entity: it is no longer managed, its pending changes are forgotten and it is removed from
 the queue. The changes made while it is detached are not tracked, even if it is managed again later. Pushing it again
-with `pushSave()` saves it as an [entity not managed](#saving-an-entity-not-managed): with its id, every field is
-updated; to update its changes only, [manage it](#managing-an-entity-yourself) again before changing it. `detachAll()`
-does the same for every entity.
+with `pushSave()` saves it as an [entity not managed](#saving-an-entity-not-managed): when its `autoincrement`
+property holds its id, every field is updated; when its primary key is not `autoincrement` (a natural or composite
+key), it is inserted, which fails on a duplicate key when its row exists. To update its changes only,
+[manage it](#managing-an-entity-yourself) again before changing it. `detachAll()` does the same for every entity.
 
 Entities are held weakly, but queued entities are not: an entity passed to `pushSave()` or `pushDelete()` stays in
 memory until it is processed or detached. In a batch handling many entities, call `process()` regularly instead of once

@@ -539,19 +539,14 @@ $cityRepository->commit();
 ```
 
 To retry after a rollback (a deadlock, say), push the new entities again as they are: inserted in the rolled back
-transaction, they are no longer managed and are inserted again, their id replaced by the new one. When the failure
-comes from a `process()` writing several entities (the unit of work, or a `save()` writing entities pushed earlier),
-the entities after the failed query are still queued, and an entity still queued keeps its place when it is pushed
-again: call `detachAll()` before pushing the entities again, or they are not written in the order of the retry (see
-[Saving and deleting](unit-of-work.md#saving-and-deleting)). A copy of the old id
+transaction, they are no longer managed and are inserted again, their id replaced by the new one. A copy of the old id
 in another entity (a foreign key such as `$ticket->setEventId($event->getId())`) is not replaced: set the references
 again in the retry, after the new ids are generated. The entities you updated, pushed again as they are, write
-nothing: their changes were forgotten, and setting the same value again is not a change. Read them again and apply
-your changes to the fresh objects, or `detachAll()` first: they are then saved as entities not managed, by an `UPDATE`
-of every field when their `autoincrement` property holds their id. An entity whose primary key is not `autoincrement`
-(a natural or composite key) is inserted instead, which fails on a duplicate key: read it again rather than detaching
-it. The entities read during the transaction stay managed with the values read, even those of a row
-inserted in it, which no longer exists (saved, they update no row): read them again too. See [Transactions](unit-of-work.md#transactions) in the unit of work.
+nothing: their changes were forgotten, and setting the same value again is not a change; read them again and apply
+your changes to the fresh objects. So do the entities read during the transaction, even those of a row inserted in it,
+which no longer exists (saved, they update no row). A failed `process()` leaves the entities after the failed query
+queued: to retry a batch, follow [Retrying a failed batch](unit-of-work.md#retrying-a-failed-batch). See
+[Transactions](unit-of-work.md#transactions) in the unit of work.
 
 Starting a transaction while another one is open on the same connection, or committing / rolling back without one,
 throws a `CCMBenchmark\Ting\Exceptions\TransactionException`. So does a `START TRANSACTION`, `COMMIT` or `ROLLBACK`
