@@ -186,6 +186,8 @@ class ResultTest extends TestCase
             'the fields of a nested function call' => ['SELECT (jsonb_each(x)).*, id FROM t'],
             'a schema-qualified table star' => ['SELECT public.people.* FROM public.people'],
             'a star of a subscript' => ['SELECT (p.locs)[1].*, p.id FROM people p'],
+            'a star of a subscripted column' => ['SELECT p.locs[1].*, p.id FROM people p'],
+            'a star of a quoted schema-qualified table' => ['SELECT "app"."People".* FROM app."People"'],
             'a parenthesized alias star' => ['SELECT (p.*), p.id FROM people p'],
             'a doubly parenthesized star' => ['SELECT ((p).*) FROM people p'],
             'an aliased alias star' => ['SELECT p.* AS x, p.id FROM people p'],
@@ -211,7 +213,31 @@ class ResultTest extends TestCase
             'a field of a composite' => ['(u.loc).x', '?column?'],
             'a test of a whole row' => ['u.* IS NULL', '?column?'],
             'a postfix test of a whole row' => ['u.* NOTNULL', '?column?'],
+            'a comparison of whole rows' => ['u.* = u.*', '?column?'],
+            'a whole row compared with IS DISTINCT FROM' => ['u.* IS DISTINCT FROM u.*', '?column?'],
+            'a ROW() compared with a whole row' => ['ROW(1, 2) = u.*', '?column?'],
+            'a CASE ending with a whole row' => ['CASE WHEN u.ok THEN u.* END', '?column?'],
+            'a CASE ending with the fields of a composite' => [
+                'CASE WHEN u.ok THEN NULL ELSE (u.loc).* END',
+                '?column?',
+            ],
+            'COALESCE() of whole rows' => ['COALESCE(u.*, u.*)', 'COALESCE'],
         ];
+    }
+
+    public function testSetQueryShouldAcceptAnAliasedExpressionEndingWithAWholeRow()
+    {
+        $this->assertSame(
+            [['id', 'id'], ['changed', 'o.* IS DISTINCT FROM n.*'], ['r', 'CASE WHEN t.ok THEN t.* END']],
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName']],
+                $this->parseColumns(
+                    'SELECT o.id, o.* IS DISTINCT FROM n.* AS changed, CASE WHEN t.ok THEN t.* END r'
+                    . ' FROM t o JOIN t n ON n.id = o.id',
+                    ['t']
+                )
+            )
+        );
     }
 
     /**
