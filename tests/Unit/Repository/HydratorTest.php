@@ -1888,6 +1888,38 @@ class HydratorTest extends TestCase
         $this->assertSame('Sylvain', $first['b']->getName());
     }
 
+    #[DataProvider('identityMapProvider')]
+    public function testAReadNestedInASetterAndKeptShouldNotChangeTheRowsBeingHydrated(bool $identityMap)
+    {
+        $hydrator = $this->hydratorLookingUp($identityMap);
+        $kept = null;
+        $first = null;
+        // The lookup keeps its iteration, to read the rest later: the same alias and table, a primary key of the outer
+        // result
+        CityLookingUp::$lookup = function () use ($hydrator, &$kept, &$first): void {
+            $inner = $this->resultOf([['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], [['9', 'Inner'], ['10', 'Inner 2']]);
+            $kept = $hydrator->setResult($inner)->getIterator();
+            $first = $kept->current();
+        };
+
+        try {
+            $outer = $this->resultOf(
+                [['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT'], ['cit_zipcode', 'T_CITY_CIT']],
+                [['1', 'Paris', '75000'], ['9', 'Lyon', '69000']]
+            );
+            $rows = iterator_to_array($hydrator->setResult($outer)->getIterator());
+        } finally {
+            CityLookingUp::$lookup = null;
+        }
+
+        $this->assertSame([1, 'Paris', '75000'], [$rows[0]['x']->getId(), $rows[0]['x']->getName(), $rows[0]['x']->getZipcode()]);
+        $this->assertSame([9, 'Lyon', '69000'], [$rows[1]['x']->getId(), $rows[1]['x']->getName(), $rows[1]['x']->getZipcode()]);
+        $this->assertNotSame($first['x'], $rows[1]['x']);
+        $this->assertSame([9, 'Inner'], [$first['x']->getId(), $first['x']->getName()]);
+        $kept->next();
+        $this->assertSame([10, 'Inner 2'], [$kept->current()['x']->getId(), $kept->current()['x']->getName()]);
+    }
+
     public function testAReadNestedInASetterShouldKeepItsOwnIdentityMap()
     {
         $hydrator = $this->hydratorLookingUp(true);

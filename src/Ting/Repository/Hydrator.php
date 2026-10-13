@@ -191,58 +191,55 @@ class Hydrator implements HydratorInterface
         }
 
         $this->resultStates ??= new \WeakMap();
-        // Read in the hydration of a row of another result (a setter running a lookup with this hydrator): the state
-        // of that row is given back once this result is read, or its iteration stopped (break, exception)
-        $stateOfRowBeingHydrated = $this->rowsBeingHydrated > 0 ? [
-            $this->references,
-            $this->metadataList,
-            $this->mutableColumns,
-            $this->columnsOfMetadata,
-            $this->namesOfRow,
-        ] : null;
-
-        try {
-            foreach ($result as $key => $columns) {
-                $connectionName = $result->getConnectionName();
-                $database = $result->getDatabase();
-                if ($connectionName === null || $database === null) {
-                    throw new HydratorException(
-                        'Cannot hydrate a row of a result without connection name or database: its metadata cannot be '
-                        . 'found'
-                    );
-                }
-
-                // The state of this result, which another result read meanwhile may have replaced. Moved, not copied:
-                // the arrays are then modified in place
-                if (isset($this->resultStates[$result])) {
-                    [$this->references, $this->metadataList, $this->mutableColumns, $this->columnsOfMetadata]
-                        = $this->resultStates[$result];
-                    unset($this->resultStates[$result]);
-                }
-
-                try {
-                    $row = $this->hydrateColumns($connectionName, $database, $columns);
-                } finally {
-                    $this->resultStates[$result] = [
-                        $this->references,
-                        $this->metadataList,
-                        $this->mutableColumns,
-                        $this->columnsOfMetadata,
-                    ];
-                }
-
-                yield $key => $row;
+        foreach ($result as $key => $columns) {
+            $connectionName = $result->getConnectionName();
+            $database = $result->getDatabase();
+            if ($connectionName === null || $database === null) {
+                throw new HydratorException(
+                    'Cannot hydrate a row of a result without connection name or database: its metadata cannot be found'
+                );
             }
-        } finally {
-            if ($stateOfRowBeingHydrated !== null) {
-                [
+
+            // Read in the hydration of a row of another result (a setter running a lookup with this hydrator, which
+            // may keep the iteration to read the rest later): the state of that row is given back before this row is
+            // yielded
+            $stateOfRowBeingHydrated = $this->rowsBeingHydrated > 0 ? [
+                $this->references,
+                $this->metadataList,
+                $this->mutableColumns,
+                $this->columnsOfMetadata,
+                $this->namesOfRow,
+            ] : null;
+
+            // The state of this result, which another result read meanwhile may have replaced. Moved, not copied:
+            // the arrays are then modified in place
+            if (isset($this->resultStates[$result])) {
+                [$this->references, $this->metadataList, $this->mutableColumns, $this->columnsOfMetadata]
+                    = $this->resultStates[$result];
+                unset($this->resultStates[$result]);
+            }
+
+            try {
+                $row = $this->hydrateColumns($connectionName, $database, $columns);
+            } finally {
+                $this->resultStates[$result] = [
                     $this->references,
                     $this->metadataList,
                     $this->mutableColumns,
                     $this->columnsOfMetadata,
-                    $this->namesOfRow,
-                ] = $stateOfRowBeingHydrated;
+                ];
+                if ($stateOfRowBeingHydrated !== null) {
+                    [
+                        $this->references,
+                        $this->metadataList,
+                        $this->mutableColumns,
+                        $this->columnsOfMetadata,
+                        $this->namesOfRow,
+                    ] = $stateOfRowBeingHydrated;
+                }
             }
+
+            yield $key => $row;
         }
     }
 

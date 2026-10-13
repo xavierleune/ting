@@ -26,6 +26,7 @@
 
 namespace CCMBenchmark\Ting\Repository;
 
+use CCMBenchmark\Ting\Driver\ResultInterface;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Repository\Hydrator\Relation;
@@ -48,6 +49,7 @@ use function sprintf;
 /**
  * @template T type of the items, as built by the callable given to callableFinalizeAggregate(): the rows without
  *             the aliases of the sources without one
+ * @phpstan-import-type Row from ResultInterface
  *
  * @template-extends Hydrator<T>
  */
@@ -69,6 +71,13 @@ final class HydratorRelational extends Hydrator
      *      source, or entities of the sources by reference key (array<string, object>) for a RelationMany
      */
     private array $resources = [];
+
+    /**
+     * @var array<string, Metadata<object>> alias => metadata of the row hydrated last: the state of the result may be
+     *                                      the one of another result once the row is yielded (a read nested in a
+     *                                      setter)
+     */
+    private array $metadataOfRow = [];
 
     protected bool $identityMap = true;
 
@@ -165,12 +174,13 @@ final class HydratorRelational extends Hydrator
      * Stores the first instance met for the entity of $alias and returns its reference key
      *
      * @param object $entity the entity of $alias in the row
+     * @param Metadata<object> $metadata the metadata of $alias in the row
      *
      * @throws Exception
      */
-    private function saveReference(string $alias, object $entity): string
+    private function saveReference(string $alias, object $entity, Metadata $metadata): string
     {
-        $key = $this->getIdentifiers($alias, $entity);
+        $key = $this->getIdentifiers($alias, $entity, $metadata);
 
         if (isset($this->referencesRelation[$key]) === false) {
             $this->referencesRelation[$key] = $entity;
@@ -243,6 +253,7 @@ final class HydratorRelational extends Hydrator
         $results = [];
         $checked = false;
         foreach ($this->hydratedRows() as $result) {
+            $metadataOfRow = $this->metadataOfRow;
             if ($checked === false) {
                 $this->assertAliasesInResult($relations, $result);
                 $checked = true;
@@ -258,15 +269,15 @@ final class HydratorRelational extends Hydrator
                 $this->saveResourceFor(
                     $index,
                     $relation,
-                    $this->saveReference($relation['target'], $target),
-                    $this->saveReference($relation['source'], $source)
+                    $this->saveReference($relation['target'], $target, $metadataOfRow[$relation['target']]),
+                    $this->saveReference($relation['source'], $source, $metadataOfRow[$relation['source']])
                 );
             }
 
             $rootKeys = [];
             foreach ($roots as $root) {
                 $entity = $result[$root] ?? null;
-                $rootKeys[] = $entity !== null ? $this->saveReference($root, $entity) : null;
+                $rootKeys[] = $entity !== null ? $this->saveReference($root, $entity, $metadataOfRow[$root]) : null;
             }
 
             if (array_filter($rootKeys, static fn (?string $rootKey): bool => $rootKey !== null) === []) {
@@ -331,22 +342,37 @@ final class HydratorRelational extends Hydrator
     }
 
     /**
+     * @param Row $columns
+     *
+     * @return array<int|string, object|null>
+     * @throws HydratorException
+     */
+    protected function hydrateColumns(string $connectionName, string $database, array $columns): array
+    {
+        $row = parent::hydrateColumns($connectionName, $database, $columns);
+        $this->metadataOfRow = $this->metadataList;
+
+        return $row;
+    }
+
+    /**
      * @param string $table
      * @param object $entity
+     * @param Metadata<object> $metadata
      *
      * @throws HydratorException
      *
      * @return string
      */
-    private function getIdentifiers(string $table, object $entity): string
+    private function getIdentifiers(string $table, object $entity, Metadata $metadata): string
     {
         $values = [];
-        foreach ($this->metadataList[$table]->getPrimaries() as $primary) {
-            $values[] = $this->metadataList[$table]->getEntityPropertyByFieldName($entity, $primary['fieldName']);
+        foreach ($metadata->getPrimaries() as $primary) {
+            $values[] = $metadata->getEntityPropertyByFieldName($entity, $primary['fieldName']);
         }
 
         if ($values === []) {
-            throw new HydratorException(sprintf('No primary found for "%s"', $this->metadataList[$table]->getEntity()));
+            throw new HydratorException(sprintf('No primary found for "%s"', $metadata->getEntity()));
         }
 
         return $this->referenceKey($table, $values);
