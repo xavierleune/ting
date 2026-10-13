@@ -115,14 +115,16 @@ Give every computed expression an alias with `AS`: it is the name of the propert
 column after the text of the expression, and the PostgreSQL driver names it by a minimal rule, keeping the spelling of
 the query:
 
-| Expression without alias                                           | Name                            |
-|--------------------------------------------------------------------|---------------------------------|
-| a column, a cast of a column (`app.city.id`, `id::text`, `CAST(u.id AS text)`) | the column (`id`)   |
-| a function call, cast or not (`count(id)`, `COUNT(id)`, `now()::date`) | the function (`count`, `COUNT`, `now`) |
-| any other expression (`price * qty`, `'x'::text`, `CASE ... END`, `u.tags[1]`, `NULL`) | `?column?`  |
+| Expression without alias                                                              | Name                   |
+|---------------------------------------------------------------------------------------|------------------------|
+| a column, a cast of a column (`app.city.id`, `id::text`, `CAST(u.id AS text)`)        | the column (`id`)      |
+| a function call, cast with `::` or not (`count(id)`, `COUNT(id)`, `now()::date`)      | the function (`count`, `COUNT`, `now`) |
+| `CAST(...)` of anything but a plain column (`CAST(count(*) AS int)`)                  | `?column?`             |
+| an expression in parentheses (`(x)::text`, `(f(x))`)                                  | `?column?`             |
+| any other expression (`price * qty`, `'x'::text`, `CASE ... END`, `u.tags[1]`, `NULL`) | `?column?`            |
 
 PostgreSQL names some of these other expressions (`'x'::text` `text`, `CASE ... END` `case`, `u.tags[1]` `tags`,
-`TRIM(x)` `btrim`), and the driver does not: alias them.
+`CAST(count(*) AS int)` `count`, `TRIM(x)` `btrim`), and the driver does not: alias them.
 
 Two columns of the same name overwrite each other.
 
