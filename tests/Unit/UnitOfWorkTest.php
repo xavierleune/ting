@@ -1292,6 +1292,52 @@ class UnitOfWorkTest extends TestCase
         $this->assertStringContainsString('boo_firstname', $queries[2]);
     }
 
+    /**
+     * The retry recipe of the documentation: an entity still queued keeps its place when pushed again, so the queue is
+     * emptied by detachAll() before the entities are pushed again in their order
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testTheRetryOfAFailedBatchShouldWriteItsEntitiesInTheOrderTheyArePushedAgain()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+        $parent = new Bouh();
+        $parent->setName('parent');
+        $failing = new Bouh();
+        $failing->setId(7);
+        $unitOfWork->manage($failing);
+        $failing->setFirstname('failing');
+        $child = new Bouh();
+        $child->setName('child');
+
+        $attempt = function () use ($unitOfWork, $driver, $parent, $failing, $child): void {
+            $driver->startTransaction();
+            try {
+                $unitOfWork->pushSave($parent)->pushSave($failing)->pushSave($child)->process();
+            } catch (QueryException $exception) {
+                $driver->rollback();
+                throw $exception;
+            }
+            $driver->commit();
+        };
+
+        $failOn = 'UPDATE';
+        $this->assertThrows(QueryException::class, $attempt, 'Forced failure');
+        $this->assertTrue($unitOfWork->shouldBePersisted($child), 'the entity after the failed query stays queued');
+
+        $failOn = null;
+        $unitOfWork->detachAll();
+        $attempt();
+
+        $this->assertSame(['INSERT', 'INSERT', 'UPDATE', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(
+            ['parent', 'parent', 'failing', 'child'],
+            array_map(
+                fn (array $queryParams): string => implode(',', array_intersect($queryParams, ['parent', 'failing', 'child'])),
+                $params
+            )
+        );
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testSavingAnEntityWhoseOnlyChangeIsNotMappedShouldRunNoQuery()
     {
