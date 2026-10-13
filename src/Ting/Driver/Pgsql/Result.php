@@ -61,29 +61,47 @@ class Result implements ResultInterface
         REGEX;
 
     /**
-     * The names PostgreSQL gives to the types of its grammar, by their unquoted words in lowercase: a cast of an
-     * unnamed expression is named after its type. Any other type keeps its name (text, date, jsonb, public.my_type)
+     * An unquoted name or a quoted identifier
      */
-    private const TYPE_NAMES = [
-        'int' => 'int4', 'integer' => 'int4', 'smallint' => 'int2', 'bigint' => 'int8', 'real' => 'float4',
-        'float' => 'float8', 'double precision' => 'float8', 'decimal' => 'numeric', 'dec' => 'numeric',
-        'numeric' => 'numeric', 'boolean' => 'bool', 'char' => 'bpchar', 'character' => 'bpchar', 'nchar' => 'bpchar',
-        'national char' => 'bpchar', 'national character' => 'bpchar', 'varchar' => 'varchar',
-        'char varying' => 'varchar', 'character varying' => 'varchar', 'nchar varying' => 'varchar',
-        'national char varying' => 'varchar', 'national character varying' => 'varchar', 'bit' => 'bit',
-        'bit varying' => 'varbit', 'timestamp' => 'timestamp', 'time' => 'time', 'interval' => 'interval',
-    ];
+    private const NAME = '(?:"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)';
 
     /**
-     * The names PostgreSQL gives to the expressions of its grammar named after a keyword, followed by a parenthesis or
-     * a bracket
+     * The type of a cast: a type of several words, an interval with its fields, or a [schema.]name with its
+     * modifiers, then its array bounds
      */
-    private const KEYWORD_NAMES = ['array' => 'array', 'row' => 'row', 'exists' => 'exists'];
+    private const TYPE_NAME = '(?:double\s+precision|(?:character|char|bit)\s+varying'
+        . '|(?:timestamp|time)(?:\s*\(\s*\d+\s*\))?\s+with(?:out)?\s+time\s+zone'
+        . '|interval(?:\s*\(\s*\d+\s*\))?\s+(?:year|month|day|hour|minute|second)'
+        . '(?:\s+to\s+(?:month|hour|minute|second))?'
+        . '(?:\s*\(\s*\d+\s*\))?'
+        . '|' . self::NAME . '(?:\s*\.\s*' . self::NAME . ')?(?:\s*\([\d\s,]*+\))?)(?:\s*\[\s*\d*+\s*\])*+';
 
     /**
-     * The depth of parentheses and CASE beyond which an expression is not named (?column?)
+     * Casts, ending an expression
      */
-    private const MAX_NESTING = 100;
+    private const CASTS = '(?:\s*::\s*' . self::TYPE_NAME . ')*+';
+
+    /**
+     * A column of [schema.]table.column (but TRUE, FALSE and NULL) or CAST(column AS type), then its casts
+     */
+    private const CAST_OF_COLUMN = '/^(?:'
+        . '(?!(?:true|false|null)(?![a-z0-9_$\x80-\xff]))(?:' . self::NAME . '\s*\.\s*)*+(?<column>' . self::NAME . ')'
+        . '|cast\s*\(\s*(?:' . self::NAME . '\s*\.\s*)*+(?<cast>' . self::NAME . ')\s+as\s+' . self::TYPE_NAME . '\s*\)'
+        . ')' . self::CASTS . '$/i';
+
+    /**
+     * The start of a function call: [schema.]function( (but NOT, EXISTS, ARRAY, ROW... followed by a parenthesis)
+     */
+    private const FUNCTION_CALL = '/^(?!(?:not|exists|array|row|cast|any|all|some)\s*\()'
+        . '(?:' . self::NAME . '\s*\.\s*)*+'
+        . '(?<function>' . self::NAME . ')\s*\(/i';
+
+    /**
+     * The end of an expression whose last word belongs to it, not an alias: a cast (x::double precision,
+     * x::interval day) or an interval literal (interval '1' day)
+     */
+    private const NO_ALIAS_END = '/(?:::\s*' . self::TYPE_NAME . '|\binterval\s*(?:\(\s*\d+\s*\)\s*)?'
+        . '\'(?:[^\']++|\'\')*+\'\s*(?:year|month|day|hour|minute|second))\s*$/i';
 
     /**
      * States of a depth of parentheses for the table search: no SELECT, the select list of a SELECT, its FROM clause
@@ -195,7 +213,7 @@ class Result implements ResultInterface
         $firstColumn = 0;
         $columnsMatches = [];
         $column = '';
-        $scope  = 'column';
+        $cases = 0;
         $brackets = 0;
         $totalTokens = count($tokens);
         $noAlias = false;
@@ -205,11 +223,12 @@ class Result implements ResultInterface
                 continue;
             }
 
-            if ($token === 'case' && $scope === 'column') {
-                $scope = 'condition';
+            // The END of a CASE is no alias: CASE nests
+            if ($token === 'case') {
                 $noAlias = true;
-            } elseif ($token === 'end' && $scope === 'condition') {
-                $scope = 'column';
+                $cases++;
+            } elseif ($token === 'end' && $cases > 0) {
+                $cases--;
             }
 
             // Square brackets (ARRAY[a, b], subscripts) hold commas as parentheses do
@@ -239,7 +258,7 @@ class Result implements ResultInterface
                     $isClosed
                     || ($brackets === $selectDepth && ($token === ',' || $isEnd || $index === $totalTokens - 1))
                 ) {
-                    $scope = 'column';
+                    $cases = 0;
 
                     if (!$isClosed && $index === $totalTokens - 1 && $token !== ';') {
                         $column .= $tokensWithCase[$index];
@@ -293,7 +312,7 @@ class Result implements ResultInterface
                             && (
                                 $expression === ''
                                 || !self::endsWithOperand($expression)
-                                || self::figureExpression($column) !== null
+                                || self::match(self::NO_ALIAS_END, $column)
                             )
                         ) {
                             $alias = '';
@@ -304,7 +323,7 @@ class Result implements ResultInterface
                             'complex' => true,
                             'table' => '',
                             'column' => $expression,
-                            // Without alias, the expression is named as PostgreSQL names it
+                            // Without alias, named after its column or its function, else ?column?
                             'alias' => $alias !== '' ? $alias : (self::expressionName($expression) ?? '?column?'),
                         ];
                     }
@@ -319,7 +338,7 @@ class Result implements ResultInterface
 
                 $column .= $tokensWithCase[$index];
 
-                if ($scope === 'column' && $token !== 'end') {
+                if ($cases === 0 && $token !== 'end' && trim($token) !== '') {
                     $noAlias = false;
                 }
             }
@@ -707,406 +726,35 @@ class Result implements ResultInterface
     }
 
     /**
-     * The name PostgreSQL gives to a column made of an expression without alias, as its FigureColnameInternal() does:
-     * - a column, a field or a subscript of it: the name of the column or of the field;
-     * - a function call: the name of the function (TRIM btrim, ltrim or rtrim, AT TIME ZONE timezone), ARRAY array,
-     *   ROW row, EXISTS exists; a scalar sub-query: the name of its column;
-     * - a cast, COLLATE: the name of the expression cast, else the name of the type ('x'::text text, 1::int int4);
-     * - CASE: the name of its ELSE result, else case.
-     * Null for any other expression (an operator, a literal), which PostgreSQL names ?column?. A name keeps the
-     * spelling of the query, as the name of a column does
+     * The name of a column made of an expression without alias: the column of a cast of a column (id::text,
+     * CAST(u.id AS text), app.city.id), the function of a call, cast or not (count(*), now()::date); null for any
+     * other expression, named ?column?. PostgreSQL names more expressions ('x'::text text, CASE case...): alias them
      */
     private static function expressionName(string $expression): ?string
     {
-        $name = self::figureExpression($expression);
-
-        return $name !== null && $name[1] > 0 ? $name[0] : null;
-    }
-
-    /**
-     * The name and the strength (see figureName()) of an expression; null for an expression of an operator, which
-     * an alias follows, or nested more than MAX_NESTING times
-     *
-     * @return array{string, int}|null
-     */
-    private static function figureExpression(string $expression): ?array
-    {
-        $tokens = array_values(array_filter(
-            self::tokenize($expression),
-            static fn (string $token): bool => trim($token) !== ''
-        ));
-        // The closing parenthesis, bracket or END of each opening one or CASE; each depth is figured by a recursive
-        // call
-        $closing = [];
-        $opened = [];
-        foreach ($tokens as $index => $token) {
-            $token = strtolower($token);
-            if ($token === '(' || $token === '[' || $token === 'case') {
-                $opened[] = $index;
-            } elseif (($token === ')' || $token === ']' || $token === 'end') && $opened !== []) {
-                $closing[array_pop($opened)] = $index;
-            }
-            if (\count($opened) > self::MAX_NESTING) {
-                return null;
-            }
+        if (self::match(self::CAST_OF_COLUMN, $expression, $matches)) {
+            return ($matches['column'] ?? '') !== '' ? $matches['column'] : $matches['cast'];
         }
-
-        return self::figureName($tokens, $closing, 0, \count($tokens));
-    }
-
-    /**
-     * The name of the expression of the tokens from $from to $to (excluded), and its strength: 2 for a name, 1 for the
-     * name of a type or case, which a cast replaces, 0 for none. Null for an expression of an operator
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     * @return array{string, int}|null
-     */
-    private static function figureName(array $tokens, array $closing, int $from, int $to): ?array
-    {
-        $primary = self::figurePrimary($tokens, $closing, $from, $to);
-        if ($primary === null) {
+        if (!self::match(self::FUNCTION_CALL, $expression, $matches)) {
             return null;
         }
-        [$name, $strength, $index] = $primary;
 
-        while ($index < $to) {
-            $token = strtolower($tokens[$index]);
-            $next = $index + 1 < $to ? strtolower($tokens[$index + 1]) : '';
-            if ($token === ':' && $next === ':') {
-                $type = self::figureType($tokens, $closing, $index + 2, $to);
-                if ($type === null) {
-                    return null;
-                }
-                if ($strength < 2) {
-                    [$name, $strength] = [$type[0], 1];
-                }
-                $index = $type[1];
-            } elseif ($token === '[' && ($closing[$index] ?? $to) < $to) {
-                $index = $closing[$index] + 1;
-            } elseif ($token === '.' && $next !== '' && self::isIdentifier($tokens[$index + 1])) {
-                [$name, $strength] = [$tokens[$index + 1], 2];
-                $index += 2;
-            } elseif ($token === 'collate' && $next !== '' && self::isIdentifier($tokens[$index + 1])) {
-                $index += 2;
-                while ($index + 1 < $to && $tokens[$index] === '.' && self::isIdentifier($tokens[$index + 1])) {
-                    $index += 2;
-                }
-            } elseif ($token === 'at' && $next === 'time' && strtolower($tokens[$index + 2] ?? '') === 'zone') {
-                // The function timezone(), whatever its operands
-                $zone = self::figurePrimary($tokens, $closing, $index + 3, $to);
-                if ($zone === null) {
-                    return null;
-                }
-                [$name, $strength, $index] = ['timezone', 2, $zone[2]];
-            } else {
-                return null;
-            }
+        // The parenthesis of the call, ending its match, closes before its casts only
+        $tokens = self::tokenize($expression);
+        [$closing] = self::matchParentheses($tokens);
+        $open = 0;
+        for ($length = \strlen($tokens[0]); $length < \strlen($matches[0]); $length += \strlen($tokens[$open])) {
+            $open++;
         }
-
-        return [$name, $strength];
-    }
-
-    /**
-     * The name, the strength (see figureName()) and the end of the operand starting at $from: a literal, a column,
-     * a function call, a parenthesized expression, CASE, CAST...; null when no operand starts there (an operator)
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     * @return array{string, int, int}|null
-     */
-    private static function figurePrimary(array $tokens, array $closing, int $from, int $to): ?array
-    {
-        $token = $tokens[$from] ?? '';
-        $lower = strtolower($token);
-        $next = $from + 1 < $to ? $tokens[$from + 1] : '';
-        $close = $closing[$from + 1] ?? $to;
-        $call = ($next === '(' || $next === '[') && $close < $to;
-
-        if ($from >= $to) {
+        $close = $closing[$open] ?? \count($tokens);
+        if ($close >= \count($tokens)) {
             return null;
         }
-        if ($token === '(' && ($closing[$from] ?? $to) < $to) {
-            return [...self::figureParenthesized($tokens, $closing, $from + 1, $closing[$from]), $closing[$from] + 1];
-        }
-        if (self::isLiteral($token) || \in_array($lower, ['true', 'false', 'null'], true)) {
-            return ['', 0, $from + 1];
-        }
-        if (ctype_digit($token[0]) || ($token === '.' && ctype_digit($next[0] ?? ''))) {
-            // 1, 1.5, .5, 1e3
-            $index = $token === '.' ? $from + 2 : $from + 1;
-            if ($token !== '.' && ($tokens[$index] ?? '') === '.' && $index < $to) {
-                $index += ctype_digit($tokens[$index + 1][0] ?? '') && $index + 1 < $to ? 2 : 1;
-            }
-            return ['', 0, $index];
-        }
-        if (!self::isIdentifier($token)) {
-            return null;
-        }
-        if ($lower === 'case') {
-            return self::figureCase($tokens, $closing, $from, $to);
-        }
-        if ($lower === 'not') {
-            return null;
-        }
-        if (isset(self::KEYWORD_NAMES[$lower]) && $call && ($next === '(' || $lower === 'array')) {
-            return [self::KEYWORD_NAMES[$lower], 2, $close + 1];
-        }
-        if ($lower === 'cast' && $next === '(' && $close < $to) {
-            return self::figureCast($tokens, $closing, $from + 2, $close);
-        }
 
-        // A typed literal: date '2026-01-01' (but the bit strings B'1' and X'1')
-        $type = self::figureType($tokens, $closing, $from, $to);
-        if (
-            $type !== null
-            && $type[1] < $to
-            && self::isLiteral($tokens[$type[1]])
-            && !\in_array($lower, ['b', 'x'], true)
-        ) {
-            return [$type[0], 1, $type[1] + 1];
-        }
-
-        // A column or a function: [schema.]name
-        $name = $token;
-        $index = $from + 1;
-        while ($index + 1 < $to && $tokens[$index] === '.' && self::isIdentifier($tokens[$index + 1])) {
-            $name = $tokens[$index + 1];
-            $index += 2;
-        }
-        if (($tokens[$index] ?? '') !== '(' || $index >= $to) {
-            return [$name, 2, $index];
-        }
-        if ($index === $from + 1 && $lower === 'trim') {
-            $name = match (strtolower($tokens[$index + 1] ?? '')) {
-                'leading' => 'ltrim',
-                'trailing' => 'rtrim',
-                default => 'btrim',
-            };
-        }
-        // Its call, then WITHIN GROUP (...), FILTER (...), OVER (...) or OVER window
-        $index = $closing[$index] ?? $to;
-        while ($index < $to) {
-            $index++;
-            $keyword = $index < $to ? strtolower($tokens[$index]) : '';
-            if ($keyword === 'within' && $index + 1 < $to && strtolower($tokens[$index + 1]) === 'group') {
-                $index += 2;
-            } elseif ($keyword === 'filter' || $keyword === 'over') {
-                $index++;
-            } else {
-                return [$name, 2, $index];
-            }
-            if ($index >= $to) {
-                return null;
-            }
-            // OVER window, or the parenthesis of the clause
-            $index = $tokens[$index] === '(' ? $closing[$index] ?? $to : $index;
-        }
-
-        return null;
-    }
-
-    /**
-     * The name and the strength of a parenthesized expression: a scalar sub-query is named after its column, a row
-     * (a, b) row, any other expression as without parentheses (an operator: no name, but an operand all the same)
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     * @return array{string, int}
-     */
-    private static function figureParenthesized(array $tokens, array $closing, int $from, int $to): array
-    {
-        $keyword = strtolower($tokens[$from] ?? '');
-        if ($keyword === 'values') {
-            return ['column1', 2];
-        }
-        if ($keyword === 'select' || $keyword === 'with') {
-            return [self::subQueryColumnName($tokens, $closing, $from, $to) ?? '?column?', 2];
-        }
-        for ($index = $from; $index < $to; $index++) {
-            if ($tokens[$index] === ',') {
-                return ['row', 2];
-            }
-            if (isset($closing[$index])) {
-                $index = $closing[$index];
-            }
-        }
-
-        return self::figureName($tokens, $closing, $from, $to) ?? ['', 0];
-    }
-
-    /**
-     * The name of the first column of the scalar sub-query from $from to $to: its alias, or its name
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     */
-    private static function subQueryColumnName(array $tokens, array $closing, int $from, int $to): ?string
-    {
-        // Its first SELECT, after the CTEs of WITH
-        for ($select = $from; $select < $to && strtolower($tokens[$select]) !== 'select'; $select++) {
-            if (isset($closing[$select])) {
-                $select = $closing[$select];
-            }
-        }
-        // After its DISTINCT, ALL or DISTINCT ON (...)
-        $start = $select + 1;
-        $keyword = strtolower($tokens[$start] ?? '');
-        if ($keyword === 'all' || $keyword === 'distinct') {
-            $start++;
-        }
-        if ($keyword === 'distinct' && strtolower($tokens[$start] ?? '') === 'on') {
-            $start = ($closing[$start + 1] ?? $to) + 1;
-        }
-
-        // Its first column: up to a comma, FROM or a clause
-        for ($end = $start; $end < $to; $end++) {
-            $token = strtolower($tokens[$end]);
-            if (\in_array($token, [',', 'from', 'into', ...self::AFTER_FROM_CLAUSE], true)) {
-                break;
-            }
-            if (isset($closing[$end])) {
-                $end = $closing[$end];
-            }
-        }
-        if ($end - $start >= 2 && strtolower($tokens[$end - 2]) === 'as') {
-            return $tokens[$end - 1];
-        }
-        $name = self::figureName($tokens, $closing, $start, $end);
-        if ($name !== null) {
-            return $name[1] > 0 ? $name[0] : null;
-        }
-
-        // An alias without AS after an operand
-        return $end - $start >= 2
-            && self::isIdentifier($tokens[$end - 1])
-            && self::endsWithOperand(implode(' ', \array_slice($tokens, $start, $end - 1 - $start)))
-            ? $tokens[$end - 1]
+        return self::match('/^' . self::CASTS . '\s*$/i', implode('', \array_slice($tokens, $close + 1)))
+            ? $matches['function']
             : null;
     }
-
-    /**
-     * The name, the strength and the end of CASE ... END at $from: the name of its ELSE result, else case
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     * @return array{string, int, int}|null
-     */
-    private static function figureCase(array $tokens, array $closing, int $from, int $to): ?array
-    {
-        $end = $closing[$from] ?? $to;
-        if ($end >= $to) {
-            return null;
-        }
-        $else = null;
-        for ($index = $from + 1; $index < $end; $index++) {
-            if (strtolower($tokens[$index]) === 'else') {
-                $else = $index;
-            } elseif (isset($closing[$index])) {
-                $index = $closing[$index];
-            }
-        }
-        $result = $else !== null ? self::figureName($tokens, $closing, $else + 1, $end) : null;
-
-        return $result !== null && $result[1] === 2 ? [$result[0], 2, $end + 1] : ['case', 1, $end + 1];
-    }
-
-    /**
-     * The name, the strength and the end of CAST(expression AS type), whose expression starts at $from and whose
-     * parenthesis closes at $to: the name of the expression, else the name of the type
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     * @return array{string, int, int}|null
-     */
-    private static function figureCast(array $tokens, array $closing, int $from, int $to): ?array
-    {
-        $as = null;
-        for ($index = $from; $index < $to; $index++) {
-            if (strtolower($tokens[$index]) === 'as') {
-                $as = $index;
-            } elseif (isset($closing[$index])) {
-                $index = $closing[$index];
-            }
-        }
-        $type = $as !== null ? self::figureType($tokens, $closing, $as + 1, $to) : null;
-        if ($as === null || $type === null || $type[1] !== $to) {
-            return null;
-        }
-        $name = self::figureName($tokens, $closing, $from, $as);
-
-        return $name !== null && $name[1] === 2 ? [$name[0], 2, $to + 1] : [$type[0], 1, $to + 1];
-    }
-
-    /**
-     * The name PostgreSQL gives to the type starting at $from, and its end: a type of the grammar (int4 for int,
-     * float8 for double precision, timestamptz for timestamp with time zone...) or a [schema.]name, then its
-     * modifiers and its array bounds
-     *
-     * @param list<string> $tokens significant tokens
-     * @param array<int, int> $closing
-     * @return array{string, int}|null
-     */
-    private static function figureType(array $tokens, array $closing, int $from, int $to): ?array
-    {
-        if ($from >= $to || !self::isIdentifier($tokens[$from])) {
-            return null;
-        }
-
-        $name = null;
-        $end = $from;
-        for ($words = min(3, $to - $from); $words > 0 && $name === null; $words--) {
-            $phrase = strtolower(implode(' ', \array_slice($tokens, $from, $words)));
-            if (isset(self::TYPE_NAMES[$phrase])) {
-                $name = self::TYPE_NAMES[$phrase];
-                $end = $from + $words;
-            }
-        }
-        if ($name === null) {
-            $name = $tokens[$from];
-            $end = $from + 1;
-            while ($end + 1 < $to && $tokens[$end] === '.' && self::isIdentifier($tokens[$end + 1])) {
-                $name = $tokens[$end + 1];
-                $end += 2;
-            }
-        }
-
-        // Its modifiers: varchar(10), numeric(10, 2), float(24) a float4
-        if ($end < $to && $tokens[$end] === '(') {
-            if (($closing[$end] ?? $to) >= $to) {
-                return null;
-            }
-            if ($name === 'float8' && $closing[$end] === $end + 2 && (int) $tokens[$end + 1] <= 24) {
-                $name = 'float4';
-            }
-            $end = $closing[$end] + 1;
-        }
-        // timestamp(3) with time zone
-        $zone = strtolower(implode(' ', \array_slice($tokens, $end, max(0, min(3, $to - $end)))));
-        if (($name === 'timestamp' || $name === 'time') && \in_array($zone, ['with time zone', 'without time zone'])) {
-            $name .= $zone === 'with time zone' ? 'tz' : '';
-            $end += 3;
-        }
-        // Its array bounds: int[], int[3][3], int ARRAY[3]
-        while ($end < $to && ($tokens[$end] === '[' || strtolower($tokens[$end]) === 'array')) {
-            if ($tokens[$end] === '[' && ($closing[$end] ?? $to) >= $to) {
-                return null;
-            }
-            $end = $tokens[$end] === '[' ? $closing[$end] + 1 : $end + 1;
-        }
-
-        return [$name, $end];
-    }
-
-    /**
-     * Whether the token is a string literal: '...', E'...' or $tag$...$tag$
-     */
-    private static function isLiteral(string $token): bool
-    {
-        return $token !== '' && ($token[0] === "'" || ($token[0] === '$' && \strlen($token) > 1)
-            || (($token[0] === 'e' || $token[0] === 'E') && ($token[1] ?? '') === "'"));
-    }
-
     /**
      * Whether the expression ends with an operand (a name, a quoted identifier, a literal, a parenthesis or a bracket),
      * which an alias may follow without AS, rather than with an operator, a "." or a keyword expecting an operand
@@ -1115,8 +763,9 @@ class Result implements ResultInterface
     {
         return self::match('/[\w$\x80-\xff"\')\]]$/', $expression)
             && !self::match(
-                '/(?:^|[^\w$."\x80-\xff])(?:not|and|or|is|like|ilike|similar|to|between|symmetric|escape|collate|from|when|then'
-                . '|else|case|any|some|all|distinct|overlaps|at\s+time\s+zone)$/i',
+                '/(?:^|[^\w$."\x80-\xff])(?:not|and|or|is|like|ilike|similar|to|between|symmetric|escape|collate'
+                . '|from|when|then'
+                . '|else|case|any|some|all|distinct|overlaps|at|over|at\s+time\s+zone)$/i',
                 $expression
             );
     }

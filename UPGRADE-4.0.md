@@ -922,12 +922,15 @@ Hydrators and Transactions
   entity. See
   [Case of the table and column names](docs/hydrators.md#case-of-the-table-and-column-names).
 * **PostgreSQL: some keys of the rows change.** The Pgsql driver now reads the query as PostgreSQL does:
-  - An expression without alias is named as PostgreSQL names it, where 3.x took its last identifier or its whole
-    text: `price * qty` was `qty` and is `?column?`, `count(id)` was `count(id)` and is `count`, `now()::date` is
-    `now`, `'x'::text` is `text`, `CASE ... END` is `case` (see
+  - An expression without alias is named by a minimal rule, where 3.13 took its last identifier or its whole text: a
+    cast of a column after the column (`id::text` is `id`), a function call, cast or not, after the function
+    (`count(id)` was `count(id)` and is `count`, `now()::date` was `date` and is `now`), anything else `?column?`
+    (`price * qty` was `qty`, `'x'::text` was `text`, `CASE ... END` was its text). PostgreSQL itself names more
+    expressions (`'x'::text` `text`, `CASE ... END` `case`, `ts AT TIME ZONE 'UTC'` `timezone`, `u.tags[1]` `tags`,
+    `TRIM(x)` `btrim`): the driver does not follow it there (see
     [Columns without metadata](docs/hydrators.md#columns-without-metadata)). This name is the key of the column in the
-    `0` object of `Hydrator`, in the arrays of `HydratorArray`, and the property `HydratorValueObject` sets: alias such
-    expressions (`price * qty AS total`), as with MySQL, to keep the key you read.
+    `0` object of `Hydrator`, in the arrays of `HydratorArray`, and the property `HydratorValueObject` sets: alias
+    every computed expression with `AS` (`price * qty AS total`), as with MySQL, to keep the key you read.
   - The alias of a table is the key of its entity also when 3.x lost it: for the last table of a statement ending with
     `;` (`FROM app.users u;`) and for the tables of a FROM list separated by commas (`FROM users u, orders o`,
     `JOIN orders o ON ..., carts c`), the columns without table prefix were keyed by the table name (`users`) or by no

@@ -790,11 +790,11 @@ class ResultTest extends TestCase
                     ['name' => '?column?', 'orgName' => '-amount', 'table' => '', 'schema' => ''],
                     ['name' => '?column?', 'orgName' => 'a IS DISTINCT FROM t.b', 'table' => '', 'schema' => ''],
                     ['name' => 'b', 'orgName' => 'b::text', 'table' => '', 'schema' => ''],
-                    ['name' => 'timezone', 'orgName' => 'ts AT TIME ZONE tz', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => 'ts AT TIME ZONE tz', 'table' => '', 'schema' => ''],
                     $id,
                 ],
             ],
-            'casts, named after the column or else the type' => [
+            'casts, named after the column' => [
                 'SELECT id::text, u.n::double precision, x::timestamp(0) with time zone, CAST(u.code AS varchar(10)),'
                 . ' t.tags::text[], y::int::text, "Name"::text, (a + b)::text, id::text || \'x\', d::date c FROM city',
                 [],
@@ -806,7 +806,7 @@ class ResultTest extends TestCase
                     ['name' => 'tags', 'orgName' => 't.tags::text[]', 'table' => '', 'schema' => ''],
                     ['name' => 'y', 'orgName' => 'y::int::text', 'table' => '', 'schema' => ''],
                     ['name' => 'Name', 'orgName' => 'Name"::text', 'table' => '', 'schema' => ''],
-                    ['name' => 'text', 'orgName' => '(a + b)::text', 'table' => '', 'schema' => ''],
+                    ['name' => '?column?', 'orgName' => '(a + b)::text', 'table' => '', 'schema' => ''],
                     ['name' => '?column?', 'orgName' => "id::text || 'x'", 'table' => '', 'schema' => ''],
                     ['name' => 'c', 'orgName' => 'd::date', 'table' => '', 'schema' => ''],
                 ],
@@ -860,7 +860,7 @@ class ResultTest extends TestCase
                     ['name' => 'order', 'orgName' => 'order', 'table' => 't', 'schema' => ''],
                     ['name' => 'limit', 'orgName' => 'x', 'table' => '', 'schema' => ''],
                     [
-                        'name' => 'string_agg',
+                        'name' => '?column?',
                         'orgName' => "string_agg(y, ',') WITHIN GROUP (ORDER BY y)",
                         'table' => '',
                         'schema' => '',
@@ -888,73 +888,111 @@ class ResultTest extends TestCase
     public static function expressionNameProvider(): array
     {
         return [
+            // A cast of a column: the column
+            'a cast of a column' => ['id::text', 'id'],
+            'a cast of a qualified column' => ['u.id::text', 'id'],
+            'a cast to a multi-word type' => ['x.y::double precision', 'y'],
+            'a cast to a time zone type' => ['x::timestamp(3) with time zone', 'x'],
+            'a cast to an array type' => ['t.tags::text[]', 'tags'],
+            'a cast to a schema-qualified type' => ['x::public."MyType"', 'x'],
+            'a cast to an interval with fields' => ['x::interval hour to minute', 'x'],
+            'a chain of casts' => ['y::int::text', 'y'],
+            'CAST of a column' => ['CAST(u.code AS varchar(10))', 'code'],
+            'a cast of a name of non-ASCII letters' => ['u.prénom::text', 'prénom'],
+            'a column of schema.table.column' => ['app.city.id', 'id'],
+            // A function call, cast or not: the function
+            'a function call' => ['coalesce(u.a, u.b)', 'coalesce'],
+            'an aggregate' => ['count(*)', 'count'],
+            'a function call keeps its spelling' => ['COUNT(id)', 'COUNT'],
+            'a schema-qualified function' => ['pg_catalog.lower(u.x)', 'lower'],
+            'a quoted function name' => ['"MyFunc"(1)', 'MyFunc'],
+            'a function with parentheses in a string' => ["concat(')', u.a, '(')", 'concat'],
             'a cast of a function call' => ['now()::date', 'now'],
             'a cast of an aggregate' => ['count(*)::int', 'count'],
-            'a cast of a schema-qualified function' => ['pg_catalog.max(u.x)::bigint', 'max'],
-            'a cast of a parenthesized column' => ['(u.id)::text', 'id'],
-            'a cast of a literal' => ["'x'::text", 'text'],
-            'a cast of an operator expression' => ['(a + b)::numeric(10, 2)', 'numeric'],
-            'a cast of CASE' => ['CASE WHEN u.x THEN 1 END::text', 'text'],
-            'a cast to a type of the grammar' => ['1::integer', 'int4'],
-            'a cast to a multi-word type' => ['x.y::double precision', 'y'],
-            'a cast of a literal to a multi-word type' => ["'1'::character varying(3)", 'varchar'],
-            'a cast to a time zone type' => ["'now'::timestamp(3) with time zone", 'timestamptz'],
-            'a cast to an array type' => ["'{}'::int[]", 'int4'],
-            'a cast to float(p)' => ['1::float(10)', 'float4'],
-            'a cast to a schema-qualified type' => ['NULL::public."MyType"', 'MyType'],
-            'a chain of casts' => ["'1'::text::bigint", 'int8'],
-            'CAST of a function call' => ['CAST(max(u.x) AS int)', 'max'],
-            'CAST of an operator expression' => ['CAST(a + b AS boolean)', 'bool'],
-            'a typed literal' => ["date '2026-01-01'", 'date'],
-            'a function call' => ['coalesce(u.a, u.b)', 'coalesce'],
-            'a name of non-ASCII letters' => ['prénom', 'prénom'],
-            'a cast of a name of non-ASCII letters' => ['u.prénom::text', 'prénom'],
-            'a quoted function name' => ['"MyFunc"(1)', 'MyFunc'],
-            'an aggregate with FILTER and OVER' => ['count(*) FILTER (WHERE x) OVER (PARTITION BY y)', 'count'],
-            'a window function over a named window' => ['row_number() OVER w', 'row_number'],
-            'an ordered-set aggregate' => ['percentile_cont(0.5) WITHIN GROUP (ORDER BY x)', 'percentile_cont'],
-            'TRIM' => ["TRIM(BOTH ' ' FROM name)", 'btrim'],
-            'TRIM LEADING' => ["trim(leading 'x' from name)", 'ltrim'],
-            'CASE' => ['CASE WHEN a THEN 1 ELSE 0 END', 'case'],
-            'CASE whose ELSE result is a column' => ['CASE WHEN a THEN 1 ELSE u.label END', 'label'],
-            'nested CASE' => ['CASE WHEN a THEN CASE WHEN b THEN x ELSE y END END', 'case'],
-            'COLLATE' => ['u.name COLLATE "C"', 'name'],
-            'COLLATE of a cast of a literal' => ["'a'::text COLLATE \"C\"", 'text'],
-            'AT TIME ZONE' => ["now() AT TIME ZONE 'UTC'", 'timezone'],
-            'AT TIME ZONE of literals' => ["'2026-01-01'::timestamp AT TIME ZONE 'UTC'::text", 'timezone'],
-            'a subscript' => ['u.tags[1]', 'tags'],
-            'a slice of a function call' => ['array_agg(x)[1:2]', 'array_agg'],
-            'a field of a composite' => ['(u.address).city', 'city'],
-            'ARRAY[]' => ['ARRAY[u.a, u.b]', 'array'],
-            'ARRAY()' => ['ARRAY(SELECT 1)', 'array'],
-            'ROW()' => ['ROW(u.a, u.b)', 'row'],
-            'an implicit row' => ['(u.a, u.b)', 'row'],
-            'EXISTS' => ['EXISTS (SELECT 1 FROM t)', 'exists'],
-            'a scalar sub-query' => ['(SELECT max(x) FROM t)', 'max'],
-            'a scalar sub-query with an alias' => ['(SELECT x + 1 AS n FROM t WHERE y)', 'n'],
-            'a scalar sub-query with an alias without AS' => ['(SELECT x + 1 n FROM t)', 'n'],
-            'a scalar sub-query of a CTE' => ['(WITH c AS (SELECT a FROM t) SELECT DISTINCT b FROM c)', 'b'],
-            'a scalar sub-query of an expression' => ['(SELECT x * 2 FROM t)', '?column?'],
-            'a cast of a scalar sub-query' => ['(SELECT 1)::text', '?column?'],
+            'TRIM' => ["TRIM(BOTH ' ' FROM name)", 'TRIM'],
+            // Anything else: ?column?, which PostgreSQL may name otherwise
+            'a cast of a parenthesized column' => ['(u.id)::text', '?column?'],
+            'a cast of a literal' => ["'x'::text", '?column?'],
+            'a cast of NULL' => ['NULL::int', '?column?'],
+            'a cast of a parameter' => ['$1::int', '?column?'],
+            'a cast of an operator expression' => ['(a + b)::numeric(10, 2)', '?column?'],
+            'a cast of CASE' => ['CASE WHEN u.x THEN 1 END::text', '?column?'],
+            'CAST of a function call' => ['CAST(max(u.x) AS int)', '?column?'],
+            'a typed literal' => ["date '2026-01-01'", '?column?'],
+            'an interval literal with a field' => ["interval '1' day", '?column?'],
+            'an interval cast with a field' => ["'1'::interval day", '?column?'],
+            'an interval literal with fields' => ["interval '1' day to second", '?column?'],
+            'a national character literal' => ["N'abc'", '?column?'],
+            'a window function' => ['count(*) OVER (PARTITION BY y)', '?column?'],
+            'a window function over a named window' => ['row_number() OVER w', '?column?'],
+            'an ordered-set aggregate' => ['percentile_cont(0.5) WITHIN GROUP (ORDER BY x)', '?column?'],
+            'CASE' => ['CASE WHEN a THEN 1 ELSE 0 END', '?column?'],
+            'nested CASE' => ['CASE WHEN a THEN CASE WHEN b THEN x ELSE y END END', '?column?'],
+            'CASE in an operation' => ['CASE WHEN a THEN 1 ELSE 0 END + 2', '?column?'],
+            'COLLATE' => ['u.name COLLATE "C"', '?column?'],
+            'AT TIME ZONE' => ["now() AT TIME ZONE 'UTC'", '?column?'],
+            'AT LOCAL' => ['u.ts AT LOCAL', '?column?'],
+            'a subscript' => ['u.tags[1]', '?column?'],
+            'a field of a composite' => ['(u.address).city', '?column?'],
+            'ARRAY[]' => ['ARRAY[u.a, u.b]', '?column?'],
+            'ARRAY()' => ['ARRAY(SELECT 1)', '?column?'],
+            'ROW()' => ['ROW(u.a, u.b)', '?column?'],
+            'EXISTS' => ['EXISTS (SELECT 1 FROM t)', '?column?'],
+            'NOT' => ['NOT (u.flag)', '?column?'],
+            'a scalar sub-query' => ['(SELECT max(x) FROM t)', '?column?'],
+            'a parenthesized UNION' => ['((SELECT x FROM t) UNION (SELECT y FROM u))', '?column?'],
             'an operator' => ['u.price * u.qty', '?column?'],
             'an operator after a cast' => ["id::text || 'x'", '?column?'],
             'a JSON operator' => ["u.data->>'k'", '?column?'],
             'a unary minus' => ['-u.amount', '?column?'],
-            'NOT' => ['NOT (u.flag)', '?column?'],
             'IS NULL' => ['u.id IS NULL', '?column?'],
             'a literal' => ["'x'", '?column?'],
             'a number' => ['1.5', '?column?'],
             'NULL' => ['NULL', '?column?'],
-            'CASE in an operation' => ['CASE WHEN a THEN 1 ELSE 0 END + 2', '?column?'],
+            'a parameter' => ['$1', '?column?'],
+        ];
+    }
+
+    public static function deepExpressionProvider(): array
+    {
+        return [
+            'nested CASE' => [
+                str_repeat('CASE WHEN a THEN 1 ELSE ', 150) . 'u.x' . str_repeat(' END', 150),
+                '?column?',
+            ],
+            'nested parentheses cast to a multi-word type' => [
+                str_repeat('(', 150) . 'x' . str_repeat(')', 150) . '::double precision',
+                '?column?',
+            ],
+            'nested parentheses before a window' => [
+                str_repeat('(', 150) . 'x' . str_repeat(')', 150) . ' + count(*) OVER w',
+                '?column?',
+            ],
+            'nested function calls' => [str_repeat('f(', 5000) . 'x' . str_repeat(')', 5000), 'f'],
         ];
     }
 
     /**
-     * An expression without alias is named as PostgreSQL names it (FigureColnameInternal), its unquoted names keeping
-     * the spelling of the query
+     * Deeply nested expressions are named by the same rule, without exception nor alias taken from their end
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('deepExpressionProvider')]
+    public function testSetQueryShouldNameDeepExpressions(string $expression, string $name)
+    {
+        $this->assertSame(
+            [[$name, ''], ['id', 'u']],
+            array_map(
+                fn (array $column) => [$column['name'], $column['table']],
+                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'])
+            )
+        );
+    }
+
+    /**
+     * An expression without alias is named after the column of a cast of a column, or after the function of a call,
+     * cast or not; any other expression is named ?column?, whatever PostgreSQL names it: alias it
      */
     #[\PHPUnit\Framework\Attributes\DataProvider('expressionNameProvider')]
-    public function testSetQueryShouldNameExpressionsAsPostgresql(string $expression, string $name)
+    public function testSetQueryShouldNameExpressionsWithoutAlias(string $expression, string $name)
     {
         $this->assertSame(
             [[$name, ''], ['id', 'u']],
@@ -1130,7 +1168,7 @@ class ResultTest extends TestCase
                     'value' => 1
                 ],
                 [
-                    'name' => 'case',
+                    'name' => '?column?',
                     'orgName' => 'CASE WHEN a = 1 THEN 1 ELSE 0 END',
                     'table' => '',
                     'orgTable' => '',
