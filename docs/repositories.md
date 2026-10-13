@@ -548,7 +548,9 @@ in another entity (a foreign key such as `$ticket->setEventId($event->getId())`)
 again in the retry, after the new ids are generated. The entities you updated, pushed again as they are, write
 nothing: their changes were forgotten, and setting the same value again is not a change. Read them again and apply
 your changes to the fresh objects, or `detachAll()` first: they are then saved as entities not managed, by an `UPDATE`
-of every field. The entities read during the transaction stay managed with the values read, even those of a row
+of every field when their `autoincrement` property holds their id. An entity whose primary key is not `autoincrement`
+(a natural or composite key) is inserted instead, which fails on a duplicate key: read it again rather than detaching
+it. The entities read during the transaction stay managed with the values read, even those of a row
 inserted in it, which no longer exists (saved, they update no row): read them again too. See [Transactions](unit-of-work.md#transactions) in the unit of work.
 
 Starting a transaction while another one is open on the same connection, or committing / rolling back without one,
