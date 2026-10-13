@@ -319,7 +319,11 @@ class Result implements ResultInterface
                                 $expression === ''
                                 || !self::endsWithOperand($expression)
                                 || self::match(self::NO_ALIAS_END, $column)
-                                || \in_array(strtolower($alias), ['notnull', 'isnull', 'normalized'], true)
+                                || \in_array(strtolower($alias), ['notnull', 'isnull'], true)
+                                || (
+                                    strtolower($alias) === 'normalized'
+                                    && self::match('/\bis\s+(?:not\s+)?nfk?[cd]$/i', $expression)
+                                )
                             )
                         ) {
                             $alias = '';
