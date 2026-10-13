@@ -845,6 +845,29 @@ class ResultTest extends TestCase
                     ['name' => 'name', 'orgName' => 'lower(name)', 'table' => '', 'schema' => ''],
                 ],
             ],
+            'an alias after CASE, last of the query' => [
+                'SELECT CASE WHEN a THEN 1 END total',
+                [],
+                [['name' => 'total', 'orgName' => 'CASE WHEN a THEN 1 END', 'table' => '', 'schema' => '']],
+            ],
+            'a quoted alias after CASE, last of the query' => [
+                'SELECT CASE WHEN a THEN 1 END "Total"',
+                [],
+                [['name' => 'Total', 'orgName' => 'CASE WHEN a THEN 1 END', 'table' => '', 'schema' => '']],
+            ],
+            'an alias after an operation on CASE, last of the query' => [
+                'SELECT 1 + CASE WHEN a THEN 1 END total',
+                [],
+                [['name' => 'total', 'orgName' => '1 + CASE WHEN a THEN 1 END', 'table' => '', 'schema' => '']],
+            ],
+            'an alias after CASE, last column of the query' => [
+                'SELECT u.id, CASE WHEN a THEN 1 END total',
+                ['users'],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => ''],
+                    ['name' => 'total', 'orgName' => 'CASE WHEN a THEN 1 END', 'table' => '', 'schema' => ''],
+                ],
+            ],
             'a clause without FROM' => [
                 "SELECT 1 AS x, lower('A') WHERE true UNION SELECT 2, 'b' ORDER BY 1 LIMIT 1",
                 [],
