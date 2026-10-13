@@ -928,10 +928,12 @@ Hydrators and Transactions
     `x`), a function call cast with `::` or not after the function (`count(id)` was `count(id)` and is `count`,
     `now()::date` was `date` and is `now`), anything else `?column?` (`NOT flag` was `flag`, `-amount` was `amount`,
     `'x'::text` was `text`, `CASE ... END` was its text). `CAST(...)` is named only around a plain column
-    (`CAST(count(*) AS int)` is `?column?`), and an expression in parentheses is `?column?` (`(x)::text`, `(f(x))`).
-    PostgreSQL itself names more expressions (`'x'::text` `text`, `CASE ... END` `case`, `ts AT TIME ZONE 'UTC'`
-    `timezone`, `u.tags[1]` `tags`, `CAST(count(*) AS int)` `count`, `TRIM(x)` `btrim`): the driver does not follow it
-    there (see
+    (`CAST(count(*) AS int)` is `?column?`), and an expression in parentheses is `?column?` (`(x)::text`, `(f(x))`),
+    as a call followed by `OVER`, `FILTER` or `WITHIN GROUP` (`count(*) OVER w`, `count(*) FILTER (WHERE x)`); a
+    keyword without parentheses is named as a column (`CURRENT_TIMESTAMP`, `current_date`). PostgreSQL itself names
+    more expressions (`'x'::text` `text`, `CASE ... END` `case`, `ts AT TIME ZONE 'UTC'` `timezone`, `u.tags[1]`
+    `tags`, `CAST(count(*) AS int)` `count`, `TRIM(x)` `btrim`, `count(*) OVER w` `count`): the driver does not follow
+    it there (see
     [Columns without metadata](docs/hydrators.md#columns-without-metadata)). This name is the key of the column in the
     `0` object of `Hydrator`, in the arrays of `HydratorArray`, and the property `HydratorValueObject` sets: alias
     every computed expression with `AS` (`price - qty AS total`), as with MySQL, to keep the key you read.

@@ -118,13 +118,15 @@ the query:
 | Expression without alias                                                              | Name                   |
 |---------------------------------------------------------------------------------------|------------------------|
 | a column, a cast of a column (`app.city.id`, `id::text`, `CAST(u.id AS text)`)        | the column (`id`)      |
+| a keyword without parentheses, read as a column (`CURRENT_TIMESTAMP`, `current_date`) | the keyword (`CURRENT_TIMESTAMP`, `current_date`) |
 | a function call, cast with `::` or not (`count(id)`, `COUNT(id)`, `now()::date`)      | the function (`count`, `COUNT`, `now`) |
+| a call followed by `OVER`, `FILTER` or `WITHIN GROUP` (`count(*) OVER w`, `count(*) FILTER (WHERE x)`) | `?column?` |
 | `CAST(...)` of anything but a plain column (`CAST(count(*) AS int)`)                  | `?column?`             |
 | an expression in parentheses (`(x)::text`, `(f(x))`)                                  | `?column?`             |
 | any other expression (`price * qty`, `'x'::text`, `CASE ... END`, `u.tags[1]`, `NULL`) | `?column?`            |
 
 PostgreSQL names some of these other expressions (`'x'::text` `text`, `CASE ... END` `case`, `u.tags[1]` `tags`,
-`CAST(count(*) AS int)` `count`, `TRIM(x)` `btrim`), and the driver does not: alias them.
+`CAST(count(*) AS int)` `count`, `TRIM(x)` `btrim`, `count(*) OVER w` `count`), and the driver does not: alias them.
 
 Two columns of the same name overwrite each other.
 
