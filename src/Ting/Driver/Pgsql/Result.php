@@ -198,7 +198,7 @@ class Result implements ResultInterface
 
         $fields = [];
 
-        $tokensWithCase = self::tokenize($query);
+        $tokensWithCase = self::lastStatement(self::tokenize($query));
         $tokens = array_map(strtolower(...), $tokensWithCase);
         $comparisonFroms = self::findComparisonFroms($tokens);
         $selectDepth = self::findMainSelectDepth($tokens);
@@ -243,11 +243,9 @@ class Result implements ResultInterface
             }
 
             if ($startCapture) {
-                // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...) or the end of the statement
-                // (whatever blanks or comments follow its ;), ends the select list; not a name (t.order, AS order)
-                // nor WITHIN GROUP
-                $isEnd = $token === ';'
-                    || ($token === 'from' && !isset($comparisonFroms[$index]))
+                // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...), ends the select list; not
+                // a name (t.order, AS order) nor WITHIN GROUP
+                $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]))
                     || (
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
                         && !\in_array(
@@ -864,6 +862,36 @@ class Result implements ResultInterface
                 : $token,
             $matches[0]
         );
+    }
+
+    /**
+     * The tokens of the last statement of the query: pg_query() runs every statement separated by ";" and returns the
+     * result of the last one (a ";" followed by blanks or comments only ends the statement before it)
+     *
+     * @param list<string> $tokens
+     * @return list<string>
+     */
+    private static function lastStatement(array $tokens): array
+    {
+        $start = 0;
+        $significant = false;
+        $statement = $tokens;
+        foreach ($tokens as $index => $token) {
+            if ($token === ';') {
+                if ($significant) {
+                    $statement = \array_slice($tokens, $start, $index - $start);
+                }
+                $start = $index + 1;
+                $significant = false;
+            } elseif (trim($token) !== '') {
+                $significant = true;
+            }
+        }
+        if ($significant) {
+            $statement = \array_slice($tokens, $start);
+        }
+
+        return $statement;
     }
 
     /**
