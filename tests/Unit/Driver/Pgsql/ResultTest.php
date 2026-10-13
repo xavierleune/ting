@@ -302,6 +302,22 @@ class ResultTest extends TestCase
         );
     }
 
+    public function testSetQueryShouldIgnoreDollarQuotesWithANonAsciiTag()
+    {
+        // A tag holds letters, non-ASCII ones too, as an unquoted name does
+        $this->assertSame(
+            [
+                ['name' => 'v', 'orgName' => '$é$, FROM x$é$', 'table' => '', 'schema' => ''],
+                ['name' => 'w', 'orgName' => '$_ü1$, ) FROM y$_ü1$', 'table' => '', 'schema' => ''],
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => ''],
+            ],
+            $this->parseColumns(
+                'SELECT $é$, FROM x$é$ AS v, $_ü1$, ) FROM y$_ü1$ AS w, u.id FROM users u',
+                [2 => 'users']
+            )
+        );
+    }
+
     public static function largeLiteralProvider(): array
     {
         $big = str_repeat('x', 2_000_000);
