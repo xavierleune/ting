@@ -744,11 +744,32 @@ class Result implements ResultInterface
         if ($first === $end) {
             return $tokens[$end] === '*';
         }
+        if ($end - $first < 2 || $tokens[$end] !== '*' || $tokens[$end - 1] !== '.') {
+            return false;
+        }
 
-        return $end - $first >= 2
-            && $tokens[$end] === '*'
-            && $tokens[$end - 1] === '.'
-            && (self::isIdentifier($tokens[$end - 2]) || $tokens[$end - 2] === ')' || $tokens[$end - 2] === ']');
+        // The whole column is the reference expanded: names, parenthesized expressions and subscripts separated by
+        // dots (schema.table.*, (p.loc).*, (x)[1].*, t.arr[1].*), not an expression ending with one (o.* = n.*)
+        $opening = array_flip($closing);
+        $index = $end - 2;
+        while (true) {
+            // Subscripts follow an operand: a name or a parenthesized expression
+            while ($tokens[$index] === ']' && isset($opening[$index]) && $opening[$index] > $first) {
+                $index = $opening[$index] - 1;
+            }
+            if ($tokens[$index] === ')' && isset($opening[$index])) {
+                $index = $opening[$index];
+            } elseif (!self::isIdentifier($tokens[$index])) {
+                return false;
+            }
+            if ($index === $first) {
+                return true;
+            }
+            if ($tokens[$index - 1] !== '.' || $index - 2 < $first) {
+                return false;
+            }
+            $index -= 2;
+        }
     }
 
     /**
