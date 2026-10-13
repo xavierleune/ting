@@ -1055,6 +1055,9 @@ class ResultTest extends TestCase
             'CAST of a column' => ['CAST(u.code AS varchar(10))', 'code'],
             'a cast of a name of non-ASCII letters' => ['u.prénom::text', 'prénom'],
             'a column of schema.table.column' => ['app.city.id', 'id'],
+            // A keyword without parentheses is read as a column
+            'CURRENT_TIMESTAMP' => ['CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP'],
+            'current_date' => ['current_date', 'current_date'],
             // A function call, cast or not: the function
             'a function call' => ['coalesce(u.a, u.b)', 'coalesce'],
             'an aggregate' => ['count(*)', 'count'],
@@ -1081,6 +1084,7 @@ class ResultTest extends TestCase
             'a window function' => ['count(*) OVER (PARTITION BY y)', '?column?'],
             'a window function over a named window' => ['row_number() OVER w', '?column?'],
             'an ordered-set aggregate' => ['percentile_cont(0.5) WITHIN GROUP (ORDER BY x)', '?column?'],
+            'an aggregate with a filter' => ['count(*) FILTER (WHERE u.x)', '?column?'],
             'CASE' => ['CASE WHEN a THEN 1 ELSE 0 END', '?column?'],
             'nested CASE' => ['CASE WHEN a THEN CASE WHEN b THEN x ELSE y END END', '?column?'],
             'CASE in an operation' => ['CASE WHEN a THEN 1 ELSE 0 END + 2', '?column?'],
