@@ -265,6 +265,15 @@ class ResultTest extends TestCase
                 'SELECT u.id /* ' . str_repeat('a/b ', 250_000) . ' */, u.name FROM users u',
                 'name',
             ],
+            'a block comment closed after a run of asterisks' => [
+                'SELECT u.id /* ' . str_repeat('*', 400_000) . '*/, u.name FROM users u',
+                'name',
+            ],
+            'a nested block comment opened after a run of slashes' => [
+                'SELECT u.id /* ' . str_repeat('/', 400_000) . '/* x ' . str_repeat('*', 400_000) . '*/ */, u.name'
+                . ' FROM users u',
+                'name',
+            ],
             'a block comment of runs of slashes' => [
                 'SELECT u.id /* ' . str_repeat('//// ', 200_000) . ' */, u.name FROM users u',
                 'name',
