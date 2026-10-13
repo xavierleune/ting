@@ -111,19 +111,18 @@ These values are not converted by Ting: they are passed as the driver returns th
 instance). Use [`unserializeAliasWith()`](#unserializing-a-column-without-metadata) to convert them. When there is no
 such column, the key `0` is absent.
 
-Give every expression an alias: it is the name of the property. Without alias, MySQL names the column after the text
-of the expression, and the PostgreSQL driver names it as PostgreSQL does, keeping the spelling of the query:
+Give every computed expression an alias with `AS`: it is the name of the property. Without alias, MySQL names the
+column after the text of the expression, and the PostgreSQL driver names it by a minimal rule, keeping the spelling of
+the query:
 
-| Expression without alias                                         | Name                                       |
-|------------------------------------------------------------------|--------------------------------------------|
-| a column, a field or a subscript (`app.city.id`, `u.tags[1]`)    | the column or the field (`id`, `tags`)     |
-| a function call (`count(id)`, `COUNT(id)`, `TRIM(name)`)         | the function (`count`, `COUNT`, `btrim`)   |
-| `ts AT TIME ZONE 'UTC'`, `ARRAY[a, b]`, `ROW(a, b)`, `EXISTS (...)` | `timezone`, `array`, `row`, `exists`    |
-| a scalar sub-query (`(SELECT max(id) FROM book)`)                | its column (`max`)                         |
-| a cast or `COLLATE` of a named expression (`id::text`, `now()::date`) | that name (`id`, `now`)               |
-| a cast of another expression (`'x'::text`, `(a + b)::int`)       | the type (`text`, `int4`)                  |
-| `CASE ... ELSE u.label END`, any other `CASE`                    | the `ELSE` result if named (`label`), `case` |
-| any other expression (`price * qty`, `NOT flag`, `'x'`, `NULL`)  | `?column?`                                 |
+| Expression without alias                                           | Name                            |
+|--------------------------------------------------------------------|---------------------------------|
+| a column, a cast of a column (`app.city.id`, `id::text`, `CAST(u.id AS text)`) | the column (`id`)   |
+| a function call, cast or not (`count(id)`, `COUNT(id)`, `now()::date`) | the function (`count`, `COUNT`, `now`) |
+| any other expression (`price * qty`, `'x'::text`, `CASE ... END`, `u.tags[1]`, `NULL`) | `?column?`  |
+
+PostgreSQL names some of these other expressions (`'x'::text` `text`, `CASE ... END` `case`, `u.tags[1]` `tags`,
+`TRIM(x)` `btrim`), and the driver does not: alias them.
 
 Two columns of the same name overwrite each other.
 
