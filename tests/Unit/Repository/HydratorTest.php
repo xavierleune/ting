@@ -2068,6 +2068,33 @@ class HydratorTest extends TestCase
         }
     }
 
+    public function testHydrateShouldNotMatchAColumnOfAnotherCaseWhenEachCandidateIsReadUnderItsExactName()
+    {
+        // PostgreSQL table t("Name", name, "NAME"): "Name" and name mapped, "NAME" is another column
+        foreach ([['Name' => 'A', 'name' => 'B', 'NAME' => 'C'], ['NAME' => 'C', 'name' => 'B', 'Name' => 'A']] as $row) {
+            $data = $this->hydrateRowOf('users', ['Name' => 'name', 'name' => 'firstname'], 'users', $row);
+
+            $this->assertSame('A', $data['b']->getName());
+            $this->assertSame('B', $data['b']->getFirstname());
+            $this->assertSame('C', $data[0]->NAME);
+        }
+    }
+
+    public function testHydrateShouldMatchTheOnlyCandidateNotReadUnderItsExactName()
+    {
+        // "Name" and name mapped, the row holds "Name" and "NAME": NAME can only be name
+        $data = $this->hydrateRowOf(
+            'users',
+            ['Name' => 'name', 'name' => 'firstname'],
+            'users',
+            ['NAME' => 'C', 'Name' => 'A']
+        );
+
+        $this->assertSame('A', $data['b']->getName());
+        $this->assertSame('C', $data['b']->getFirstname());
+        $this->assertArrayNotHasKey(0, $data);
+    }
+
     public function testHydrateShouldMatchTheColumnsOfEachResultOnItsOwnColumns()
     {
         $services = new TingServices();

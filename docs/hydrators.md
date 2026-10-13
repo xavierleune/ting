@@ -380,7 +380,10 @@ lowercase (`SELECT u.ID FROM Users u` reads the column `id` of the table `users`
 `"Users"` is found by `setTable('users')`, a column read as `id` by `'columnName' => 'ID'`. A column is matched
 case-insensitively only when the row holds no column of its alias under the exact name: `SELECT *` from a table with
 the columns `"Name"` and `name`, only `"Name"` mapped, hydrates the field from `"Name"`, and `name` is an unmapped
-column (in the object `0`).
+column (in the object `0`). With several columns of the metadata differing only by case, a column read is matched to
+the only one the row does not hold under its exact name: `"Name"` and `name` mapped, a row holding `"Name"`, `name` and
+`"NAME"` puts `"NAME"` in the object `0`, a row holding `"Name"` and `"NAME"` hydrates the field of `name` from
+`"NAME"`.
 
 When several tables differ only by case, the metadata are looked up in this order:
 
@@ -395,7 +398,8 @@ When several tables differ only by case, the metadata are looked up in this orde
    else of the same schema, then any of them if they hydrate the same entity the same way.
 
 It throws a `CCMBenchmark\Ting\Exceptions\HydratorException` naming them only when they stay ambiguous. Several
-columns of the metadata differing from the column read only by case, none with its exact name, throw it too.
+columns of the metadata differing from the column read only by case, none with its exact name and the row holding
+none of them under its exact name, throw it too.
 
 The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()`, `mapAliasTo()`,
 `objectDatabaseIs()` and `objectSchemaIs()`: they are in lowercase, quoted or not (`FROM "MyUsers" "U"` gives the key

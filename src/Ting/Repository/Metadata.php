@@ -46,7 +46,6 @@ use CCMBenchmark\Ting\Driver\Mysqli\Serializer\Boolean as MysqliBoolean;
 use CCMBenchmark\Ting\Driver\Pgsql\Serializer\Boolean as PgsqlBoolean;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Exceptions\ConfigException;
-use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\Exceptions\SyntaxException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\Query\Generator;
@@ -584,18 +583,18 @@ class Metadata
     }
 
     /**
-     * The column of these metadata a result names $column: the column of the same name, else the only one whose
-     * name differs only by case (a column declared ID, read by an unquoted SELECT u.ID that PostgreSQL names id)
+     * The columns of these metadata a result may name $column: the column of the same name, else every column whose
+     * name differs only by case (a column declared ID, read by an unquoted SELECT u.ID that PostgreSQL names id). The
+     * hydrator chooses among them from the columns of the row.
      *
-     * @return string|null null when no column matches
-     * @throws HydratorException when several columns differ from $column only by case
+     * @return list<string> empty when no column matches
      *
      * @internal
      */
-    public function findColumn(string $column): ?string
+    public function findColumns(string $column): array
     {
         if (isset($this->fields[$column])) {
-            return $column;
+            return [$column];
         }
 
         if ($this->columnsOfAnyCase === null) {
@@ -605,17 +604,7 @@ class Metadata
             }
         }
 
-        $columns = $this->columnsOfAnyCase[strtolower($column)] ?? [];
-        if (\count($columns) > 1) {
-            throw new HydratorException(sprintf(
-                'The column %s of %s matches several columns of its metadata, whose case differs: %s',
-                $column,
-                (string) $this->table,
-                implode(', ', $columns)
-            ));
-        }
-
-        return $columns[0] ?? null;
+        return $this->columnsOfAnyCase[strtolower($column)] ?? [];
     }
 
     /**
