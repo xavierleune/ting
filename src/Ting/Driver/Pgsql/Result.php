@@ -238,9 +238,11 @@ class Result implements ResultInterface
             }
 
             if ($startCapture) {
-                // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...), ends the select list; not
-                // a name (t.order, AS order) nor WITHIN GROUP
-                $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]))
+                // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...) or the end of the statement
+                // (whatever blanks or comments follow its ;), ends the select list; not a name (t.order, AS order)
+                // nor WITHIN GROUP
+                $isEnd = $token === ';'
+                    || ($token === 'from' && !isset($comparisonFroms[$index]))
                     || (
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
                         && !\in_array(

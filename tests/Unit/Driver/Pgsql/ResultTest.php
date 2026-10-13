@@ -959,6 +959,40 @@ class ResultTest extends TestCase
         ];
     }
 
+    public static function statementEndProvider(): array
+    {
+        return [
+            'a semicolon then a line feed' => ["SELECT nextval('s') AS id;\n", [['id', "nextval('s')"]]],
+            'a semicolon then blanks' => ['SELECT 1 AS one, 2 AS two;  ', [['one', '1'], ['two', '2']]],
+            'a semicolon then a comment' => ["SELECT 1 AS one; -- done\n", [['one', '1']]],
+            'a semicolon then a block comment' => ['SELECT 1 AS one; /* done */', [['one', '1']]],
+            'a blank before the semicolon' => ["SELECT 1 AS one ;\n", [['one', '1']]],
+            'without alias' => ["SELECT nextval('s');\n", [['nextval', "nextval('s')"]]],
+            'a CASE with an alias' => [
+                "SELECT CASE WHEN true THEN 1 END kind;\n",
+                [['kind', 'CASE WHEN true THEN 1 END']],
+            ],
+            'a CASE without alias' => [
+                "SELECT CASE WHEN true THEN 1 END;\n",
+                [['?column?', 'CASE WHEN true THEN 1 END']],
+            ],
+        ];
+    }
+
+    /**
+     * A semicolon ends the statement, whatever follows it, as the last column of a SELECT without FROM
+     *
+     * @param list<array{string, string}> $expected name, orgName
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('statementEndProvider')]
+    public function testSetQueryShouldEndTheSelectListOnASemicolon(string $query, array $expected)
+    {
+        $this->assertSame(
+            $expected,
+            array_map(fn (array $column) => [$column['name'], $column['orgName']], $this->parseColumns($query))
+        );
+    }
+
     public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
     {
         // FOR ends a SELECT without FROM (FOR UPDATE), not COLLATION FOR (...)
