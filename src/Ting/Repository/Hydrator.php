@@ -78,23 +78,25 @@ class Hydrator implements HydratorInterface
     private array $mutableColumns = [];
 
     /**
-     * @var array<string, array<string, string>> alias => column name read => the column of its metadata of the same
-     *                                           name or of another case (see withColumnOfMetadata()), for the current
-     *                                           result
+     * @var array<string, array<string, string|list<string>>> alias => column name read => itself when its metadata
+     *                                                        have a column of that name or none of another case, else
+     *                                                        their columns of another case (see
+     *                                                        withColumnOfMetadata()), for the current result
      */
     private array $columnsOfMetadata = [];
 
     /**
-     * @var array<string, array<string, true>>|null alias => column name => true, the columns of the row being
-     *                                              hydrated, built only when a column falls back to another case
+     * @var array<string, array<string, array<string, true>>>|null alias => lowercase column name => column name =>
+     *                                                             true, the columns of the row being hydrated, built
+     *                                                             only when a column falls back to another case
      */
-    private ?array $exactNamesOfRow = null;
+    private ?array $namesOfRow = null;
 
     /**
      * The state of the results being iterated ($references, $metadataList, $mutableColumns, $columnsOfMetadata): a
      * result read while another is iterated (a hydrator kept as a service) does not change the state of the other
      *
-     * @var \WeakMap<ResultInterface, array{0: array<string, object|null>, 1: array<string, Metadata<object>>, 2: array<string, array<string, string>>, 3: array<string, array<string, string>>}>|null
+     * @var \WeakMap<ResultInterface, array{0: array<string, object|null>, 1: array<string, Metadata<object>>, 2: array<string, array<string, string>>, 3: array<string, array<string, string|list<string>>>}>|null
      */
     private ?\WeakMap $resultStates = null;
 
@@ -196,7 +198,7 @@ class Hydrator implements HydratorInterface
             $this->metadataList,
             $this->mutableColumns,
             $this->columnsOfMetadata,
-            $this->exactNamesOfRow,
+            $this->namesOfRow,
         ] : null;
 
         try {
@@ -238,7 +240,7 @@ class Hydrator implements HydratorInterface
                     $this->metadataList,
                     $this->mutableColumns,
                     $this->columnsOfMetadata,
-                    $this->exactNamesOfRow,
+                    $this->namesOfRow,
                 ] = $stateOfRowBeingHydrated;
             }
         }
@@ -442,7 +444,7 @@ class Hydrator implements HydratorInterface
             );
         }
 
-        $this->exactNamesOfRow = null;
+        $this->namesOfRow = null;
         $result        = [];
         $tmpEntities   = []; // Temporary entity when all properties are null for the moment (LEFT/RIGHT JOIN)
         $validEntities = []; // Entity marked as valid will fill an object
@@ -627,13 +629,15 @@ class Hydrator implements HydratorInterface
     }
 
     /**
-     * The column with the name its metadata give it (orgName): the same, or the only one whose case differs when the
-     * row holds no column of the alias under that exact name (PostgreSQL "Name" and name are two columns)
+     * The column with the name its metadata give it (orgName): the same, or the only column of the metadata whose case
+     * differs that the row does not hold under its exact name (PostgreSQL "Name" and name are two columns); left as
+     * it is when there is none
      *
      * @param Column $column
      * @param Row $columns the row
      * @return Column
-     * @throws HydratorException when several columns of the metadata differ from it only by case
+     * @throws HydratorException when several columns of the metadata may be the column, or when another column of the
+     *                           row matches the same one (a value would be lost)
      */
     private function withColumnOfMetadata(array $column, array $columns): array
     {
@@ -642,21 +646,41 @@ class Hydrator implements HydratorInterface
             return $column;
         }
 
-        $orgName = $this->columnsOfMetadata[$column['table']][$column['orgName']]
-            ??= $metadata->findColumn($column['orgName']) ?? $column['orgName'];
-        if ($orgName !== $column['orgName']) {
-            // Each row on its own columns: a subclass may give hydrateColumns() rows of different columns
-            if ($this->exactNamesOfRow === null) {
-                $this->exactNamesOfRow = [];
-                foreach ($columns as $other) {
-                    $this->exactNamesOfRow[$other['table']][$other['orgName']] = true;
-                }
-            }
-            if (isset($this->exactNamesOfRow[$column['table']][$orgName])) {
-                return $column;
+        $orgName = $column['orgName'];
+        $candidates = $this->columnsOfMetadata[$column['table']][$orgName] ??= (
+            ($found = $metadata->findColumns($orgName)) === [] || $found === [$orgName] ? $orgName : $found
+        );
+        if (\is_string($candidates)) {
+            return $column;
+        }
+
+        // Each row on its own columns: a subclass may give hydrateColumns() rows of different columns
+        if ($this->namesOfRow === null) {
+            $this->namesOfRow = [];
+            foreach ($columns as $other) {
+                $this->namesOfRow[$other['table']][strtolower($other['orgName'])][$other['orgName']] = true;
             }
         }
-        $column['orgName'] = $orgName;
+        $namesOfAnyCase = $this->namesOfRow[$column['table']][strtolower($orgName)] ?? [];
+
+        // A column of the metadata the row holds under its exact name is not this one
+        $candidates = array_values(array_filter(
+            $candidates,
+            static fn (string $candidate): bool => isset($namesOfAnyCase[$candidate]) === false
+        ));
+        if ($candidates === []) {
+            return $column;
+        }
+        if (\count($candidates) > 1) {
+            throw new HydratorException(sprintf(
+                'The column %s of %s matches several columns of its metadata, whose case differs: %s',
+                $orgName,
+                (string) $metadata->getTable(),
+                implode(', ', $candidates)
+            ));
+        }
+
+        $column['orgName'] = $candidates[0];
 
         return $column;
     }
