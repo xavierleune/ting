@@ -798,30 +798,35 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      *
      * @template E of object
      * @param Metadata<E> $metadata
-     * @param bool $withMutableFields false to leave out the mutable fields that are not primary keys (DELETE)
+     * @param bool $withMutableFields false to leave out the fields that are not primary keys (DELETE)
      * @return array<string, array{0: mixed, 1: mixed}> property name => [database value stored before the change
-     *                                                  (the current one when not known), current database value]
+     *                                                  (the current one when not known, or not a primary key),
+     *                                                  current database value]
      */
     private function getChanges(NotifyPropertyInterface $entity, Metadata $metadata, bool $withMutableFields): array
     {
         $changes = [];
+        $primaries = array_column($metadata->getPrimaries(), 'fieldName', 'fieldName');
         foreach ($this->entitiesChanged[$entity] ?? [] as $property => [$oldValue, $newValue]) {
             if ($oldValue === $newValue
                 || $metadata->hasProperty($property) === false
                 || $metadata->isMutable($property)
+                || ($withMutableFields === false && isset($primaries[$property]) === false)
                 // A public typed property not initialized: the column keeps its value
                 || $metadata->isEntityPropertyReadable($entity, $property) === false
             ) {
                 continue;
             }
 
+            $value = $metadata->getEntityPropertyByFieldName($entity, $property);
             $changes[$property] = [
-                $metadata->getDatabaseValueOfProperty($property, $oldValue),
-                $metadata->getEntityPropertyByFieldName($entity, $property),
+                // Only the old value of a primary key is written (it targets the row): that of another field may be
+                // refused by its serializer (a PHP default not read, '' for Ip)
+                isset($primaries[$property]) ? $metadata->getDatabaseValueOfProperty($property, $oldValue) : $value,
+                $value,
             ];
         }
 
-        $primaries = $withMutableFields ? [] : array_column($metadata->getPrimaries(), 'fieldName', 'fieldName');
         $stored = null;
         foreach ($metadata->getMutableProperties() as $property) {
             if ($withMutableFields === false && isset($primaries[$property]) === false) {
