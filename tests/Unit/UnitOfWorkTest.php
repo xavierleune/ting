@@ -1688,6 +1688,42 @@ class UnitOfWorkTest extends TestCase
         );
     }
 
+    /**
+     * Only the old value of a primary key is written (it targets the row): the old value of another field is never
+     * serialized, a serializer refusing it (a PHP default not read, '' for Ip) does not fail the save or the delete
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testTheOldValueOfAFieldThatIsNotAPrimaryKeyShouldNotBeSerialized()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository);
+        $metadata = BouhRepository::initMetadata($this->services->serializerFactory());
+        $metadata->addField([
+            'fieldName'  => 'firstname',
+            'columnName' => 'boo_ip',
+            'type'       => 'int',
+            'serializer' => \CCMBenchmark\Ting\Serializer\Ip::class,
+        ]);
+        $metadataRepository->addMetadata('BouhIpRepository', $metadata);
+
+        $entity = new Bouh();
+        $entity->setId(3);
+        $entity->setFirstname('');
+        $unitOfWork->manage($entity);
+        $entity->setFirstname('10.0.0.1');
+        $unitOfWork->pushSave($entity)->process();
+        $entity->setFirstname('10.0.0.2');
+        $unitOfWork->pushDelete($entity)->process();
+
+        $this->assertSame(
+            [
+                'UPDATE `T_BOUH_BOO` SET `boo_ip` = :v1_boo_ip WHERE `boo_id` = :w1_boo_id',
+                'DELETE FROM `T_BOUH_BOO` WHERE `boo_id` = :w1_boo_id',
+            ],
+            $queries
+        );
+        $this->assertSame([['v1_boo_ip' => 167772161, 'w1_boo_id' => 3], ['w1_boo_id' => 3]], $params);
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testAMutablePrimaryKeyModifiedInPlaceShouldTargetTheRowByItsSourceValue()
     {
