@@ -203,7 +203,12 @@ After a rollback, the rows written in the transaction no longer exist, or no lon
   back): their objects no longer match the database. Pushed again as they are, they **write nothing**: no change is
   left, and setting the same value again is not a change. To retry (after a deadlock, say), read them again and apply
   your changes to the fresh objects. Or `detachAll()` (or `detach()` them) first: no longer managed, they are then
-  saved as [entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field.
+  saved as [entities not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field;
+* **the entities read** in the transaction stay managed too, with the values they were read with: a row inserted or
+  updated in the transaction and read again (another object than the one saved, a hydrator result) no longer exists,
+  or no longer holds those values. Only the objects inserted by the unit of work are told of the rollback: an object
+  read again for a row inserted in the transaction keeps its id, and saving it runs an `UPDATE` that matches no row,
+  silently. Read again, after the rollback, the entities read during a transaction that does not commit.
 
 When the transaction was rolled back because a query of `process()` failed, the entities after that query are still
 queued: call `detachAll()` before pushing the batch again, so that it is written in its order (see
