@@ -131,11 +131,6 @@ class Result implements ResultInterface
      */
     private const AFTER_SUB_QUERY = [')', 'union', 'intersect', 'except', 'order', 'limit', 'offset', 'fetch', 'for'];
 
-    /**
-     * A whole column made of an asterisk: *, alias.* or DISTINCT *
-     */
-    private const ASTERISK_COLUMN = '/^(?:distinct\s+)?(?:(?:"(?:[^"]++|"")*+"|[\w\x80-\xff]++)\s*\.\s*)?\*$/i';
-
     protected ?string $connectionName = null;
     protected ?string $database = null;
     /**
@@ -269,8 +264,8 @@ class Result implements ResultInterface
                     }
                     $cases = 0;
 
-                    // Only a whole column is forbidden: COUNT(*) or 2 * id are not
-                    if (self::match(self::ASTERISK_COLUMN, trim($column))) {
+                    // Only a column expanding to several columns is forbidden: COUNT(*) or 2 * id are not
+                    if (self::isAsteriskColumn($column)) {
                         throw new QueryException('Query invalid: usage of asterisk in column definition is forbidden');
                     }
 
@@ -703,6 +698,50 @@ class Result implements ResultInterface
         }
 
         return [$closing, $subQueries];
+    }
+
+    /**
+     * Whether a column of the select list expands to several columns, as PostgreSQL expands a whole row or the
+     * fields of a composite: *, [schema.]table.*, (composite).*, (f(x)).*, (x)[1].*, even parenthesized or aliased
+     * ((t.*), t.* AS x); not inside an expression (count(*), t.*::text, row_to_json(t.*), 2 * id)
+     */
+    private static function isAsteriskColumn(string $column): bool
+    {
+        $tokens = array_values(array_filter(
+            self::tokenize($column),
+            static fn (string $token): bool => trim($token) !== ''
+        ));
+        $first = strtolower($tokens[0] ?? '') === 'distinct' ? 1 : 0;
+        $end = \count($tokens) - 1;
+
+        // Its alias: AS name, or a name after the asterisk or a parenthesis (but t.* NOTNULL, a test of the row)
+        if ($end > $first && self::isIdentifier($tokens[$end])) {
+            $previous = strtolower($tokens[$end - 1]);
+            if ($previous === 'as') {
+                $end -= 2;
+            } elseif (
+                ($previous === '*' || $previous === ')')
+                && !\in_array(strtolower($tokens[$end]), ['notnull', 'isnull'], true)
+            ) {
+                $end--;
+            }
+        }
+
+        // The parentheses around the whole column
+        [$closing] = self::matchParentheses($tokens);
+        while ($first < $end && $tokens[$first] === '(' && ($closing[$first] ?? null) === $end) {
+            $first++;
+            $end--;
+        }
+
+        if ($first === $end) {
+            return $tokens[$end] === '*';
+        }
+
+        return $end - $first >= 2
+            && $tokens[$end] === '*'
+            && $tokens[$end - 1] === '.'
+            && (self::isIdentifier($tokens[$end - 2]) || $tokens[$end - 2] === ')' || $tokens[$end - 2] === ']');
     }
 
     /**

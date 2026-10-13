@@ -179,7 +179,54 @@ class ResultTest extends TestCase
             'quoted alias star' => ['SELECT "u" . * FROM users u'],
             'star in a CTE query' => ['WITH x AS (SELECT 1 AS a) SELECT * FROM x'],
             'distinct star' => ['SELECT DISTINCT * FROM users'],
+            // The fields of a composite, of a whole row or of a function returning a row: several columns
+            'the fields of a composite column' => ['SELECT p.id, (p.loc).*, p.name FROM people p'],
+            'the fields of a whole row' => ['SELECT (p).* FROM people p'],
+            'the fields of a function call' => ['SELECT (json_populate_record(null::people, j)).* FROM x'],
+            'the fields of a nested function call' => ['SELECT (jsonb_each(x)).*, id FROM t'],
+            'a schema-qualified table star' => ['SELECT public.people.* FROM public.people'],
+            'a star of a subscript' => ['SELECT (p.locs)[1].*, p.id FROM people p'],
+            'a parenthesized alias star' => ['SELECT (p.*), p.id FROM people p'],
+            'a doubly parenthesized star' => ['SELECT ((p).*) FROM people p'],
+            'an aliased alias star' => ['SELECT p.* AS x, p.id FROM people p'],
+            'an alias star with a bare alias' => ['SELECT p.* x FROM people p'],
+            'the fields of a composite with an alias' => ['SELECT (p.loc).* AS l FROM people p'],
+            'a star after comments' => ['SELECT (p.loc) /* a */ . /* b */ * FROM people p'],
         ];
+    }
+
+    public static function oneColumnStarProvider(): array
+    {
+        return [
+            'a cast of a whole row' => ['u.*::text', '?column?'],
+            'a cast of the fields of a composite' => ['(u.loc).*::text', '?column?'],
+            'a parenthesized whole row cast' => ['(u.*)::text', '?column?'],
+            'a function of a whole row' => ['row_to_json(u.*)', 'row_to_json'],
+            'a parenthesized function of a whole row' => ['(row_to_json(u.*))', '?column?'],
+            'ROW() of a whole row' => ['ROW(u.*)', '?column?'],
+            'an array of whole rows' => ['ARRAY[u.*]', '?column?'],
+            'count(*)' => ['count(*)', 'count'],
+            'a multiplication of a number' => ['1.* u.x', '?column?'],
+            'a multiplication of a parenthesized number' => ['(1.*u.x)', '?column?'],
+            'a field of a composite' => ['(u.loc).x', '?column?'],
+            'a test of a whole row' => ['u.* IS NULL', '?column?'],
+            'a postfix test of a whole row' => ['u.* NOTNULL', '?column?'],
+        ];
+    }
+
+    /**
+     * A whole row or the fields of a composite inside an expression is one column
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('oneColumnStarProvider')]
+    public function testSetQueryShouldAcceptAnAsteriskInsideAnExpression(string $expression, string $name)
+    {
+        $this->assertSame(
+            [[$name, $expression, ''], ['id', 'id', 'u']],
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
+                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'])
+            )
+        );
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('asteriskColumnProvider')]
