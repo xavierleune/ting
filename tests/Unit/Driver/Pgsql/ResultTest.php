@@ -361,6 +361,24 @@ class ResultTest extends TestCase
     }
 
     /**
+     * A long run of blanks or comments inside a column is read in linear time (in quadratic time before, the PCRE
+     * limits not counting the attempts at each position: 13 s for 80,000 comments)
+     */
+    public function testSetQueryShouldParseALongRunOfBlanksInAColumnInLinearTime()
+    {
+        $start = hrtime(true);
+        $columns = $this->parseColumns(
+            'SELECT u.id, u.a ' . str_repeat('/* c */ ', 25_000) . str_repeat("-- c\n", 25_000) . '+ 1 AS b'
+            . str_repeat(' ', 50_000) . ', u.x ' . str_repeat(' ', 50_000) . 'c FROM users u',
+            ['users', false, 'users']
+        );
+        $seconds = (hrtime(true) - $start) / 1e9;
+
+        $this->assertSame(['id', 'b', 'c'], array_column($columns, 'name'));
+        $this->assertLessThan(2, $seconds);
+    }
+
+    /**
      * Comments, string literals and quoted identifiers of any size: no PCRE backtrack limit reached
      */
     #[\PHPUnit\Framework\Attributes\DataProvider('largeLiteralProvider')]
