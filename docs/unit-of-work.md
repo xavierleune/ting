@@ -88,17 +88,17 @@ entities left queued **before** the ones pushed ahead of them in the batch (a ch
 batch in its order:
 
 1. call `detachAll()`: the queue is emptied, and no entity is managed any more;
-2. then read again the entities whose primary key is not `autoincrement` (a natural or composite key), and apply your
-   changes to the fresh objects. Read them after `detachAll()`, not before: it would detach the fresh objects too. A
-   detached entity is saved as an [entity not managed](#saving-an-entity-not-managed), by an `UPDATE` of every field
-   when its `autoincrement` property holds its id, but by an `INSERT` otherwise, which fails on a duplicate key when
-   its row exists;
+2. then read again every entity of the batch that was read from the database, and apply your changes to the fresh
+   objects; only the entities built by hand are pushed again as they are. Read them after `detachAll()`, not before:
+   it would detach the fresh objects too. A detached entity is saved as an
+   [entity not managed](#saving-an-entity-not-managed): by an `INSERT` when its key is not `autoincrement`, which
+   fails on a duplicate key when its row exists, and otherwise by an `UPDATE` of every field, which writes its
+   default values over the columns a partial read left out;
 3. correct the failing entity, and push the entities again in the order of the batch:
    * after a rollback (the batch ran in a [transaction](#transactions) rolled back), nothing written before the
      failure is kept: push the whole batch. The entities inserted in the transaction are inserted again;
    * outside a transaction, the writes done before the failure are kept: push the failing entity and the ones after
-     it. Leave out the entities written before the failure, or read them again in step 2 when their key is not
-     `autoincrement` (pushed again once detached, an entity with its `autoincrement` id rewrites its row).
+     it, and leave out the entities written before the failure.
 
 ### Saving an entity not managed
 
