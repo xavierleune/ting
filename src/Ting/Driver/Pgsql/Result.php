@@ -40,8 +40,8 @@ class Result implements ResultInterface
      * A column, table.column, with an optional alias: each part is a quoted identifier (any character, "" for a
      * double quote) or a name, unquoted
      */
-    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]++|"")+"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)\.)?(?P<column>"(?:[^"]++|"")+"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)(?:\s+as\s+(?P<alias>"(?:[^"]++|"")+"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*))?\s*$/i';
-    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")+"|(?<![\w$\x80-\xff])[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)?\s*$/i';
+    public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)\.)?(?P<column>"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)(?:\s+as\s+(?P<alias>"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*))?\s*$/i';
+    public const PARSE_DYNAMIC_COLUMN = '/(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")++"|(?<![\w$\x80-\xff])[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)?\s*$/i';
 
     /**
      * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$, a tag holding non-ASCII letters
