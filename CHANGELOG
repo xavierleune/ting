@@ -154,6 +154,7 @@
     * Docs: the 4.0 section of UPDATE.md, left from 4.0.0-rc.1 and contradicting the code (PHP 8.1, PHPStan level 7, DriverInterface::setTimezone()...), is replaced by a pointer to UPGRADE-4.0.md and to this CHANGELOG
     * Fix a read nested in a setter running during the hydration of a row (a lazy lookup) with the same hydrator (a regression of 4.0): it replaced the state of the row being hydrated, which failed with an Error ("Undefined array key", then getPropertiesNotRead() on null), and with HydratorRelational lost the relations collected so far; the state of the row is now given back once the nested result is read, each result keeping its own identity map (3.x gave the rest of the outer result the entities of the nested one under the same alias)
     * Fix the case-insensitive match of a column when the metadata map several columns differing only by case ("Name" and name) and the row holds each of them under its exact name: a third variant ("NAME") threw a HydratorException; it now goes to the "0" object, and matches the only column of the metadata the row does not hold under its exact name otherwise (a row of "Name" and "NAME" hydrates name from "NAME")
+    * Fix several columns of a row matching the same column of the metadata case-insensitively ("NAME" and "Name" read, name mapped, no column name read): the last one silently overwrote the field; they now throw a HydratorException naming them
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

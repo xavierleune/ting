@@ -664,20 +664,38 @@ class Hydrator implements HydratorInterface
         $namesOfAnyCase = $this->namesOfRow[$column['table']][strtolower($orgName)] ?? [];
 
         // A column of the metadata the row holds under its exact name is not this one
-        $candidates = array_values(array_filter(
-            $candidates,
-            static fn (string $candidate): bool => isset($namesOfAnyCase[$candidate]) === false
-        ));
-        if ($candidates === []) {
+        if (\count($candidates) > 1) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                static fn (string $candidate): bool => isset($namesOfAnyCase[$candidate]) === false
+            ));
+            if (\count($candidates) > 1) {
+                throw new HydratorException(sprintf(
+                    'The column %s of %s matches several columns of its metadata, whose case differs: %s',
+                    $orgName,
+                    (string) $metadata->getTable(),
+                    implode(', ', $candidates)
+                ));
+            }
+        }
+        if ($candidates === [] || isset($namesOfAnyCase[$candidates[0]])) {
             return $column;
         }
-        if (\count($candidates) > 1) {
-            throw new HydratorException(sprintf(
-                'The column %s of %s matches several columns of its metadata, whose case differs: %s',
-                $orgName,
-                (string) $metadata->getTable(),
-                implode(', ', $candidates)
-            ));
+
+        // Every other column of the row falling back on the same one: the value of one of them would be lost
+        if (\count($namesOfAnyCase) > 1) {
+            $fallingBack = array_filter(
+                array_keys($namesOfAnyCase),
+                static fn (string $name): bool => $metadata->hasColumn($name) === false
+            );
+            if (\count($fallingBack) > 1) {
+                throw new HydratorException(sprintf(
+                    'The columns %s of %s match the same column %s of its metadata, whose case differs',
+                    implode(', ', $fallingBack),
+                    (string) $metadata->getTable(),
+                    $candidates[0]
+                ));
+            }
         }
 
         $column['orgName'] = $candidates[0];
