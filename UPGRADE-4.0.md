@@ -476,13 +476,14 @@ PostgreSQL Driver
   - `SELECT id FROM t; SELECT name FROM u` was keyed `id` and is keyed `name`;
   - when the last statement returns no column (`BEGIN; SELECT id FROM t; COMMIT`, `SELECT id FROM t; COMMIT`, or a
     last statement holding a `SELECT`: `SELECT id FROM t; INSERT INTO audit (at) SELECT now()`,
-    `CREATE TABLE ... AS SELECT`, `SELECT ... INTO`),
+    `CREATE TABLE ... AS SELECT`, `SELECT ... INTO`, or a last statement without column: `SELECT 1; SELECT FROM t`),
     `query()` throws a `CCMBenchmark\Ting\Driver\QueryException` "can't parse columns". 3.13 threw a `ValueError`
     (an `\Error`, which `catch (\Exception)` does not catch) when the first `SELECT` reads a plain column
-    (`[table.]column`, aliased or not: `SELECT id FROM t; COMMIT`), and returned an empty collection when it reads only
-    expressions (`BEGIN; SELECT max(id) FROM t; COMMIT`). The statements have already run when it is thrown: a
-    `COMMIT` among them is done. Run the other statements apart (`execute()`, or `startTransaction()` / `commit()`) and
-    read the `SELECT` alone.
+    (`[table.]column`, aliased or not: `SELECT id FROM t; COMMIT`). When it reads only expressions, it returned no row
+    when the last statement returns none (`BEGIN; SELECT max(id) FROM t; COMMIT`), and each row with one column
+    holding `null` when the last statement returns rows without column (`SELECT 1; SELECT FROM t`). The statements
+    have already run when it is thrown: a `COMMIT` among them is done. Run the other statements apart (`execute()`, or
+    `startTransaction()` / `commit()`) and read the `SELECT` alone.
 * If you were using reflection or type checking on internal driver properties, update your code:
 
 ```php
