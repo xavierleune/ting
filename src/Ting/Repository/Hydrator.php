@@ -101,8 +101,9 @@ class Hydrator implements HydratorInterface
     private ?\WeakMap $resultStates = null;
 
     /**
-     * The number of rows being hydrated by hydrateColumns(): above 0, a result read now is read in the hydration of a
-     * row (a setter running a lookup with this hydrator), whose state must be left as it is
+     * The number of rows being hydrated by hydrateColumns() or hydratedRows(): above 0, a result read now is read in the
+     * hydration of a row (a setter running a lookup with this hydrator, or a subclass overriding hydrateColumns()
+     * reading once parent::hydrateColumns() has returned), whose state must be left as it is
      */
     private int $rowsBeingHydrated = 0;
 
@@ -219,9 +220,13 @@ class Hydrator implements HydratorInterface
                 unset($this->resultStates[$result]);
             }
 
+            // Counted here too: a subclass overriding hydrateColumns() may read with this hydrator once
+            // parent::hydrateColumns() has returned, still in the hydration of this row
+            ++$this->rowsBeingHydrated;
             try {
                 $row = $this->hydrateColumns($connectionName, $database, $columns);
             } finally {
+                --$this->rowsBeingHydrated;
                 $this->resultStates[$result] = [
                     $this->references,
                     $this->metadataList,

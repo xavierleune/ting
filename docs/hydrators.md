@@ -468,7 +468,8 @@ $hydrator->identityMap(true);
 The map lives for one result: given a new result (a hydrator kept as a service, reused for another query), the
 hydrator starts an empty map, so a new read returns new objects holding the values read, even for an alias naming
 another table. A result read while another is being iterated (a read nested in the loop, or in a setter the hydrator
-calls while it hydrates a row, a lazy lookup, with the same hydrator) has its own map, and leaves the map, the row being
+calls while it hydrates a row, a lazy lookup, or in the `hydrateColumns()` of a hydrator extending `Hydrator`, before or
+after `parent::hydrateColumns()`, with the same hydrator) has its own map, and leaves the map, the row being
 hydrated and the relations of `HydratorRelational` of the other one alone. An entity the map returns again is managed again if it was
 detached meanwhile. A hydrator only holds the result it was given last, as in 3.x: given to several `getCollection()`
 calls, it hydrates the rows of the last query for each of their collections not iterated yet. Iterate each collection
