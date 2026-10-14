@@ -118,7 +118,9 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   properties. The generated key is then set on the entity (through its setter, see
   [field options](repositories.md#field-options)) and the entity becomes managed. It becomes managed as soon as the
   `INSERT` has run: if reading or setting the generated key fails (a setter that throws, say), the error is rethrown
-  but the entity is not inserted again by its next save. `isNew()` is `true`.
+  but the entity is not inserted again by its next save. `isNew()` is `true`. Setting the generated key is not a
+  change, but a change its setter makes to another field (a slug named after the id, say) was not inserted: it is
+  written by the next save of the entity, as any change (`isPropertyChanged()` reports it).
 
 The `autoincrement` property is read directly, not through its getter, which may refuse an id not generated yet. It is
 read again by `process()`: set to `null` between `pushSave()` and `process()`, the entity is inserted. If the `UPDATE`
