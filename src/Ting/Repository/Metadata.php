@@ -649,9 +649,9 @@ class Metadata
 
     /**
      * @return mixed the value of the autoincrement field: read from the property itself, or through its getter when
-     *               the class declares no property named after the field (reached through getter / setter options
-     *               only); null without autoincrement field, when the property is declared but not initialized, or
-     *               when that getter throws
+     *               it has no value of its own (no property named after the field, reached through getter / setter
+     *               options only; a virtual property; an untyped property unset, served by __get()); null without
+     *               autoincrement field, when the property is typed and not initialized, or when that getter throws
      *
      * @internal
      */
@@ -667,10 +667,18 @@ class Metadata
             return $value;
         }
 
-        // Declared, by the class or one of its parents, but not initialized: no value, whatever its getter returns
+        // Declared, by the class or one of its parents, typed and not initialized: no value, whatever its getter
+        // returns. A virtual property (PHP 8.4 hooks) has no value of its own, and an untyped one without value was
+        // unset (to be served by __get()): both are read through the getter
         for ($class = $entity::class; $class !== false; $class = get_parent_class($class)) {
             if (property_exists($class, $property)) {
-                return null;
+                $reflection = new \ReflectionProperty($class, $property);
+                $virtual = \PHP_VERSION_ID >= 80400
+                    && $reflection->isVirtual(); // @phpstan-ignore method.notFound
+                if ($virtual === false && $reflection->hasType()) {
+                    return null;
+                }
+                break;
             }
         }
 
