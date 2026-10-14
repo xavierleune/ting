@@ -89,7 +89,7 @@ batch in its order:
 
 1. call `detachAll()`: the queue is emptied, and no entity is managed any more. Outside a transaction, before calling
    it, check whether the failing entity, if it was to be inserted, is managed (`isManaged()`): its `INSERT` then ran,
-   and only reading or setting its generated key failed;
+   and only reading or setting its generated key failed (note whether it holds its id, see step 3);
 2. then read again every entity of the batch whose row existed before the batch (read from the database, or built by
    hand and saved earlier), and apply your changes to the fresh objects; only the entities whose row did not exist
    before the batch are pushed again as they are. Read them after `detachAll()`, not before: it would detach the fresh
@@ -100,8 +100,13 @@ batch in its order:
    * after a rollback (the batch ran in a [transaction](#transactions) rolled back), nothing written before the
      failure is kept: push the whole batch. The entities inserted in the transaction are inserted again;
    * outside a transaction, the writes done before the failure are kept: push the failing entity and the ones after
-     it, and leave out the entities written before the failure, as well as a failing entity found managed at step 1
-     (its row is written: pushed again, it would be inserted a second time).
+     it, and leave out the entities written before the failure. A failing entity found managed at step 1 has its row
+     inserted:
+     * if it holds its generated id (its setter set it, then threw), push it again: detached, it is saved by an
+       `UPDATE` of every field, which writes the changes its setter made (kept, see
+       [Saving an entity not managed](#saving-an-entity-not-managed)). Left out, those changes are lost;
+     * if its id is still `null` (reading the generated key failed, or its setter threw before setting it), leave it
+       out: pushed again, it would be inserted a second time.
 
 ### Saving an entity not managed
 
