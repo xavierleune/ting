@@ -144,15 +144,16 @@ class ResultTest extends TestCase
     }
 
     /**
-     * @param array<int, string> $tables pg_field_table() of each column, false when missing
+     * @param array<int, string|false> $tables pg_field_table() of each column, false when missing
+     * @param int $numFields pg_num_fields(): the number of columns of the result, the number of columns expected
      * @return list<array{name: string, orgName: string, table: string, schema: string}>
      */
-    private function parseColumns(string $query, array $tables = []): array
+    private function parseColumns(string $query, array $tables, int $numFields): array
     {
         NativeFunctionMock::override('pg_field_table', fn ($result, $index) => $tables[$index] ?? false);
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_fetch_array', array_fill(0, 20, 'v'));
-        NativeFunctionMock::override('pg_num_fields', self::countColumns($query));
+        NativeFunctionMock::override('pg_num_fields', $numFields);
 
         $result = new Result();
         $result->setConnectionName('connectionName');
@@ -170,32 +171,6 @@ class ResultTest extends TestCase
             ],
             $result->current()
         );
-    }
-
-    /**
-     * The number of columns the parser reads from the query: the result of the server has as many when the parser
-     * reads the query right. It is the number the parser names when the result has none
-     */
-    private static function countColumns(string $query): int
-    {
-        NativeFunctionMock::override('pg_num_fields', -1);
-        $result = new Result();
-        $result->setResult(new PgsqlResult());
-        try {
-            $result->setQuery($query);
-        } catch (QueryException $exception) {
-            $counted = preg_match(
-                '/^Query invalid: (\d+) columns read from the query, but its result has -1:/',
-                $exception->getMessage(),
-                $matches
-            );
-            if ($counted === 1) {
-                return (int) $matches[1];
-            }
-        }
-
-        // The query throws before the columns are counted: it throws again
-        return 0;
     }
 
     public static function asteriskColumnProvider(): array
@@ -261,7 +236,8 @@ class ResultTest extends TestCase
                 $this->parseColumns(
                     'SELECT o.id, o.* IS DISTINCT FROM n.* AS changed, CASE WHEN t.ok THEN t.* END r'
                     . ' FROM t o JOIN t n ON n.id = o.id',
-                    ['t']
+                    ['t'],
+                    3
                 )
             )
         );
@@ -277,7 +253,7 @@ class ResultTest extends TestCase
             [[$name, $expression, ''], ['id', 'id', 'u']],
             array_map(
                 fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
-                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'])
+                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'], 2)
             )
         );
     }
@@ -304,7 +280,7 @@ class ResultTest extends TestCase
                 ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
                 ['name' => 'c', 'orgName' => 'count(*)', 'table' => '', 'schema' => ''],
             ],
-            $this->parseColumns('SELECT id, count(*) AS c FROM users GROUP BY id', ['users'])
+            $this->parseColumns('SELECT id, count(*) AS c FROM users GROUP BY id', ['users'], 2)
         );
     }
 
@@ -312,7 +288,7 @@ class ResultTest extends TestCase
     {
         $this->assertSame(
             [['name' => 'd', 'orgName' => '2 * id', 'table' => '', 'schema' => '']],
-            $this->parseColumns('SELECT 2 * id AS d FROM users')
+            $this->parseColumns('SELECT 2 * id AS d FROM users', [], 1)
         );
     }
 
@@ -323,7 +299,7 @@ class ResultTest extends TestCase
                 ['name' => 'kw', 'orgName' => "'from'", 'table' => '', 'schema' => ''],
                 ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
             ],
-            $this->parseColumns("SELECT 'from' AS kw, id FROM users", [1 => 'users'])
+            $this->parseColumns("SELECT 'from' AS kw, id FROM users", [1 => 'users'], 2)
         );
     }
 
@@ -335,7 +311,11 @@ class ResultTest extends TestCase
                 ['name' => 'id', 'orgName' => 'id', 'table' => 'users', 'schema' => ''],
                 ['name' => 'q', 'orgName' => "'it''s, ok'", 'table' => '', 'schema' => ''],
             ],
-            $this->parseColumns("SELECT name || ', ' || id AS lbl, id, 'it''s, ok' AS q FROM users", [1 => 'users'])
+            $this->parseColumns(
+                "SELECT name || ', ' || id AS lbl, id, 'it''s, ok' AS q FROM users",
+                [1 => 'users'],
+                3
+            )
         );
     }
 
@@ -350,7 +330,8 @@ class ResultTest extends TestCase
             ],
             $this->parseColumns(
                 "SELECT E'a\\', from b' AS e, \$\$x, from y\$\$ AS d, \$tag\$x, ' from\$tag\$ AS t, id FROM users",
-                [3 => 'users']
+                [3 => 'users'],
+                4
             )
         );
     }
@@ -366,7 +347,8 @@ class ResultTest extends TestCase
             ],
             $this->parseColumns(
                 'SELECT $é$, FROM x$é$ AS v, $_ü1$, ) FROM y$_ü1$ AS w, u.id FROM users u',
-                [2 => 'users']
+                [2 => 'users'],
+                3
             )
         );
     }
@@ -423,7 +405,8 @@ class ResultTest extends TestCase
         $columns = $this->parseColumns(
             'SELECT u.id, u.a ' . str_repeat('/* c */ ', 25_000) . str_repeat("-- c\n", 25_000) . '+ 1 AS b'
             . str_repeat(' ', 50_000) . ', u.x ' . str_repeat(' ', 50_000) . 'c FROM users u',
-            ['users', false, 'users']
+            ['users', false, 'users'],
+            3
         );
         $seconds = (hrtime(true) - $start) / 1e9;
 
@@ -441,7 +424,8 @@ class ResultTest extends TestCase
         $columns = $this->parseColumns(
             'SELECT f("' . str_repeat('""', 100_000) . '"), g(\'' . str_repeat('"', 200_000) . '\') AS b, '
             . 'h("' . str_repeat('""', 100_000) . '") "' . str_repeat('""', 100_000) . '", u.id FROM users u',
-            [3 => 'users']
+            [3 => 'users'],
+            4
         );
         $seconds = (hrtime(true) - $start) / 1e9;
 
@@ -455,7 +439,7 @@ class ResultTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('largeLiteralProvider')]
     public function testSetQueryShouldParseLargeLiterals(string $query, string $secondColumn)
     {
-        $columns = $this->parseColumns($query, ['users', 'users']);
+        $columns = $this->parseColumns($query, ['users', 'users'], 2);
 
         $this->assertCount(2, $columns);
         $this->assertSame(['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => ''], $columns[0]);
@@ -471,7 +455,8 @@ class ResultTest extends TestCase
             ],
             $this->parseColumns(
                 "SELECT id, -- the id, then the name from users\n name /* a, b from c */ FROM users",
-                ['users', 'users']
+                ['users', 'users'],
+                2
             )
         );
     }
@@ -496,7 +481,8 @@ class ResultTest extends TestCase
             ],
             $this->parseColumns(
                 'SELECT p.id -- key' . $newline . ', p.name FROM people p -- the people' . $newline . 'WHERE true',
-                ['people', 'people']
+                ['people', 'people'],
+                2
             )
         );
     }
@@ -511,7 +497,8 @@ class ResultTest extends TestCase
             ],
             $this->parseColumns(
                 'SELECT p.id /* old: /* p.code */ , p.legacy /*/ x **/ */, p.name FROM people p /* /* */',
-                ['people', 'people']
+                ['people', 'people'],
+                2
             )
         );
     }
@@ -527,7 +514,8 @@ class ResultTest extends TestCase
             $this->parseColumns(
                 'WITH recent (user_id, nb) AS (SELECT user_id, count(id) FROM books GROUP BY user_id)
                 SELECT u.id, u.name AS n, r.nb AS nb FROM public.users u INNER JOIN recent r ON r.user_id = u.id',
-                ['users', 'users']
+                ['users', 'users'],
+                3
             )
         );
     }
@@ -542,7 +530,8 @@ class ResultTest extends TestCase
             ],
             $this->parseColumns(
                 'SELECT u.id, b.title, name FROM public.users u JOIN "app"."books" AS b ON b.user_id = u.id',
-                ['users', 'books', 'users']
+                ['users', 'books', 'users'],
+                3
             )
         );
     }
@@ -753,7 +742,7 @@ class ResultTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('fromClauseProvider')]
     public function testSetQueryShouldReadTheTablesOfTheFromClause(string $query, array $tables, array $expected)
     {
-        $this->assertSame($expected, $this->parseColumns($query, $tables));
+        $this->assertSame($expected, $this->parseColumns($query, $tables, \count($expected)));
     }
 
     public static function identifierCaseProvider(): array
@@ -801,7 +790,8 @@ class ResultTest extends TestCase
             QueryException::class,
             fn () => $this->parseColumns(
                 'SELECT "U".id, u.name FROM users "U" JOIN users u ON true',
-                ['users', 'users']
+                ['users', 'users'],
+                2
             ),
             'Query invalid: the aliases U and u differ only by case, the key of their row: rename one of them'
         );
@@ -810,7 +800,8 @@ class ResultTest extends TestCase
             QueryException::class,
             fn () => $this->parseColumns(
                 'SELECT u.id, name FROM users u, LATERAL (SELECT "U".name FROM people "U" WHERE "U".id = u.id) x',
-                ['users', 'people']
+                ['users', 'people'],
+                2
             ),
             'Query invalid: the aliases u and U differ only by case, the key of their row: rename one of them'
         );
@@ -861,7 +852,7 @@ class ResultTest extends TestCase
         array $tables,
         array $expected
     ) {
-        $this->assertSame($expected, $this->parseColumns($query, $tables));
+        $this->assertSame($expected, $this->parseColumns($query, $tables, \count($expected)));
     }
 
     public function testSetQueryShouldAcceptAliasesDifferingOnlyByCaseWithoutColumns()
@@ -869,7 +860,7 @@ class ResultTest extends TestCase
         // Only the aliases of the columns read are keys of the row
         $this->assertSame(
             [['name' => 'id', 'orgName' => 'id', 'table' => 'u', 'schema' => '']],
-            $this->parseColumns('SELECT u.id FROM users u JOIN orders "U" ON true', ['users'])
+            $this->parseColumns('SELECT u.id FROM users u JOIN orders "U" ON true', ['users'], 1)
         );
     }
 
@@ -1128,7 +1119,10 @@ class ResultTest extends TestCase
     {
         $this->assertSame(
             $expected,
-            array_map(fn (array $column) => [$column['name'], $column['orgName']], $this->parseColumns($query))
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName']],
+                $this->parseColumns($query, [], \count($expected))
+            )
         );
     }
 
@@ -1171,7 +1165,7 @@ class ResultTest extends TestCase
             $expected,
             array_map(
                 fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
-                $this->parseColumns($query, $tables)
+                $this->parseColumns($query, $tables, \count($expected))
             )
         );
     }
@@ -1233,7 +1227,8 @@ class ResultTest extends TestCase
                 fn (array $column) => [$column['orgName'], $column['table']],
                 $this->parseColumns(
                     'SELECT COLLATION FOR (u.name), u.id, u.name FROM users u',
-                    [false, 'users', 'users']
+                    [false, 'users', 'users'],
+                    3
                 )
             )
         );
@@ -1351,7 +1346,7 @@ class ResultTest extends TestCase
             [[$name, ''], ['id', 'u']],
             array_map(
                 fn (array $column) => [$column['name'], $column['table']],
-                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'])
+                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'], 2)
             )
         );
     }
@@ -1367,7 +1362,7 @@ class ResultTest extends TestCase
             [[$name, ''], ['id', 'u']],
             array_map(
                 fn (array $column) => [$column['name'], $column['table']],
-                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'])
+                $this->parseColumns('SELECT ' . $expression . ', u.id FROM users u', [false, 'users'], 2)
             )
         );
     }
@@ -1379,7 +1374,7 @@ class ResultTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('selectListProvider')]
     public function testSetQueryShouldParseTheSelectList(string $query, array $tables, array $expected)
     {
-        $this->assertSame($expected, $this->parseColumns($query, $tables));
+        $this->assertSame($expected, $this->parseColumns($query, $tables, \count($expected)));
     }
 
     public static function quotedIdentifierProvider(): array
@@ -1424,7 +1419,10 @@ class ResultTest extends TestCase
         // pg_field_table() gives the name of the table, unquoted
         $table = str_contains($query, 'ta:ble') ? 'ta:ble' : 'users';
 
-        $this->assertSame($expected, $this->parseColumns($query, array_fill(0, \count($expected), $table)));
+        $this->assertSame(
+            $expected,
+            $this->parseColumns($query, array_fill(0, \count($expected), $table), \count($expected))
+        );
     }
 
     public function testIterator()
