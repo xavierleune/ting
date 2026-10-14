@@ -60,7 +60,7 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
   setter is not reported, so it is not updated: see [entities](entities.md#tracking-changes). Only the changes written
   are forgotten: saved through a lighter projection, the changes of the fields it does not map wait for a save through
   a repository mapping them.
-* **entity not managed**: updated by its primary key when it holds its id, inserted otherwise. See
+* **entity not managed**: updated by its primary key when it holds its `autoincrement` id, inserted otherwise. See
   [Saving an entity not managed](#saving-an-entity-not-managed).
 * **deleted entity**: it is deleted by its primary key, then detached. An entity that was never inserted (still queued
   for its `INSERT`, not managed and without primary key, or whose `INSERT` was [rolled back](#transactions)) has no row:
@@ -87,18 +87,21 @@ An entity still queued keeps its place when it is pushed again: pushing a failed
 entities left queued **before** the ones pushed ahead of them in the batch (a child before its parent). To retry a
 batch in its order:
 
-1. call `detachAll()`: the queue is emptied, and no entity is managed any more;
-2. then read again every entity of the batch that was read from the database, and apply your changes to the fresh
-   objects; only the entities built by hand are pushed again as they are. Read them after `detachAll()`, not before:
-   it would detach the fresh objects too. A detached entity is saved as an
-   [entity not managed](#saving-an-entity-not-managed): by an `INSERT` when its key is not `autoincrement`, which
-   fails on a duplicate key when its row exists, and otherwise by an `UPDATE` of every field, which writes its
-   default values over the columns a partial read left out;
+1. call `detachAll()`: the queue is emptied, and no entity is managed any more. Outside a transaction, before calling
+   it, check whether the failing entity, if it was to be inserted, is managed (`isManaged()`): its `INSERT` then ran,
+   and only reading or setting its generated key failed;
+2. then read again every entity of the batch whose row existed before the batch (read from the database, or built by
+   hand and saved earlier), and apply your changes to the fresh objects; only the entities whose row did not exist
+   before the batch are pushed again as they are. Read them after `detachAll()`, not before: it would detach the fresh
+   objects too. A detached entity is saved as an [entity not managed](#saving-an-entity-not-managed): by an `INSERT`
+   when it holds no `autoincrement` id, which fails on a duplicate key when its row exists, and otherwise by an
+   `UPDATE` of every field, which writes its default values over the columns a partial read left out;
 3. correct the failing entity, and push the entities again in the order of the batch:
    * after a rollback (the batch ran in a [transaction](#transactions) rolled back), nothing written before the
      failure is kept: push the whole batch. The entities inserted in the transaction are inserted again;
    * outside a transaction, the writes done before the failure are kept: push the failing entity and the ones after
-     it, and leave out the entities written before the failure.
+     it, and leave out the entities written before the failure, as well as a failing entity found managed at step 1
+     (its row is written: pushed again, it would be inserted a second time).
 
 ### Saving an entity not managed
 
@@ -109,7 +112,7 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   already stored. It is updated by its primary key with **every** readable mapped field (the primary key is in the
   `WHERE` clause, uninitialized typed properties are left out), then managed: its next saves write its changes only.
   `isNew()` is `false`;
-* otherwise (no `autoincrement` field, a natural or composite key, the property `null` or not initialized, or no
+* otherwise (no `autoincrement` field, as for a natural key, the property `null` or not initialized, or no
   property named after the `autoincrement` field, reached through `getter` / `setter` options only): the entity is
   new. Every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
   properties. The generated key is then set on the entity (through its setter, see
@@ -248,8 +251,8 @@ rolled back transaction stays managed, as if its row existed: saved again, it wr
 | `isPropertyChanged(NotifyPropertyInterface $entity, string $propertyName)` | the property will be written by the next save of a managed entity: its change was notified, or it is a mutable field, not left out of the read, whose database value differs from the one read or last written |
 
 `isPropertyChanged()` is about managed entities. For an entity not managed (new, detached...), it is `false`: its
-changes are not recorded. Saved, a new entity is inserted whole, and an entity not managed holding its id is updated
-with every field.
+changes are not recorded. Saved, a new entity is inserted whole, and an entity not managed holding its `autoincrement`
+id is updated with every field.
 
 ## Managing an entity yourself
 
@@ -275,8 +278,8 @@ Without `manage()`, saving it would update every field (see
 `detach()` stops tracking an entity: it is no longer managed, its pending changes are forgotten and it is removed from
 the queue. The changes made while it is detached are not tracked, even if it is managed again later. Pushing it again
 with `pushSave()` saves it as an [entity not managed](#saving-an-entity-not-managed): when its `autoincrement`
-property holds its id, every field is updated; when its primary key is not `autoincrement` (a natural or composite
-key), it is inserted, which fails on a duplicate key when its row exists. To update its changes only,
+property holds its id, every field is updated; when its primary key has no `autoincrement` column (a natural key),
+it is inserted, which fails on a duplicate key when its row exists. To update its changes only,
 [manage it](#managing-an-entity-yourself) again before changing it. `detachAll()` does the same for every entity.
 
 Entities are held weakly, but queued entities are not: an entity passed to `pushSave()` or `pushDelete()` stays in
