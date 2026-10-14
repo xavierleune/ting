@@ -362,11 +362,14 @@ class Driver implements
             throw new QueryException(pg_last_error($connection) . ' (Query: ' . $sql . ')');
         }
 
-        // getAffectedRows() reports the last query, prepared or not. Weak: the driver holds the statement
+        // getAffectedRows() reports the last query, prepared or not. ConnectionPool shares the driver, and its
+        // statements, between the connections of a server and database: a result is labeled with the name of the
+        // connection it runs under. Weak: the driver holds the statement
         $driver = \WeakReference::create($this);
         $statement
             ->setConnection($connection)
             ->setQuery($sql)
+            ->setConnectionNameProvider(static fn (): ?string => $driver->get()?->name)
             ->setResultHandler(static function (object $result) use ($driver): void {
                 $driver = $driver->get();
                 if ($driver !== null) {

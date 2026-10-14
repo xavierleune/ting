@@ -60,6 +60,13 @@ class Statement implements StatementInterface
     protected bool $detached = false;
 
     /**
+     * Name of the connection the statement runs under: one driver serves the connections of a server and database
+     * (ConnectionPool), whose names share its prepared statements
+     * @var (\Closure(): ?string)|null
+     */
+    protected ?\Closure $connectionNameProvider = null;
+
+    /**
      * @param string              $statementName
      * @param array<int|string, int> $paramsOrder position of each parameter by name (an integer for a numeric name)
      */
@@ -124,6 +131,20 @@ class Statement implements StatementInterface
     public function setDeallocationRefusedHandler(\Closure $deallocationRefusedHandler): static
     {
         $this->deallocationRefusedHandler = $deallocationRefusedHandler;
+
+        return $this;
+    }
+
+    /**
+     * Label each result with the name the provider gives (the current name of the driver), or with the name the
+     * statement was prepared with when it gives null
+     * @param \Closure(): ?string $connectionNameProvider
+     *
+     * @internal
+     */
+    public function setConnectionNameProvider(\Closure $connectionNameProvider): static
+    {
+        $this->connectionNameProvider = $connectionNameProvider;
 
         return $this;
     }
@@ -215,17 +236,20 @@ class Statement implements StatementInterface
      */
     public function setCollectionWithResult(object $resultResource, CollectionInterface $collection): bool
     {
-        if ($this->query === null) {
+        $query = $this->query;
+        if ($query === null) {
             throw new QueryException(
                 'The prepared statement ' . $this->statementName . ' has no query: it must be prepared by the driver'
             );
         }
 
         $result = new Result();
-        $result->setConnectionName($this->connectionName);
+        $result->setConnectionName(
+            ($this->connectionNameProvider !== null ? ($this->connectionNameProvider)() : null) ?? $this->connectionName
+        );
         $result->setDatabase($this->database);
         $result->setResult($resultResource);
-        $result->setQuery($this->query);
+        $result->setQuery($query);
 
         $collection->set($result);
         return true;

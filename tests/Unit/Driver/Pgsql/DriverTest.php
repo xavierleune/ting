@@ -33,6 +33,7 @@ use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\RollbackListenerInterface;
 use CCMBenchmark\Ting\Repository\Collection;
+use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Driver\Pgsql\Statement;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
@@ -1352,6 +1353,41 @@ class DriverTest extends TestCase
 
         $this->assertNotSame($statement, $driver->prepare($sql));
         $this->assertSame(2, $prepares());
+    }
+
+    public function testAStatementSharedByTwoConnectionNamesShouldLabelItsResultWithTheNameItRunsUnder()
+    {
+        [$driver, $prepares] = $this->connectedDriverCountingPrepares();
+        NativeFunctionMock::override('pg_execute', fn () => new PgsqlResult());
+        NativeFunctionMock::override('pg_num_fields', 1);
+        NativeFunctionMock::override('pg_field_table', 'users');
+        NativeFunctionMock::override('pg_field_name', 'id');
+        $sql = 'SELECT id FROM users WHERE id = :id';
+
+        // ConnectionPool hands the same driver to the connections of a server and database, setting the name of
+        // each one
+        $driver->setName('app');
+        $statement = $driver->prepare($sql);
+        $driver->setName('audit');
+        $this->assertSame($statement, $driver->prepare($sql));
+        $this->assertSame(1, $prepares());
+
+        $connectionName = function () use ($statement): ?string {
+            $collection = $this->createStub(CollectionInterface::class);
+            $collection->method('set')->willReturnCallback(function ($result) use (&$outerResult): void {
+                $outerResult = $result;
+            });
+            $statement->execute(['id' => 1], $collection);
+
+            return $outerResult->getConnectionName();
+        };
+        $this->assertSame('audit', $connectionName());
+        $driver->setName('app');
+        $this->assertSame('app', $connectionName());
+
+        // The driver gone, the statement keeps the name it was prepared with
+        unset($driver);
+        $this->assertSame('app', $connectionName());
     }
 
     public function testReconnectShouldForgetThePreparedStatements()
