@@ -431,6 +431,31 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function lineCommentEndProvider(): array
+    {
+        return [
+            'carriage return' => ["\r"],
+            'carriage return and line feed' => ["\r\n"],
+            'line feed' => ["\n"],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('lineCommentEndProvider')]
+    public function testSetQueryShouldEndALineCommentAtTheEndOfTheLine(string $newline)
+    {
+        // PostgreSQL ends a -- comment at a line feed or a carriage return, alone or not
+        $this->assertSame(
+            [
+                ['name' => 'id', 'orgName' => 'id', 'table' => 'p', 'schema' => ''],
+                ['name' => 'name', 'orgName' => 'name', 'table' => 'p', 'schema' => ''],
+            ],
+            $this->parseColumns(
+                'SELECT p.id -- key' . $newline . ', p.name FROM people p -- the people' . $newline . 'WHERE true',
+                ['people', 'people']
+            )
+        );
+    }
+
     public function testSetQueryShouldIgnoreNestedComments()
     {
         // PostgreSQL nests block comments: the first */ does not end the outer one
