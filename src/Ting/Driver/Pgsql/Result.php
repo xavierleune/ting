@@ -68,6 +68,12 @@ class Result implements ResultInterface
         REGEX;
 
     /**
+     * The blanks of PostgreSQL: space, tab, line feed, carriage return, form feed and vertical tab (trim() does not
+     * strip a form feed)
+     */
+    private const BLANKS = " \t\n\r\f\v";
+
+    /**
      * An unquoted name or a quoted identifier
      */
     private const NAME = '(?:"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)';
@@ -265,7 +271,7 @@ class Result implements ResultInterface
                     if (!$isClosed && $index === $totalTokens - 1 && $token !== ';') {
                         $column .= $tokensWithCase[$index];
                         // The last token of the query, as any other one of the column, ends a CASE before an alias
-                        if ($cases === 0 && $token !== 'end' && trim($token) !== '') {
+                        if ($cases === 0 && $token !== 'end' && !self::isBlank($token)) {
                             $noAlias = false;
                         }
                     }
@@ -305,11 +311,14 @@ class Result implements ResultInterface
                             $columnComponent['alias'] = $matches['alias'];
                         }
                     } else { // Match dynamic column, ie : max(table.column), table.column || table.id, ...
-                        $column = trim($column);
+                        $column = trim($column, self::BLANKS);
                         self::match(self::PARSE_DYNAMIC_COLUMN, $column, $matches);
                         $prefix = $noAlias ? '' : ($matches['prefix'] ?? '');
                         $alias = $noAlias ? '' : ($matches['alias'] ?? '');
-                        $expression = trim(substr($column, 0, \strlen($column) - \strlen($prefix . $alias)));
+                        $expression = trim(
+                            substr($column, 0, \strlen($column) - \strlen($prefix . $alias)),
+                            self::BLANKS
+                        );
 
                         // Without AS, an identifier is an alias only after an operand: in price * qty, NOT flag,
                         // a IS DISTINCT FROM t.b, b::double precision or count(*) OVER w, it ends the expression,
@@ -351,7 +360,7 @@ class Result implements ResultInterface
 
                 $column .= $tokensWithCase[$index];
 
-                if ($cases === 0 && $token !== 'end' && trim($token) !== '') {
+                if ($cases === 0 && $token !== 'end' && !self::isBlank($token)) {
                     $noAlias = false;
                 }
             }
@@ -700,7 +709,7 @@ class Result implements ResultInterface
         $subQueries = [];
         $next = \count($tokens);
         for ($index = $next - 1; $index >= 0; $index--) {
-            if (trim($tokens[$index]) === '') {
+            if (self::isBlank($tokens[$index])) {
                 continue;
             }
             $first = $tokens[$next] ?? '';
@@ -735,7 +744,7 @@ class Result implements ResultInterface
     {
         $tokens = array_values(array_filter(
             self::tokenize($column),
-            static fn (string $token): bool => trim($token) !== ''
+            static fn (string $token): bool => !self::isBlank($token)
         ));
         $first = strtolower($tokens[0] ?? '') === 'distinct' ? 1 : 0;
         $end = \count($tokens) - 1;
@@ -904,7 +913,7 @@ class Result implements ResultInterface
                 }
                 $start = $index + 1;
                 $significant = false;
-            } elseif (trim($token) !== '') {
+            } elseif (!self::isBlank($token)) {
                 $significant = true;
             }
         }
@@ -928,7 +937,7 @@ class Result implements ResultInterface
         foreach ($tokens as $token) {
             if ($token === '(') {
                 $leading++;
-            } elseif (trim($token) !== '') {
+            } elseif (!self::isBlank($token)) {
                 return $token === 'select' ? $leading : 0;
             }
         }
@@ -971,6 +980,14 @@ class Result implements ResultInterface
     }
 
     /**
+     * Whether the token is blank: a comment, replaced by a space, is
+     */
+    private static function isBlank(string $token): bool
+    {
+        return strspn($token, self::BLANKS) === \strlen($token);
+    }
+
+    /**
      * Position of the first token after $index that is not blank (a comment is a blank token)
      *
      * @param list<string> $tokens
@@ -979,7 +996,7 @@ class Result implements ResultInterface
     {
         do {
             $index++;
-        } while (isset($tokens[$index]) && trim($tokens[$index]) === '');
+        } while (isset($tokens[$index]) && self::isBlank($tokens[$index]));
 
         return $index;
     }
@@ -993,7 +1010,7 @@ class Result implements ResultInterface
     {
         do {
             $index--;
-        } while ($index > 0 && trim($tokens[$index]) === '');
+        } while ($index > 0 && self::isBlank($tokens[$index]));
 
         return max($index, 0);
     }
@@ -1009,7 +1026,7 @@ class Result implements ResultInterface
         $froms = [];
         $previous = [];
         foreach ($tokens as $index => $token) {
-            if (trim($token) === '') {
+            if (self::isBlank($token)) {
                 continue;
             }
             if ($token === 'from' && ($previous === ['is', 'distinct'] || $previous === ['not', 'distinct'])) {

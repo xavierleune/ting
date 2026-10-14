@@ -196,6 +196,7 @@ class ResultTest extends TestCase
             'an alias star with a bare alias' => ['SELECT p.* x FROM people p'],
             'the fields of a composite with an alias' => ['SELECT (p.loc).* AS l FROM people p'],
             'a star after comments' => ['SELECT (p.loc) /* a */ . /* b */ * FROM people p'],
+            'a star between form feeds' => ["SELECT\fp.*\fFROM people p"],
         ];
     }
 
@@ -1122,6 +1123,55 @@ class ResultTest extends TestCase
             array_map(
                 fn (array $column) => [$column['name'], $column['orgName']],
                 $this->parseColumns($query, [], \count($expected))
+            )
+        );
+    }
+
+    public static function formFeedProvider(): array
+    {
+        $columns = [['id', 'id', 'p'], ['name', 'name', 'p']];
+
+        return [
+            'a semicolon then a form feed' => ["SELECT p.id, p.name FROM people p;\f", $columns],
+            'a semicolon then a vertical tab' => ["SELECT p.id, p.name FROM people p;\v", $columns],
+            'a form feed before DISTINCT' => ["SELECT\fDISTINCT p.id, p.name FROM people p", $columns],
+            'a form feed around the table' => ["SELECT id, name FROM\fpeople\fp", $columns],
+            'a form feed before a parenthesized main SELECT' => [
+                "(\fSELECT p.id, p.name FROM people p) UNION (SELECT p.id, p.name FROM people p)",
+                $columns,
+            ],
+            'a form feed before an alias named as a clause' => [
+                "SELECT p.id AS\flimit, p.name FROM people p",
+                [['limit', 'id', 'p'], ['name', 'name', 'p']],
+            ],
+            'form feeds in IS DISTINCT FROM' => [
+                "SELECT p.a IS\fDISTINCT\fFROM p.b AS d, p.id FROM people p",
+                [['d', 'p.a IS' . "\f" . 'DISTINCT' . "\f" . 'FROM p.b', ''], ['id', 'id', 'p']],
+            ],
+            'a form feed after a CASE' => [
+                "SELECT CASE WHEN true THEN 1 END\f, p.id FROM people p",
+                [['?column?', 'CASE WHEN true THEN 1 END', ''], ['id', 'id', 'p']],
+            ],
+        ];
+    }
+
+    /**
+     * A form feed and a vertical tab are blanks, as PostgreSQL reads them (space, \t, \n, \r, \f, \v)
+     *
+     * @param list<array{string, string, string}> $expected name, orgName, table
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('formFeedProvider')]
+    public function testSetQueryShouldReadAFormFeedAsABlank(string $query, array $expected)
+    {
+        $this->assertSame(
+            $expected,
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
+                $this->parseColumns(
+                    $query,
+                    array_map(fn (array $column) => $column[2] === '' ? false : 'people', $expected),
+                    \count($expected)
+                )
             )
         );
     }
