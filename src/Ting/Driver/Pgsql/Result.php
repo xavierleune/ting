@@ -367,11 +367,16 @@ class Result implements ResultInterface
             throw new QueryException('Query invalid: can\'t parse columns');
         }
 
-        // The values of a row are matched to the columns by position: a column read from the query that the result
-        // lacks, or one more column in the result, would shift them. A result without column (SELECT ... INTO) has
-        // no value to shift
+        // A result without column (SELECT ... INTO, SELECT FROM t) has no field to read: its rows hold no column
         $numFields = pg_num_fields($resultResource);
-        if ($numFields !== 0 && \count($columnsMatches) !== $numFields) {
+        if ($numFields === 0) {
+            $this->fields = [];
+            return;
+        }
+
+        // The values of a row are matched to the columns by position: a column read from the query that the result
+        // lacks, or one more column in the result, would shift them
+        if (\count($columnsMatches) !== $numFields) {
             throw new QueryException(sprintf(
                 'Query invalid: %d %s read from the query, but its result has %d: the values cannot be matched to '
                 . 'the columns',
