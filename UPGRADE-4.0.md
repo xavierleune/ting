@@ -1011,8 +1011,8 @@ Queries, Entities and the Unit of Work
   row: its `autoincrement` id was left out of the `INSERT`, then replaced by the generated one. When its metadata have
   an `autoincrement` field and that property holds a value other than `null` (read from the property itself, not
   through its getter), it is now updated by its primary key with every readable mapped property, then managed;
-  `isNew()` is `false` for it. With that property `null` or not initialized, or without `autoincrement` field (natural
-  or composite key), it is inserted as before. Check:
+  `isNew()` is `false` for it. With that property `null` or not initialized, or without `autoincrement` field (as for a
+  natural key), it is inserted as before. Check:
   - an id defaulting to `0` (`private int $id = 0;`, or a setter casting `null` to `0`) is an id: declare it nullable,
     `null` by default (`?int $id = null`, `setId(?int $id)`);
   - to duplicate a row, set the `autoincrement` property of the clone to `null` before saving it (or reset it in
