@@ -648,30 +648,64 @@ class Metadata
     }
 
     /**
-     * @return bool true when the metadata have an autoincrement field holding a value other than null: read from the
-     *              property itself, or through its getter when no property is named after the field (reached through
-     *              getter / setter options only); false when that getter throws
+     * @return mixed the value of the autoincrement field: read from the property itself, or through its getter when
+     *               the class declares no property named after the field (reached through getter / setter options
+     *               only); null without autoincrement field, when the property is declared but not initialized, or
+     *               when that getter throws
      *
      * @internal
      */
-    public function hasAutoincrementValueSet(object $entity): bool
+    public function getAutoincrementValue(object $entity): mixed
     {
         if ($this->autoincrement === null) {
-            return false;
+            return null;
         }
 
-        [$exists, $value] = $this->propertyAccessor->getRawValue($entity, $this->autoincrement['fieldName']);
+        $property = $this->autoincrement['fieldName'];
+        [$exists, $value] = $this->propertyAccessor->getRawValue($entity, $property);
         if ($exists) {
-            return $value !== null;
+            return $value;
+        }
+
+        // Declared, by the class or one of its parents, but not initialized: no value, whatever its getter returns
+        for ($class = $entity::class; $class !== false; $class = get_parent_class($class)) {
+            if (property_exists($class, $property)) {
+                return null;
+            }
         }
 
         try {
-            [$readable, $value] = $this->getEntityPropertyIfReadable($entity, $this->autoincrement['fieldName']);
+            [$readable, $value] = $this->getEntityPropertyIfReadable($entity, $property);
         } catch (\Throwable) {
+            return null;
+        }
+
+        return $readable ? $value : null;
+    }
+
+    /**
+     * Tells, once the setter of the autoincrement field threw, whether the entity holds the id of the row inserted:
+     * the value of the field (see getAutoincrementValue()) is not null and either differs from the one read before
+     * the generated id was written back (the setter set it, whatever the type it stores it as), or equals the
+     * generated id (the id held before, such as the one of an INSERT rolled back, is the one generated again)
+     *
+     * @param mixed $before the value of the autoincrement field before the generated id was written back
+     * @param mixed $insertedId the generated id, null when it was not read
+     *
+     * @internal
+     */
+    public function holdsGeneratedId(object $entity, mixed $before, mixed $insertedId): bool
+    {
+        $value = $this->getAutoincrementValue($entity);
+        if ($value === null) {
             return false;
         }
 
-        return $readable && $value !== null;
+        if ($value !== $before || $value === $insertedId) {
+            return true;
+        }
+
+        return \is_scalar($value) && \is_scalar($insertedId) && (string) $value === (string) $insertedId;
     }
 
     /**
@@ -687,12 +721,15 @@ class Metadata
     /**
      * Set the provided value to autoincrement if applicable
      *
+     * @param int|null $insertId set to the generated id once read from the driver, before it is written back
+     * @param-out int|null $insertId
      * @return Metadata<T>|false false without autoincrement
      *
      * @internal
      */
-    public function setEntityPropertyForAutoIncrement(object $entity, DriverInterface $driver): Metadata|false
+    public function setEntityPropertyForAutoIncrement(object $entity, DriverInterface $driver, ?int &$insertId = null): Metadata|false
     {
+        $insertId = null;
         if ($this->autoincrement === null) {
             return false;
         }
