@@ -474,7 +474,9 @@ PostgreSQL Driver
 * **A query of several statements** (`query()` without parameters, which PostgreSQL runs whole, returning the result
   of the last statement) is read by the columns of its last statement, where 3.13 read those of the first one:
   - `SELECT id FROM t; SELECT name FROM u` was keyed `id` and is keyed `name`;
-  - when the last statement returns no column (`BEGIN; SELECT id FROM t; COMMIT`, `SELECT id FROM t; COMMIT`),
+  - when the last statement returns no column (`BEGIN; SELECT id FROM t; COMMIT`, `SELECT id FROM t; COMMIT`, or a
+    last statement holding a `SELECT`: `SELECT id FROM t; INSERT INTO audit (at) SELECT now()`,
+    `CREATE TABLE ... AS SELECT`, `SELECT ... INTO`),
     `query()` throws a `CCMBenchmark\Ting\Driver\QueryException` "can't parse columns", where 3.13 did not throw. The
     statements have already run when it is thrown: a `COMMIT` among them is done. Run the other statements apart
     (`execute()`, or `startTransaction()` / `commit()`) and read the `SELECT` alone.
@@ -964,7 +966,8 @@ Hydrators and Transactions
   `EXPLAIN SELECT a, b ...`), 3.x hydrated each column with the value of another one, or with `null`; 4.0 throws a
   `CCMBenchmark\Ting\Driver\QueryException` naming both numbers (`Query invalid: 3 columns read from the query, but
   its result has 4: ...`) when the collection is built. Run such a query without a collection, or rewrite it. A result
-  without column (`SELECT ... INTO`, `SELECT FROM t`) gives rows without column, or an empty collection.
+  without column of a single statement (`SELECT ... INTO`, `SELECT FROM t`) gives rows without column, or an empty
+  collection.
 * The same case-insensitive fallback applies to MySQL results: a column read as `BOO_NAME` now matches the metadata
   column `boo_name` (MySQL column names are case-insensitive, 3.x left it unhydrated), and a table read as `T_BOUH`
   matches the metadata of `t_bouh` when no metadata has the exact name. Under `lower_case_table_names=0` (Linux

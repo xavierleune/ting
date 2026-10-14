@@ -1281,6 +1281,8 @@ class ResultTest extends TestCase
             'SELECT INTO TEMP' => ['SELECT a, b INTO TEMP x FROM t', 0, []],
             'SELECT INTO' => ['SELECT 1 AS a INTO x', 0, []],
             'SELECT without column' => ['SELECT FROM t', 2, [[], []]],
+            'SELECT INTO ended by a semicolon' => ["SELECT a INTO x FROM t;\n", 0, []],
+            'SELECT INTO after an empty statement' => ['; SELECT a INTO x FROM t', 0, []],
         ];
     }
 
@@ -1315,6 +1317,35 @@ class ResultTest extends TestCase
         $this->assertNull($thrown);
         $this->assertSame([], $types);
         $this->assertSame($expected, $rowsRead);
+    }
+
+    public static function lastStatementWithoutColumnProvider(): array
+    {
+        return [
+            'INSERT ... SELECT' => ['SELECT id FROM people; INSERT INTO audit (at) SELECT now()'],
+            'CREATE TABLE AS' => ['SELECT id FROM people; CREATE TABLE snap AS SELECT id FROM people'],
+            'SELECT INTO' => ['SELECT id FROM people; SELECT id INTO snap FROM people'],
+            'SELECT without column' => ['SELECT id FROM people; SELECT FROM people'],
+        ];
+    }
+
+    /**
+     * The last statement of several, holding a SELECT, returns no column: as one without SELECT (COMMIT), its result
+     * is not read as a result without column
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('lastStatementWithoutColumnProvider')]
+    public function testSetQueryShouldRaiseExceptionWhenTheLastOfSeveralStatementsReturnsNoColumn(string $query)
+    {
+        NativeFunctionMock::override('pg_num_fields', 0);
+
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $result->setQuery($query),
+            'Query invalid: can\'t parse columns'
+        );
     }
 
     public function testSetQueryShouldRaiseExceptionWhenTheLastStatementHasNoColumnAndItsResultNone()
