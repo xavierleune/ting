@@ -1487,6 +1487,40 @@ class ResultTest extends TestCase
             // The dot of a number is no field access: FROM ends the select list
             'a number ending with a dot' => ['SELECT 1. FROM t', [['?column?', '1.', '']]],
             'a number ending with a dot, then FROM' => ['SELECT 1.FROM t', [['?column?', '1.', '']]],
+            'a number ending with a dot, then LIMIT' => ['SELECT 1. LIMIT 1', [['?column?', '1.', '']]],
+            'a number ending with a dot, then UNION' => ['SELECT 1. UNION SELECT 2', [['?column?', '1.', '']]],
+            'a number ending with a dot, then WHERE' => ['SELECT 1. WHERE true', [['?column?', '1.', '']]],
+            'a decimal number, then LIMIT' => ['SELECT 1.5 LIMIT 1', [['?column?', '1.5', '']]],
+            'a number ending with a dot, with an alias' => ['SELECT 1. AS x LIMIT 1', [['x', '1.', '']]],
+            'clause keywords, then FOR UPDATE' => [
+                'SELECT t.limit, t.where, t.into, t.for FROM t FOR UPDATE',
+                [['limit', 'limit', 't'], ['where', 'where', 't'], ['into', 'into', 't'], ['for', 'for', 't']],
+            ],
+            'AS after a field' => ['SELECT t.as AS x, t.id FROM t', [['x', 'as', 't'], ['id', 'id', 't']]],
+            'FROM after the field as' => ['SELECT t.as AS from FROM t', [['from', 'as', 't']]],
+            'FROM after the field as, then a column' => [
+                'SELECT t.as AS from, t.id FROM t',
+                [['from', 'as', 't'], ['id', 'id', 't']],
+            ],
+            'SELECT after the field as' => [
+                'SELECT t.as AS select, t.id FROM t',
+                [['select', 'as', 't'], ['id', 'id', 't']],
+            ],
+            'CASE after the field as' => ['SELECT t.as AS case, t.id FROM t', [['case', 'as', 't'], ['id', 'id', 't']]],
+            'the alias as, then the field as' => [
+                'SELECT u.id AS as, t.as AS from FROM t, t u',
+                [['as', 'id', 'u'], ['from', 'as', 't']],
+            ],
+            'LIMIT after the alias as' => ['SELECT 1 AS as LIMIT 1', [['as', '1', '']]],
+            'WHERE after the alias as' => [
+                'SELECT u.id AS as, u.name AS as WHERE true',
+                [['as', 'id', 'u'], ['as', 'name', 'u']],
+            ],
+            'WITHIN GROUP' => [
+                'SELECT count(*) WITHIN GROUP (ORDER BY a) AS x FROM t',
+                [['x', 'count(*) WITHIN GROUP (ORDER BY a)', '']],
+            ],
+            'COLLATION FOR' => ['SELECT COLLATION FOR (x) AS c FROM t', [['c', 'COLLATION FOR (x)', '']]],
         ];
     }
 

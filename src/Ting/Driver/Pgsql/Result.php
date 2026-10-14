@@ -229,22 +229,23 @@ class Result implements ResultInterface
         $noAlias = false;
         // The last token before the current one that is not blank
         $previous = '';
-        $previousIsAlias = false;
+        // Whether the last token before the current one that is not blank is a name: an AS or a dot read as an
+        // alias or a field (t.as AS from, AS as LIMIT 1) is not followed by one
+        $previousIsName = false;
         $beforePrevious = '';
 
         foreach ($tokens as $index => $token) {
             $before = $previous;
-            $beforeDot = $beforePrevious;
             // Any keyword, reserved included, is a name after AS (AS from, AS case, AS select), unless that AS is
-            // itself an alias (AS as)
-            $isAlias = $before === 'as' && !$previousIsAlias;
+            // itself a name (AS as, t.as)
+            $isAlias = $before === 'as' && !$previousIsName;
+            // A keyword after a dot is a name (t.from), unless the dot ends a number (1. FROM)
+            $isField = $before === '.' && !ctype_digit($beforePrevious[0] ?? '');
             if (!self::isBlank($token)) {
                 $beforePrevious = $previous;
                 $previous = $token;
-                $previousIsAlias = $isAlias;
+                $previousIsName = $isAlias || $isField;
             }
-            // A keyword after a dot is a name (t.from), unless the dot ends a number (1. FROM)
-            $isField = $before === '.' && !ctype_digit($beforeDot[0] ?? '');
             if ($index < $firstColumn) {
                 continue;
             }
@@ -272,7 +273,9 @@ class Result implements ResultInterface
                 $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]) && !$isAlias && !$isField)
                     || (
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
-                        && !\in_array($before, ['.', 'as', ...(self::NOT_A_CLAUSE_AFTER[$token] ?? [])], true)
+                        && !$isField
+                        && !$isAlias
+                        && !\in_array($before, self::NOT_A_CLAUSE_AFTER[$token] ?? [], true)
                     );
                 // The parenthesis closing a parenthesized main SELECT ends its last column
                 $isClosed = $brackets < $selectDepth;
@@ -517,16 +520,17 @@ class Result implements ResultInterface
         [$closing, $subQueries] = self::matchParentheses($tokens);
         // The last token before the current one that is not blank: a keyword after AS is an alias (AS from)
         $previous = '';
-        $previousIsAlias = false;
+        // Whether that token is a name: an alias or a field (AS as, t.as)
+        $previousIsName = false;
         $beforePrevious = '';
 
         foreach ($tokens as $index => $token) {
-            $isAlias = $previous === 'as' && !$previousIsAlias;
+            $isAlias = $previous === 'as' && !$previousIsName;
             $isField = $previous === '.' && !ctype_digit($beforePrevious[0] ?? '');
             if (!self::isBlank($token)) {
                 $beforePrevious = $previous;
                 $previous = $token;
-                $previousIsAlias = $isAlias;
+                $previousIsName = $isAlias || $isField;
             }
             $isJoin = isset($joins[$index]);
             if ($token === '(' || $token === '[') {
