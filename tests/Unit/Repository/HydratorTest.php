@@ -1949,6 +1949,82 @@ class HydratorTest extends TestCase
         $this->assertSame('Inner', $innerRows[0]['x']->getName());
     }
 
+    /**
+     * @return array<string, array{0: list<array{0: string, 1: string}>, 1: string, 2: class-string}>
+     */
+    public static function readAfterParentProvider(): array
+    {
+        return [
+            'same alias, another table' => [[['boo_id', 'T_BOUH_BOO'], ['boo_name', 'T_BOUH_BOO']], 'x', Bouh::class],
+            'same alias, same table and primary key' => [[['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT']], 'x', City::class],
+            'another alias' => [[['boo_id', 'T_BOUH_BOO'], ['boo_name', 'T_BOUH_BOO']], 'b', Bouh::class],
+        ];
+    }
+
+    /**
+     * @param list<array{0: string, 1: string}> $innerColumns
+     * @param class-string $innerClass
+     */
+    #[DataProvider('readAfterParentProvider')]
+    public function testAReadOfASubclassAfterParentHydrateColumnsShouldNotChangeTheResultBeingRead(
+        array $innerColumns,
+        string $innerAlias,
+        string $innerClass
+    ) {
+        $services = new TingServices();
+        $services->metadataRepository()->addMetadata(CityRepository::class, CityRepository::initMetadata($services->serializerFactory()));
+        $services->metadataRepository()->addMetadata(BouhRepository::class, BouhRepository::initMetadata($services->serializerFactory()));
+        // A subclass enriching each row with a read made with the same hydrator, once parent::hydrateColumns() is done
+        $hydrator = new class extends Hydrator {
+            public ?\Closure $lookup = null;
+
+            protected function hydrateColumns(string $connectionName, string $database, array $columns): array
+            {
+                $row = parent::hydrateColumns($connectionName, $database, $columns);
+                $lookup = $this->lookup;
+                if ($lookup !== null) {
+                    $this->lookup = null;
+                    try {
+                        $row['extra'] = $lookup();
+                    } finally {
+                        $this->lookup = $lookup;
+                    }
+                }
+
+                return $row;
+            }
+        };
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->identityMap(true);
+        $hydrator->lookup = function () use ($hydrator, $innerColumns, $innerAlias): ?object {
+            $entity = null;
+            foreach ($hydrator->setResult($this->resultOf($innerColumns, [['1', 'Inner']], $innerAlias)) as $row) {
+                $entity = $row[$innerAlias];
+            }
+
+            return $entity;
+        };
+
+        $outer = $this->resultOf(
+            [['cit_id', 'T_CITY_CIT'], ['cit_name', 'T_CITY_CIT'], ['cit_zipcode', 'T_CITY_CIT']],
+            [['1', 'Paris', '75000'], ['1', 'Paris', '75000'], ['2', 'Lyon', '69000']]
+        );
+        $rows = iterator_to_array($hydrator->setResult($outer)->getIterator());
+
+        $this->assertCount(3, $rows);
+        $this->assertContainsOnlyInstancesOf(City::class, array_column($rows, 'x'));
+        $this->assertSame($rows[0]['x'], $rows[1]['x']);
+        $this->assertNotSame($rows[0]['x'], $rows[2]['x']);
+        $this->assertSame([1, 'Paris', '75000'], [$rows[0]['x']->getId(), $rows[0]['x']->getName(), $rows[0]['x']->getZipcode()]);
+        $this->assertSame([2, 'Lyon', '69000'], [$rows[2]['x']->getId(), $rows[2]['x']->getName(), $rows[2]['x']->getZipcode()]);
+        foreach ($rows as $row) {
+            $this->assertInstanceOf($innerClass, $row['extra']);
+            $this->assertNotSame($rows[0]['x'], $row['extra']);
+            $this->assertSame('Inner', $row['extra']->getName());
+        }
+    }
+
     public function testAnEntityOfTheIdentityMapShouldBeManagedAgainOnceDetached()
     {
         $services = new TingServices();
