@@ -125,8 +125,9 @@ A few rules:
   original value before the save is not updated.
 * A property that never calls `propertyChanged()` is still written on `INSERT`. On a managed entity, the changes of
   an immutable field without notification are never `UPDATE`d, while a [mutable](#mutable-values) field is compared
-  at each save and written when it differs, notified or not. An entity saved while not managed is updated with every
-  field (see [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)).
+  at each save and written when it differs, notified or not. An entity saved while not managed and holding its
+  `autoincrement` id is updated with every field (see
+  [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)).
 * A property notified by `propertyChanged()` but not mapped in the metadata is ignored by the unit of work.
 * Make the `autoincrement` id nullable, `null` by default (`private ?int $id = null;`, `setId(?int $id)`): saved
   without being managed, an entity holding an id (`0` included) is taken as a stored row and updated, one with a
