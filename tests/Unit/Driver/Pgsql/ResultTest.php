@@ -1032,6 +1032,20 @@ class ResultTest extends TestCase
                     ['name' => 'name', 'orgName' => 'lower(name)', 'table' => '', 'schema' => ''],
                 ],
             ],
+            'parenthesized WITH query' => [
+                '(WITH c AS (SELECT 1 AS a, u.id AS b FROM users u) SELECT c.a, p.name FROM c JOIN app.people p ON true)',
+                [false, 'people'],
+                [
+                    ['name' => 'a', 'orgName' => 'a', 'table' => 'c', 'schema' => ''],
+                    ['name' => 'name', 'orgName' => 'name', 'table' => 'p', 'schema' => 'app'],
+                ],
+            ],
+            'parenthesized WITH query in a UNION' => [
+                '((WITH RECURSIVE c (a) AS (SELECT 1 UNION ALL SELECT a + 1 FROM c WHERE a < 3) SELECT c.a AS x FROM c))'
+                . ' UNION ALL (SELECT 2)',
+                [],
+                [['name' => 'x', 'orgName' => 'a', 'table' => 'c', 'schema' => '']],
+            ],
             'aliases named normalized' => [
                 'SELECT u.name normalized, f(x) normalized, x || y normalized, x IS NOT NFKD NORMALIZED FROM users u',
                 ['users'],

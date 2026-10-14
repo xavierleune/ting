@@ -976,7 +976,8 @@ class Result implements ResultInterface
     /**
      * Depth of the parentheses around the main SELECT: 0, unless the query starts with parentheses around a SELECT,
      * as (SELECT ...) UNION ALL (SELECT ...) or (SELECT ... LIMIT 1) UNION ALL SELECT ...: the columns are those of
-     * that first SELECT, as PostgreSQL names them
+     * that first SELECT, as PostgreSQL names them. A WITH query within them, (WITH c AS (...) SELECT ...), has its
+     * main SELECT at their depth, its CTEs deeper
      *
      * @param list<string> $tokens lowercase tokens
      */
@@ -987,7 +988,7 @@ class Result implements ResultInterface
             if ($token === '(') {
                 $leading++;
             } elseif (!self::isBlank($token)) {
-                return $token === 'select' ? $leading : 0;
+                return $token === 'select' || $token === 'with' ? $leading : 0;
             }
         }
 
