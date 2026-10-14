@@ -334,7 +334,8 @@ public function findBooksWithAuthor(): CollectionInterface
 
 Several `mapObjectTo()` calls can chain objects on several levels. When the joined entity is `null` (`LEFT JOIN`
 without match), the method is not called and `$from` is removed from the row all the same, whatever the order of the
-columns in the query.
+columns in the query. When the entity of `$to` is `null`, the method is not called either, `$from` is removed
+from the row (lost for that row, as with `mapAliasTo()`) and `$to` stays `null`.
 
 ### Tables from another database
 
