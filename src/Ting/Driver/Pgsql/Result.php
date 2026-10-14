@@ -206,7 +206,7 @@ class Result implements ResultInterface
 
         $fields = [];
 
-        $tokensWithCase = self::lastStatement(self::tokenize($query));
+        [$tokensWithCase, $severalStatements] = self::lastStatement(self::tokenize($query));
         $tokens = array_map(strtolower(...), $tokensWithCase);
         $comparisonFroms = self::findComparisonFroms($tokens);
         $selectDepth = self::findMainSelectDepth($tokens);
@@ -376,8 +376,13 @@ class Result implements ResultInterface
             throw new QueryException('Query invalid: can\'t parse columns');
         }
 
-        // A result without column (SELECT ... INTO, SELECT FROM t) has no field to read: its rows hold no column
+        // A result without column (SELECT ... INTO, SELECT FROM t) has no field to read: its rows hold no column. The
+        // last of several statements returning no column (INSERT ... SELECT, CREATE TABLE ... AS SELECT, SELECT ...
+        // INTO) throws, as one without SELECT (BEGIN; SELECT ...; COMMIT) does: the columns read are not its own
         $numFields = pg_num_fields($resultResource);
+        if ($numFields === 0 && $severalStatements) {
+            throw new QueryException('Query invalid: can\'t parse columns');
+        }
         if ($numFields === 0) {
             $this->fields = [];
             return;
@@ -896,20 +901,23 @@ class Result implements ResultInterface
 
     /**
      * The tokens of the last statement of the query: pg_query() runs every statement separated by ";" and returns the
-     * result of the last one (a ";" followed by blanks or comments only ends the statement before it)
+     * result of the last one (a ";" followed by blanks or comments only ends the statement before it); and whether
+     * the query holds several statements
      *
      * @param list<string> $tokens
-     * @return list<string>
+     * @return array{list<string>, bool}
      */
     private static function lastStatement(array $tokens): array
     {
         $start = 0;
         $significant = false;
         $statement = $tokens;
+        $statements = 0;
         foreach ($tokens as $index => $token) {
             if ($token === ';') {
                 if ($significant) {
                     $statement = \array_slice($tokens, $start, $index - $start);
+                    $statements++;
                 }
                 $start = $index + 1;
                 $significant = false;
@@ -919,9 +927,10 @@ class Result implements ResultInterface
         }
         if ($significant) {
             $statement = \array_slice($tokens, $start);
+            $statements++;
         }
 
-        return $statement;
+        return [$statement, $statements > 1];
     }
 
     /**
