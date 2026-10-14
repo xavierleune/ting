@@ -471,6 +471,13 @@ PostgreSQL Driver
 * The first parameter of `Driver\Pgsql\Driver::execute()` is renamed `$sql` (was `$originalSQL`), as in
   `DriverInterface` and the Mysqli driver: a call with the named argument `originalSQL:` throws an `Error` (unknown
   named parameter).
+* **A query of several statements** (`query()` without parameters, which PostgreSQL runs whole, returning the result
+  of the last statement) is read by the columns of its last statement, where 3.13 read those of the first one:
+  - `SELECT id FROM t; SELECT name FROM u` was keyed `id` and is keyed `name`;
+  - when the last statement returns no column (`BEGIN; SELECT id FROM t; COMMIT`, `SELECT id FROM t; COMMIT`),
+    `query()` throws a `CCMBenchmark\Ting\Driver\QueryException` "can't parse columns", where 3.13 did not throw. The
+    statements have already run when it is thrown: a `COMMIT` among them is done. Run the other statements apart
+    (`execute()`, or `startTransaction()` / `commit()`) and read the `SELECT` alone.
 * If you were using reflection or type checking on internal driver properties, update your code:
 
 ```php
@@ -918,10 +925,11 @@ Hydrators and Transactions
   and a case variant has metadata of that schema and of the database read; neither the database read alone nor a
   preferred repository chooses a case variant over the exact name. Without metadata of the exact name, the case
   variants are chosen from by the database and the schema read, then by the preferred repository; a
-  `HydratorException` is thrown only when they stay ambiguous, or when several columns of the metadata differ only by
-  case from the column read. The aliases, keys of the row, stay in lowercase; a query reading the columns of two
-  aliases differing only by case (`"U"` and `u`) throws a `QueryException`, where 3.x mixed their columns into one
-  entity. See
+  `HydratorException` is thrown only when they stay ambiguous, when several columns of the metadata differ only by
+  case from the column read, or when several columns of the row fall back onto the same column of the metadata
+  (`"NAME"` and `"Name"` read, `name` mapped and not read: 3.13 put both in the `0` object). The aliases, keys of the
+  row, stay in lowercase; a query reading the columns of two aliases differing only by case (`"U"` and `u`) throws a
+  `QueryException`, where 3.x mixed their columns into one entity. See
   [Case of the table and column names](docs/hydrators.md#case-of-the-table-and-column-names).
 * **PostgreSQL: some keys of the rows change.** The Pgsql driver reads the tables and the aliases of the query as
   PostgreSQL resolves them, and names the columns without alias by its own rule:
@@ -939,6 +947,12 @@ Hydrators and Transactions
     [Columns without metadata](docs/hydrators.md#columns-without-metadata)). This name is the key of the column in the
     `0` object of `Hydrator`, in the arrays of `HydratorArray`, and the property `HydratorValueObject` sets: alias
     every computed expression with `AS` (`price - qty AS total`), as with MySQL, to keep the key you read.
+  - The last name of a `SELECT` without `FROM` (an unquoted alias or keyword) keeps the spelling of the query, where
+    3.13 lowercased it: `SELECT nextval('order_seq') AS nextId` was keyed `nextid` and is `nextId`,
+    `SELECT 1 AS isOk, 2 AS isKo` was `isOk`, `isko` and is `isOk`, `isKo`, `SELECT CURRENT_TIMESTAMP` was
+    `current_timestamp` and is `CURRENT_TIMESTAMP`.
+  - A query of several statements is keyed by the columns of its last statement (`SELECT id FROM t; SELECT name FROM u`
+    was `id`, is `name`): see [PostgreSQL Driver](#postgresql-driver).
   - The alias of a table is the key of its entity also when 3.x lost it: for the last table of a statement ending with
     `;` (`FROM app.users u;`) and for the tables of a FROM list separated by commas (`FROM users u, orders o`,
     `JOIN orders o ON ..., carts c`), the columns without table prefix were keyed by the table name (`users`) or by no
