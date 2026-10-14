@@ -993,7 +993,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 try {
                     $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
                 } catch (\Throwable $exception) {
-                    if ($metadata->hasAutoincrementValue($entity)) {
+                    if ($metadata->hasAutoincrementValueSet($entity)) {
                         // The id is set before the failure: the changes are kept, as when the setter does not throw
                         $this->keepInsertedValues($entity, $metadata, $written);
                     } else {
@@ -1015,10 +1015,11 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     }
 
     /**
-     * The generated id has been written back (even if its setter threw afterwards): the values inserted are the stored ones, but for the autoincrement
-     * field, stored with its generated value (a mutable key: a value object with a serializer of its own). The
-     * generated id is not a change; the changes its setter made to other mapped fields (a slug named after the id...)
-     * were not inserted: they are kept, written by the next save (see markSaved()).
+     * The generated id has been written back (even if its setter threw afterwards): the values inserted are the
+     * stored ones, but for the autoincrement field, stored with its generated value (a mutable key: a value object
+     * with a serializer of its own). The generated id is not a change; the changes its setter made to other mapped
+     * fields (a slug named after the id...) were not inserted: they are kept, written by the next save (see
+     * markSaved()).
      *
      * @template E of object
      * @param Metadata<E> $metadata

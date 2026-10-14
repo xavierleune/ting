@@ -648,6 +648,33 @@ class Metadata
     }
 
     /**
+     * @return bool true when the metadata have an autoincrement field holding a value other than null: read from the
+     *              property itself, or through its getter when no property is named after the field (reached through
+     *              getter / setter options only); false when that getter throws
+     *
+     * @internal
+     */
+    public function hasAutoincrementValueSet(object $entity): bool
+    {
+        if ($this->autoincrement === null) {
+            return false;
+        }
+
+        [$exists, $value] = $this->propertyAccessor->getRawValue($entity, $this->autoincrement['fieldName']);
+        if ($exists) {
+            return $value !== null;
+        }
+
+        try {
+            [$readable, $value] = $this->getEntityPropertyIfReadable($entity, $this->autoincrement['fieldName']);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $readable && $value !== null;
+    }
+
+    /**
      * @return string|null the property of the autoincrement field, null without one
      *
      * @internal

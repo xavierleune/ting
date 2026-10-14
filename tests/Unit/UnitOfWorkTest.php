@@ -853,6 +853,67 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * The autoincrement field is reached through its getter and setter only (stored in another property): the id set
+     * before the setter throws is read through the getter, the changes are kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfAGeneratedIdWithoutPropertyThatThrowsOnceTheIdIsSetShouldBeKept()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = new class () implements NotifyPropertyInterface {
+            use NotifyProperty;
+
+            public bool $throwing = true;
+            public ?int $pk = null;
+            public ?string $name = null;
+
+            public function getId(): ?int
+            {
+                return $this->pk;
+            }
+
+            public function setId(?int $id): void
+            {
+                $this->propertyChanged('id', $this->pk, $id);
+                $this->pk = $id;
+                $this->propertyChanged('name', $this->name, 'item-' . $id);
+                $this->name = 'item-' . $id;
+                if ($this->throwing) {
+                    throw new \LogicException('Forced failure of setId()');
+                }
+            }
+        };
+        $metadata = new Metadata($this->services->serializerFactory());
+        $metadata->setEntity($entity::class);
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setTable('user');
+        $metadata->addField([
+            'primary'       => true,
+            'autoincrement' => true,
+            'fieldName'     => 'id',
+            'columnName'    => 'id',
+            'type'          => 'int',
+            'getter'        => 'getId',
+            'setter'        => 'setId',
+        ]);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'name', 'type' => 'string']);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertSame(1, $entity->getId());
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $entity->throwing = false;
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_name' => 'item-1', 'w1_id' => 1], $params[1]);
+    }
+
+    /**
      * Only the changes of the mapped properties are kept: a property no metadata maps, notified by the setter of the
      * autoincrement property, can never be written
      */
