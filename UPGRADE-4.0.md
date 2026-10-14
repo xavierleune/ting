@@ -1094,7 +1094,9 @@ Two `@internal` members are nevertheless supported for extension, as in 3.x, and
   these 6 arguments), but a repository may **override** it, with the same parameters passed to
   `parent::__construct()` (see "Repository and RepositoryFactory Constructors");
 * the protected `Hydrator::hydrateColumns()`: a hydrator extending `Hydrator` may call it to hydrate a row, as the
-  built-in hydrators do (see [Writing a hydrator](docs/hydrators.md#writing-a-hydrator)).
+  built-in hydrators do (see [Writing a hydrator](docs/hydrators.md#writing-a-hydrator)). A subclass overriding
+  `getIterator()` reads the rows through the protected `hydratedRows()`, which calls it: looping over `$this->result`
+  and calling `hydrateColumns()` itself loses the state of the result on a read nested with the same hydrator.
 
 Elements that became `@internal` in 4.0:
 

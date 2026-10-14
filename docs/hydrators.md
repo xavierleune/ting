@@ -471,7 +471,8 @@ hydrator starts an empty map, so a new read returns new objects holding the valu
 another table. A result read while another is being iterated (a read nested in the loop, or in a setter the hydrator
 calls while it hydrates a row, a lazy lookup, or in the `hydrateColumns()` of a hydrator extending `Hydrator`, before or
 after `parent::hydrateColumns()`, with the same hydrator) has its own map, and leaves the map, the row being
-hydrated and the relations of `HydratorRelational` of the other one alone. An entity the map returns again is managed again if it was
+hydrated and the relations of `HydratorRelational` of the other one alone (a subclass overriding `getIterator()` must
+read the rows through `hydratedRows()` for this, see [Writing a hydrator](#writing-a-hydrator)). An entity the map returns again is managed again if it was
 detached meanwhile. A hydrator only holds the result it was given last, as in 3.x: given to several `getCollection()`
 calls, it hydrates the rows of the last query for each of their collections not iterated yet. Iterate each collection
 before running the next query with the same hydrator, or give each collection its own hydrator. It requires the entity's primary key in the selected columns (every column of a composite
@@ -694,6 +695,22 @@ alias), `orgTable` (table name) and `value` (plus `schema` with PostgreSQL). Ext
 protected `hydrateColumns()` gives you the default hydration of a row to build on, as the built-in hydrators do: it is
 tagged `@internal`, but supported for this use (see "Smaller Changes for Extensions" in
 [UPGRADE-4.0.md](../UPGRADE-4.0.md)).
+
+A subclass overriding `getIterator()` reads the rows through the protected `hydratedRows()` (or
+`parent::getIterator()`), which yields each row hydrated by `hydrateColumns()`, and transforms what it yields. Looping
+over `$this->result` and calling `hydrateColumns()` itself, as 3.x subclasses did, hydrates the rows without the
+state of their result: a read nested with the same hydrator (in the loop, or in a setter, a lazy lookup) then replaces
+the metadata and the identity map of the outer result, whose next rows are hydrated as rows of the nested one
+(entities of the wrong class).
+
+```php
+public function getIterator(): \Generator
+{
+    foreach ($this->hydratedRows() as $key => $row) {
+        yield $key => $this->transform($row);
+    }
+}
+```
 
 Pass an instance to `getCollection()` like any other hydrator. Changes to the interface since 3.x are listed in
 [UPGRADE-4.0.md](../UPGRADE-4.0.md).
