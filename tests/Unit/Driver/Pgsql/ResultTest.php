@@ -1283,6 +1283,12 @@ class ResultTest extends TestCase
             'SELECT without column' => ['SELECT FROM t', 2, [[], []]],
             'SELECT INTO ended by a semicolon' => ["SELECT a INTO x FROM t;\n", 0, []],
             'SELECT INTO after an empty statement' => ['; SELECT a INTO x FROM t', 0, []],
+            // The SELECT after AS is the query of the statement, not an alias
+            'CREATE TABLE AS' => ['CREATE TABLE z AS SELECT u.id, u.name FROM users u', 0, []],
+            'CREATE TEMP TABLE AS' => ['CREATE TEMP TABLE z AS SELECT max(u.id) AS m FROM users u', 0, []],
+            'CREATE MATERIALIZED VIEW' => ['CREATE MATERIALIZED VIEW v AS SELECT 1 AS x', 0, []],
+            'PREPARE' => ['PREPARE p AS SELECT 1 AS x', 0, []],
+            'CREATE TABLE AS then a form feed' => ["CREATE TABLE z AS\fSELECT 1 AS x", 0, []],
         ];
     }
 
@@ -1407,6 +1413,16 @@ class ResultTest extends TestCase
                 'SELECT CASE WHEN p.ok THEN (SELECT 1 AS end) END AS k, p.id FROM people p',
                 [['k', 'CASE WHEN p.ok THEN (SELECT 1 AS end) END', ''], ['id', 'id', 'p']],
             ],
+            'AS as' => ['SELECT u.id AS as FROM people u', [['as', 'id', 'u']]],
+            'AS as twice' => [
+                'SELECT u.id AS as, u.name AS as FROM people u',
+                [['as', 'id', 'u'], ['as', 'name', 'u']],
+            ],
+            'AS case before a CASE' => [
+                'SELECT u.id AS case, CASE WHEN u.a THEN u.b END AS x FROM people u',
+                [['case', 'id', 'u'], ['x', 'CASE WHEN u.a THEN u.b END', '']],
+            ],
+            'the query of EXPLAIN CREATE TABLE AS' => ['EXPLAIN CREATE TABLE z AS SELECT 1 AS x', [['x', '1', '']]],
             'a FROM alias before a qualified column' => [
                 'SELECT id AS from, p.name FROM people p',
                 [['from', 'id', 'p'], ['name', 'name', 'p']],
@@ -1429,6 +1445,66 @@ class ResultTest extends TestCase
                 $this->parseColumns(
                     $query,
                     array_map(fn (array $column) => $column[2] === '' ? false : 'people', $expected),
+                    \count($expected)
+                )
+            )
+        );
+    }
+
+    public static function keywordFieldProvider(): array
+    {
+        return [
+            'FROM' => ['SELECT t.from FROM t', [['from', 'from', 't']]],
+            'FROM then a column' => ['SELECT t.from, t.id FROM t', [['from', 'from', 't'], ['id', 'id', 't']]],
+            'FROM of a quoted table' => ['SELECT "t".from, t.id FROM t', [['from', 'from', 't'], ['id', 'id', 't']]],
+            'FROM with an alias' => ['SELECT t.from AS x, t.id FROM t', [['x', 'from', 't'], ['id', 'id', 't']]],
+            'FROM of a composite' => [
+                'SELECT (u).from, u.id FROM t u',
+                [['?column?', '(u).from', ''], ['id', 'id', 'u']],
+            ],
+            'FROM in a sub-query' => [
+                'SELECT u.id, (SELECT t.from FROM t) AS z FROM t u',
+                [['id', 'id', 'u'], ['z', '(SELECT t.from FROM t)', '']],
+            ],
+            'FROM in a sub-query of WHERE' => [
+                'SELECT u.id FROM t u WHERE u.x IN (SELECT t.from FROM t)',
+                [['id', 'id', 'u']],
+            ],
+            'SELECT' => ['SELECT t.select FROM t', [['select', 'select', 't']]],
+            'CASE' => ['SELECT t.case, t.id FROM t', [['case', 'case', 't'], ['id', 'id', 't']]],
+            'CASE in an expression with an alias' => [
+                'SELECT t.case + 1 x, t.id FROM t',
+                [['x', 't.case + 1', ''], ['id', 'id', 't']],
+            ],
+            'CASE with an alias' => ['SELECT t.case AS x, t.id FROM t', [['x', 'case', 't'], ['id', 'id', 't']]],
+            'END' => ['SELECT t.end, t.id FROM t', [['end', 'end', 't'], ['id', 'id', 't']]],
+            'END inside a CASE' => [
+                'SELECT CASE WHEN t.a THEN t.end END AS x, t.id FROM t',
+                [['x', 'CASE WHEN t.a THEN t.end END', ''], ['id', 'id', 't']],
+            ],
+            'INTO' => ['SELECT t.into, t.id FROM t', [['into', 'into', 't'], ['id', 'id', 't']]],
+            'LIMIT' => ['SELECT t.limit, t.id FROM t', [['limit', 'limit', 't'], ['id', 'id', 't']]],
+            // The dot of a number is no field access: FROM ends the select list
+            'a number ending with a dot' => ['SELECT 1. FROM t', [['?column?', '1.', '']]],
+            'a number ending with a dot, then FROM' => ['SELECT 1.FROM t', [['?column?', '1.', '']]],
+        ];
+    }
+
+    /**
+     * Any keyword, reserved included, is a name after a dot (t.from, a field of PostgreSQL), not a clause
+     *
+     * @param list<array{string, string, string}> $expected name, orgName, table
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('keywordFieldProvider')]
+    public function testSetQueryShouldReadAKeywordAfterADotAsAField(string $query, array $expected)
+    {
+        $this->assertSame(
+            $expected,
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
+                $this->parseColumns(
+                    $query,
+                    array_map(fn (array $column) => $column[2] === '' ? false : 't', $expected),
                     \count($expected)
                 )
             )
