@@ -481,7 +481,8 @@ PostgreSQL Driver
     (an `\Error`, which `catch (\Exception)` does not catch) when the first `SELECT` reads a plain column
     (`[table.]column`, aliased or not: `SELECT id FROM t; COMMIT`). When it reads only expressions, it returned no row
     when the last statement returns none (`BEGIN; SELECT max(id) FROM t; COMMIT`), and each row with one column
-    holding `null` when the last statement returns rows without column (`SELECT 1; SELECT FROM t`). The statements
+    holding `null`, raising an "Undefined array key 0" warning per row, when the last statement returns rows without
+    column (`SELECT 1; SELECT FROM t`). The statements
     have already run when it is thrown: a `COMMIT` among them is done. Run the other statements apart (`execute()`, or
     `startTransaction()` / `commit()`) and read the `SELECT` alone.
 * If you were using reflection or type checking on internal driver properties, update your code:
@@ -976,7 +977,7 @@ Hydrators and Transactions
   Run such a query without a collection, or rewrite it. A result without column of a single statement
   (`SELECT ... INTO`, `SELECT FROM t`) gives rows without column, or an empty collection, where 3.13 threw that
   `ValueError` when it read a plain column (`SELECT a, b INTO TEMP x FROM t`) and gave each row one column holding
-  `null` otherwise (`SELECT FROM t`).
+  `null` otherwise, raising an "Undefined array key 0" warning per row (`SELECT FROM t`).
 * The same case-insensitive fallback applies to MySQL results: a column read as `BOO_NAME` now matches the metadata
   column `boo_name` (MySQL column names are case-insensitive, 3.x left it unhydrated), and a table read as `T_BOUH`
   matches the metadata of `t_bouh` when no metadata has the exact name. Under `lower_case_table_names=0` (Linux

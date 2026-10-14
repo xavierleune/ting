@@ -810,6 +810,49 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * The setter of the autoincrement property sets the id, then changes other fields and throws: the id is set, so
+     * those changes are kept, written by the next save as when it does not throw
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfTheGeneratedIdThatThrowsOnceTheIdIsSetShouldBeWrittenByTheNextSave()
+    {
+        $entity = new class extends Document {
+            public bool $throwing = true;
+
+            public function setId(?int $id): void
+            {
+                parent::setId($id);
+                if ($id !== null && $this->throwing) {
+                    $this->setTitle('item-' . $id);
+                    $this->getPayload()->tags[] = 'new';
+                    throw new \LogicException('Forced failure of setId()');
+                }
+            }
+        };
+        $entity->setPayload((object) ['tags' => []]);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertSame(1, $entity->getId());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'payload'));
+
+        $entity->throwing = false;
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(
+            ['v1_doc_title' => 'item-1', 'v2_doc_payload' => '{"tags":["new"]}', 'w1_doc_id' => 1],
+            $params[1]
+        );
+    }
+
+    /**
      * Only the changes of the mapped properties are kept: a property no metadata maps, notified by the setter of the
      * autoincrement property, can never be written
      */
