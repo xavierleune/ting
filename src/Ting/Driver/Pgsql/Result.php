@@ -134,8 +134,9 @@ class Result implements ResultInterface
     ];
 
     /**
-     * The keywords of a clause that are part of an expression after another keyword, outside of parentheses:
-     * WITHIN GROUP (ORDER BY ...), COLLATION FOR (...)
+     * The keywords of a clause that are part of an expression after another keyword and before a parenthesis,
+     * outside of parentheses: WITHIN GROUP (ORDER BY ...), COLLATION FOR (...); GROUP BY and FOR UPDATE after the
+     * alias within or collation (AS within GROUP BY 1) are clauses
      */
     private const NOT_A_CLAUSE_AFTER = ['group' => ['within'], 'for' => ['collation']];
 
@@ -269,13 +270,16 @@ class Result implements ResultInterface
 
             if ($startCapture) {
                 // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...), ends the select list; not
-                // a name (t.order, AS order, AS from) nor WITHIN GROUP
+                // a name (t.order, AS order, AS from) nor WITHIN GROUP (
                 $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]) && !$isAlias && !$isField)
                     || (
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
                         && !$isField
                         && !$isAlias
-                        && !\in_array($before, self::NOT_A_CLAUSE_AFTER[$token] ?? [], true)
+                        && !(
+                            \in_array($before, self::NOT_A_CLAUSE_AFTER[$token] ?? [], true)
+                            && ($tokens[self::nextSignificant($tokens, $index)] ?? '') === '('
+                        )
                     );
                 // The parenthesis closing a parenthesized main SELECT ends its last column
                 $isClosed = $brackets < $selectDepth;

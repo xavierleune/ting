@@ -1521,6 +1521,26 @@ class ResultTest extends TestCase
                 [['x', 'count(*) WITHIN GROUP (ORDER BY a)', '']],
             ],
             'COLLATION FOR' => ['SELECT COLLATION FOR (x) AS c FROM t', [['c', 'COLLATION FOR (x)', '']]],
+            'WITHIN GROUP, comments between, without FROM' => [
+                "SELECT count(*) WITHIN /* c */ GROUP -- c\n (ORDER BY a) AS x LIMIT 1",
+                [['x', "count(*) WITHIN   GROUP  \n (ORDER BY a)", '']],
+            ],
+            'COLLATION FOR, comments between, without FROM' => [
+                "SELECT COLLATION /* c */ FOR -- c\n (x) AS c LIMIT 1",
+                [['c', "COLLATION   FOR  \n (x)", '']],
+            ],
+            // WITHIN GROUP and COLLATION FOR are followed by a parenthesis: GROUP BY or FOR UPDATE after the alias
+            // within or collation is a clause
+            'GROUP BY after the alias within' => ['SELECT 1 AS within GROUP BY 1', [['within', '1', '']]],
+            'FOR UPDATE after the alias collation' => ['SELECT 1 AS collation FOR UPDATE', [['collation', '1', '']]],
+            'GROUP BY after the alias within, comments between' => [
+                "SELECT 1 AS within /* c */ GROUP -- c\n BY 1",
+                [['within', '1', '']],
+            ],
+            'FOR UPDATE after the alias collation, comments between' => [
+                "SELECT 1 AS collation /* c */ FOR -- c\n UPDATE",
+                [['collation', '1', '']],
+            ],
         ];
     }
 
