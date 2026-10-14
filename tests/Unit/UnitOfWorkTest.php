@@ -780,8 +780,13 @@ class UnitOfWorkTest extends TestCase
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
     }
 
+    /**
+     * The setter of the autoincrement property throws once it changed other fields: the id is not set, so the entity,
+     * managed, has no key to update its row by; the changes are dropped, as the generated id, instead of being written
+     * by an UPDATE matching no row (WHERE doc_id IS NULL) then forgotten
+     */
     #[AllowMockObjectsWithoutExpectations]
-    public function testAChangeMadeByASetterOfTheGeneratedIdThatThrowsShouldBeKept()
+    public function testAChangeMadeByASetterOfTheGeneratedIdThatThrowsShouldNotBeKept()
     {
         $entity = $this->createDocumentNamedByItsId(true);
         $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
@@ -793,10 +798,45 @@ class UnitOfWorkTest extends TestCase
 
         $this->assertTrue($unitOfWork->isManaged($entity));
         $this->assertNull($entity->getId());
+        $this->assertSame('item-1', $entity->getTitle());
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
-        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
-        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
         $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
+     * Only the changes of the mapped properties are kept: a property no metadata maps, notified by the setter of the
+     * autoincrement property, can never be written
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnUnmappedPropertyNotifiedBySettingTheGeneratedIdShouldNotBeReportedAsChanged()
+    {
+        $entity = new class extends Document {
+            public ?string $label = null;
+
+            public function setId(?int $id): void
+            {
+                if ($id !== null) {
+                    $this->propertyChanged('label', $this->label, 'L' . $id);
+                    $this->label = 'L' . $id;
+                }
+                parent::setId($id);
+            }
+        };
+        $entity->setTitle('t');
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(1, $entity->getId());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'label'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
     }
 
     #[AllowMockObjectsWithoutExpectations]
