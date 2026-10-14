@@ -327,7 +327,9 @@ class Driver implements
     }
 
     /**
-     * Prepare the given query against the current connection
+     * Prepare the given query against the current connection. The connections sharing the driver (ConnectionPool:
+     * same server and database) share the statement: its results are labeled with the name of the driver when it
+     * runs (the connection it runs under)
      * @param string $originalSQL
      * @return Statement|StatementInterface
      * @throws QueryException

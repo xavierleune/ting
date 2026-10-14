@@ -384,6 +384,10 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
     }
 
     /**
+     * A statement is prepared once per database: the connections sharing the driver (ConnectionPool) share it. Its
+     * results are labeled with the name of the driver when it runs (the connection it runs under) while the driver is
+     * on its database, with the name it was prepared under otherwise
+     *
      * @param string $sql
      * @return StatementInterface
      * @throws QueryException
@@ -431,9 +435,15 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
         $statement = new Statement($driverStatement, $paramsOrder, $this->name, $database);
         $statement->setLogger($this->logger);
         // ConnectionPool shares the driver, and its statements, between the connections of a server: a result is
-        // labeled with the name of the connection it runs under. Weak: the driver holds the statement
+        // labeled with the name of the connection it runs under, while the driver is on the database of the
+        // statement (a statement kept and run after another connection switched it keeps its own name). Weak: the
+        // driver holds the statement
         $driver = \WeakReference::create($this);
-        $statement->setConnectionNameProvider(static fn (): ?string => $driver->get()?->name);
+        $statement->setConnectionNameProvider(static function () use ($driver, $database): ?string {
+            $driver = $driver->get();
+
+            return $driver !== null && $driver->currentDatabase === $database ? $driver->name : null;
+        });
 
         $this->preparedQueries[$statementName][$database] = $statement;
         $this->connectionStatements ??= new \WeakMap();
