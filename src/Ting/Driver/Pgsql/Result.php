@@ -229,23 +229,31 @@ class Result implements ResultInterface
         $noAlias = false;
         // The last token before the current one that is not blank
         $previous = '';
+        $previousIsAlias = false;
+        $beforePrevious = '';
 
         foreach ($tokens as $index => $token) {
             $before = $previous;
+            $beforeDot = $beforePrevious;
+            // Any keyword, reserved included, is a name after AS (AS from, AS case, AS select), unless that AS is
+            // itself an alias (AS as)
+            $isAlias = $before === 'as' && !$previousIsAlias;
             if (!self::isBlank($token)) {
+                $beforePrevious = $previous;
                 $previous = $token;
+                $previousIsAlias = $isAlias;
             }
-            // Any keyword, reserved included, is a name after AS: AS from, AS case, AS select
-            $isAlias = $before === 'as';
+            // A keyword after a dot is a name (t.from), unless the dot ends a number (1. FROM)
+            $isField = $before === '.' && !ctype_digit($beforeDot[0] ?? '');
             if ($index < $firstColumn) {
                 continue;
             }
 
             // The END of a CASE is no alias: CASE nests
-            if ($token === 'case' && !$isAlias) {
+            if ($token === 'case' && !$isAlias && !$isField) {
                 $noAlias = true;
                 $cases++;
-            } elseif ($token === 'end' && $cases > 0 && !$isAlias) {
+            } elseif ($token === 'end' && $cases > 0 && !$isAlias && !$isField) {
                 $cases--;
             }
 
@@ -261,7 +269,7 @@ class Result implements ResultInterface
             if ($startCapture) {
                 // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...), ends the select list; not
                 // a name (t.order, AS order, AS from) nor WITHIN GROUP
-                $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]) && !$isAlias)
+                $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]) && !$isAlias && !$isField)
                     || (
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
                         && !\in_array($before, ['.', 'as', ...(self::NOT_A_CLAUSE_AFTER[$token] ?? [])], true)
@@ -370,7 +378,7 @@ class Result implements ResultInterface
             }
 
             // The columns of the main SELECT: not those of a sub-query, nor of the CTEs of a WITH query
-            if ($token === 'select' && $brackets === $selectDepth && !$isAlias) {
+            if ($token === 'select' && $brackets === $selectDepth && !($isAlias && $startCapture) && !$isField) {
                 $startCapture = true;
                 $firstColumn = self::findFirstColumn($tokens, $index);
             }
@@ -509,11 +517,16 @@ class Result implements ResultInterface
         [$closing, $subQueries] = self::matchParentheses($tokens);
         // The last token before the current one that is not blank: a keyword after AS is an alias (AS from)
         $previous = '';
+        $previousIsAlias = false;
+        $beforePrevious = '';
 
         foreach ($tokens as $index => $token) {
-            $isAlias = $previous === 'as';
+            $isAlias = $previous === 'as' && !$previousIsAlias;
+            $isField = $previous === '.' && !ctype_digit($beforePrevious[0] ?? '');
             if (!self::isBlank($token)) {
+                $beforePrevious = $previous;
                 $previous = $token;
+                $previousIsAlias = $isAlias;
             }
             $isJoin = isset($joins[$index]);
             if ($token === '(' || $token === '[') {
@@ -546,7 +559,7 @@ class Result implements ResultInterface
             }
 
             $top = array_key_last($states);
-            if ($isAlias) {
+            if (($isAlias && $states[$top] !== self::NO_SELECT) || $isField) {
                 continue;
             }
             if ($token === 'select') {
