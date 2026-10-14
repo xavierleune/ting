@@ -281,7 +281,9 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
 * Logging (`CacheLoggerInterface`): a read is logged as `OPERATION_GET`, flagged as a miss when no cached value was
   served: the value had to be computed (and is stored unless the callback
   sets `$save` to `false`), or the read failed before computing it (a key with a
-  reserved character, a pool throwing). `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
+  reserved character, a pool throwing). On a miss, the read is stopped before the value is computed: its duration
+  does not include the computation (the query of a cached query), and the operations logged meanwhile (a `get()` in
+  the callback) are not nested in it. `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
 * Values stored by doctrine/cache cannot be read by the new pools: expect a cold cache after upgrading.
 
 Util\Debug

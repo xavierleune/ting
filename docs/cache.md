@@ -159,7 +159,9 @@ $cache->delete('stats');
   (cached queries included) or `CacheLoggerInterface::OPERATION_DELETE` for `delete()`;
 * `stopOperation(bool $miss = false)`, where `$miss` is `true` when a `get()` did not serve a cached value: it had to
   compute the value (stored unless the callback sets `$save` to `false`), or it failed before (a key with a reserved character, a pool throwing), without
-  calling the callback.
+  calling the callback. On a miss, `stopOperation(true)` is called before the callback: the operation measures the
+  lookup, not the computation (for a cached query, the query run on the database), and the operations the callback
+  logs (a `get()` of the same cache) come after it, never nested in it.
 
 ```php
 use CCMBenchmark\Ting\Logger\CacheLoggerInterface;

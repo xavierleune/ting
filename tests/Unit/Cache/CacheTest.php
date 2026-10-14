@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\Logger\CacheLoggerInterface;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use Psr\Cache\InvalidArgumentException;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Cache\CacheItem;
 use Symfony\Contracts\Cache\CacheInterface as SymfonyCacheInterface;
 
 class CacheTest extends TestCase
@@ -152,6 +153,115 @@ class CacheTest extends TestCase
         $this->assertThrows(InvalidArgumentException::class, function () use ($cache): void {
             $cache->get('bou{h}', fn () => $this->fail('The callback must not be called'));
         });
+    }
+
+    /**
+     * A logger recording its calls: ['start', operation, keys] and ['stop', miss]
+     *
+     * @return CacheLoggerInterface&object{calls: list<array{0: string, 1: mixed, 2?: mixed}>}
+     */
+    private function recordingLogger(): CacheLoggerInterface
+    {
+        return new class implements CacheLoggerInterface {
+            /** @var list<array{0: string, 1: mixed, 2?: mixed}> */
+            public array $calls = [];
+
+            public function startOperation(string $operation, array|string $keys): void
+            {
+                $this->calls[] = ['start', $operation, $keys];
+            }
+
+            public function stopOperation(bool $miss = false): void
+            {
+                $this->calls[] = ['stop', $miss];
+            }
+        };
+    }
+
+    /**
+     * The read is stopped as a miss before the computation: its duration is the one of the lookup
+     */
+    public function testGetShouldStopTheLogAsAMissBeforeCallingTheCallback()
+    {
+        $logger = $this->recordingLogger();
+        $cache = new Cache();
+        $cache->setCache(new ArrayAdapter());
+        $cache->setLogger($logger);
+        $callsInCallback = null;
+
+        $this->assertSame('computed', $cache->get('bouh', function () use ($logger, &$callsInCallback): string {
+            $callsInCallback = $logger->calls;
+
+            return 'computed';
+        }));
+
+        $expected = [['start', CacheLoggerInterface::OPERATION_GET, 'bouh'], ['stop', true]];
+        $this->assertSame($expected, $callsInCallback);
+        $this->assertSame($expected, $logger->calls);
+    }
+
+    /**
+     * A logger stopping the last operation started reads each operation: they do not nest
+     */
+    public function testGetCalledInTheCallbackOfAnotherShouldBeLoggedAfterIt()
+    {
+        $pool = new ArrayAdapter();
+        $pool->get('inner', fn () => 1);
+        $logger = $this->recordingLogger();
+        $cache = new Cache();
+        $cache->setCache($pool);
+        $cache->setLogger($logger);
+
+        $value = $cache->get('stats', fn (): array => [
+            'inner' => $cache->get('inner', fn () => $this->fail('The callback must not be called on a cache hit')),
+            'other' => $cache->get('other', fn () => 2),
+        ]);
+
+        $this->assertSame(['inner' => 1, 'other' => 2], $value);
+        $this->assertSame([
+            ['start', CacheLoggerInterface::OPERATION_GET, 'stats'],
+            ['stop', true],
+            ['start', CacheLoggerInterface::OPERATION_GET, 'inner'],
+            ['stop', false],
+            ['start', CacheLoggerInterface::OPERATION_GET, 'other'],
+            ['stop', true],
+        ], $logger->calls);
+    }
+
+    public function testGetShouldStopTheLogOnceWhenTheCallbackThrows()
+    {
+        $logger = $this->recordingLogger();
+        $cache = new Cache();
+        $cache->setCache(new ArrayAdapter());
+        $cache->setLogger($logger);
+
+        $this->assertThrows(\RuntimeException::class, function () use ($cache): void {
+            $cache->get('bouh', function (): never {
+                throw new \RuntimeException('Query failed');
+            });
+        }, 'Query failed');
+
+        $this->assertSame([['start', CacheLoggerInterface::OPERATION_GET, 'bouh'], ['stop', true]], $logger->calls);
+    }
+
+    public function testGetShouldStopTheLogOnceWhenThePoolThrowsAfterTheCallback()
+    {
+        $pool = $this->createStub(SymfonyCacheInterface::class);
+        $pool->method('get')->willReturnCallback(function (string $key, callable $callback): never {
+            $save = true;
+            $callback(new CacheItem(), $save);
+            throw new \RuntimeException('Cannot save');
+        });
+        $logger = $this->recordingLogger();
+        $cache = new Cache();
+        $cache->setCache($pool);
+        $cache->setLogger($logger);
+
+        $this->assertThrows(\RuntimeException::class, function () use ($cache): void {
+            $cache->get('bouh', fn () => 'computed');
+        }, 'Cannot save');
+
+        $this->assertSame([['start', CacheLoggerInterface::OPERATION_GET, 'bouh'], ['stop', true]], $logger->calls);
     }
 
     public function testDeleteShouldStopTheLogWhenThePoolThrows()
