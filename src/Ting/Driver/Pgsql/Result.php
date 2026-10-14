@@ -48,13 +48,13 @@ class Result implements ResultInterface
     public const PARSE_DYNAMIC_COLUMN = '/(?!(?<=\s)\s)(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")++"|(?<![\w$\x80-\xff])[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)?\s*$/i';
 
     /**
-     * A token of the query: a comment, a string literal ('...', E'...', $tag$...$tag$, a tag holding non-ASCII letters
-     * too), a quoted identifier, a word (an unquoted identifier holds non-ASCII letters, and $ after its first
-     * character), or any other character
+     * A token of the query: a comment (a -- comment ends at a line feed or a carriage return, a block comment nests),
+     * a string literal ('...', E'...', $tag$...$tag$, a tag holding non-ASCII letters too), a quoted identifier, a word
+     * (an unquoted identifier holds non-ASCII letters, and $ after its first character), or any other character
      */
     private const SQL_TOKEN = <<<'REGEX'
         ~
-            --[^\n]*
+            --[^\n\r]*
           | (?<comment>/\*[^*/]*+(?:(?:/++(?!\*)|/+(?=/\*)|\*++(?!/)|\*+(?=\*/)|(?&comment))[^*/]*+)*+(?:\*/|\z))
           | (?<![\w$\x80-\xff])[eE]'(?:[^'\\]++|\\.|'')*+(?:'|\z)
           | '(?:[^']++|'')*+(?:'|\z)
