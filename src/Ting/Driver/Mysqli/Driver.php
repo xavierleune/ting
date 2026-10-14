@@ -430,6 +430,10 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
 
         $statement = new Statement($driverStatement, $paramsOrder, $this->name, $database);
         $statement->setLogger($this->logger);
+        // ConnectionPool shares the driver, and its statements, between the connections of a server: a result is
+        // labeled with the name of the connection it runs under. Weak: the driver holds the statement
+        $driver = \WeakReference::create($this);
+        $statement->setConnectionNameProvider(static fn (): ?string => $driver->get()?->name);
 
         $this->preparedQueries[$statementName][$database] = $statement;
         $this->connectionStatements ??= new \WeakMap();

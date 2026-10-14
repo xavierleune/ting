@@ -55,6 +55,13 @@ class Statement implements StatementInterface
     protected bool $detached = false;
 
     /**
+     * Name of the connection the statement runs under: one driver serves the connections of a server
+     * (ConnectionPool), whose names share its prepared statements
+     * @var (\Closure(): ?string)|null
+     */
+    protected ?\Closure $connectionNameProvider = null;
+
+    /**
      * @param mysqli_stmt  $driverStatement natively typed object: tests stand in for mysqli_stmt, whose properties
      *                                      cannot be read without a server
      * @param list<string> $paramsOrder parameter names, in the order of the placeholders (a name can repeat)
@@ -138,6 +145,20 @@ class Statement implements StatementInterface
         $this->detached = true;
     }
 
+    /**
+     * Label each result with the name the provider gives (the current name of the driver), or with the name the
+     * statement was prepared with when it gives null
+     * @param \Closure(): ?string $connectionNameProvider
+     *
+     * @internal
+     */
+    public function setConnectionNameProvider(\Closure $connectionNameProvider): static
+    {
+        $this->connectionNameProvider = $connectionNameProvider;
+
+        return $this;
+    }
+
     public function isStale(): bool
     {
         return $this->detached;
@@ -161,7 +182,9 @@ class Statement implements StatementInterface
     public function setCollectionWithResult(object $resultData, CollectionInterface $collection): bool
     {
         $result = new Result();
-        $result->setConnectionName($this->connectionName);
+        $result->setConnectionName(
+            ($this->connectionNameProvider !== null ? ($this->connectionNameProvider)() : null) ?? $this->connectionName
+        );
         $result->setDatabase($this->database);
         $result->setResult($resultData);
         $collection->set($result);

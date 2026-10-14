@@ -730,6 +730,51 @@ class DriverTest extends TestCase
         $this->assertSame('db2', $outerResult->getDatabase());
     }
 
+    public function testAStatementSharedByTwoConnectionNamesShouldLabelItsResultWithTheNameItRunsUnder()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->error = '';
+        $mysqli->method('real_connect')->willReturn(true);
+        $mysqli->method('select_db')->willReturn(true);
+        $mysqli->method('prepare')->willReturnCallback(function () {
+            $statement = $this->createStub(MysqliStatement::class);
+            $statement->errno = 0;
+            $statement->method('get_result')->willReturnCallback(
+                fn () => (new MysqliResult([[1]]))->setFields([])
+            );
+
+            return $statement;
+        });
+
+        // ConnectionPool hands the same driver to the connections of a server, setting the name of each one
+        $driver = new Driver($mysqli);
+        $driver->connect('hostname.test', 'user.test', 'password.test', 1234);
+        $driver->setDatabase('shop');
+        $sql = 'SELECT id FROM users WHERE id = :id';
+
+        $driver->setName('app');
+        $statement = $driver->prepare($sql);
+        $driver->setName('audit');
+        $this->assertSame($statement, $driver->prepare($sql));
+
+        $connectionName = function () use ($statement): ?string {
+            $collection = $this->createStub(CollectionInterface::class);
+            $collection->method('set')->willReturnCallback(function ($result) use (&$outerResult): void {
+                $outerResult = $result;
+            });
+            $statement->execute(['id' => 1], $collection);
+
+            return $outerResult->getConnectionName();
+        };
+        $this->assertSame('audit', $connectionName());
+        $driver->setName('app');
+        $this->assertSame('app', $connectionName());
+
+        // The driver gone, the statement keeps the name it was prepared with
+        unset($driver);
+        $this->assertSame('app', $connectionName());
+    }
+
     public function testReconnectShouldDetachEveryStatementOfTheConnection()
     {
         $connection = function (): Mysqli {
