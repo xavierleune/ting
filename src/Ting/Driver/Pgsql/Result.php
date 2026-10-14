@@ -43,9 +43,11 @@ class Result implements ResultInterface
     public const PARSE_RAW_COLUMN = '/^\s*(?:(?P<table>"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)\.)?(?P<column>"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*)(?:\s+as\s+(?P<alias>"(?:[^"]++|"")++"|[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*))?\s*$/i';
     /**
      * The alias ending an expression, with or without AS. A match never starts inside a run of blanks (the start of
-     * the run matches first): skipping those positions keeps a long run linear
+     * the run matches first), nor at a double quote after two others (the quoted alias starting two quotes before
+     * reads the same pairs of "" then the same characters, and matches first): skipping those positions keeps a long
+     * run linear
      */
-    public const PARSE_DYNAMIC_COLUMN = '/(?!(?<=\s)\s)(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")++"|(?<![\w$\x80-\xff])[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)?\s*$/i';
+    public const PARSE_DYNAMIC_COLUMN = '/(?!(?<=\s)\s)(?!(?<="")")(?<prefix>\s+(as\s+))?(?P<alias>"(?:[^"]++|"")++"|(?<![\w$\x80-\xff])[a-z_\x80-\xff][a-z0-9_$\x80-\xff]*+)?\s*$/i';
 
     /**
      * A token of the query: a comment (a -- comment ends at a line feed or a carriage return, a block comment nests),

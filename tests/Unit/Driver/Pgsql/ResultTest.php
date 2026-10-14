@@ -432,6 +432,24 @@ class ResultTest extends TestCase
     }
 
     /**
+     * A long run of double quotes inside a column, in a quoted identifier or a string literal, is read in linear time
+     * (in quadratic time before: 12 s for 128,000 doubled double quotes)
+     */
+    public function testSetQueryShouldParseALongRunOfDoubleQuotesInAColumnInLinearTime()
+    {
+        $start = hrtime(true);
+        $columns = $this->parseColumns(
+            'SELECT f("' . str_repeat('""', 100_000) . '"), g(\'' . str_repeat('"', 200_000) . '\') AS b, '
+            . 'h("' . str_repeat('""', 100_000) . '") "' . str_repeat('""', 100_000) . '", u.id FROM users u',
+            [3 => 'users']
+        );
+        $seconds = (hrtime(true) - $start) / 1e9;
+
+        $this->assertSame(['f', 'b', str_repeat('"', 100_000), 'id'], array_column($columns, 'name'));
+        $this->assertLessThan(2, $seconds);
+    }
+
+    /**
      * Comments, string literals and quoted identifiers of any size: no PCRE backtrack limit reached
      */
     #[\PHPUnit\Framework\Attributes\DataProvider('largeLiteralProvider')]
