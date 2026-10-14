@@ -770,6 +770,14 @@ class DriverTest extends TestCase
         $driver->setName('app');
         $this->assertSame('app', $connectionName());
 
+        // Run on another database than the driver's: the statement keeps the name it was prepared with
+        $driver->setName('audit');
+        $driver->setDatabase('log');
+        $this->assertSame('app', $connectionName());
+        $driver->setDatabase('shop');
+        $this->assertSame('audit', $connectionName());
+        $driver->setName('app');
+
         // The driver gone, the statement keeps the name it was prepared with
         unset($driver);
         $this->assertSame('app', $connectionName());
