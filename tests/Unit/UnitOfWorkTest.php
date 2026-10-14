@@ -914,6 +914,146 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * Saved again after a rollback, the entity still holds the id of the INSERT rolled back: the setter of the
+     * autoincrement property throws before setting the new id. The id it holds is not the one of its new row, so the
+     * changes made by the setter are dropped instead of being written to the row rolled back (UPDATE WHERE doc_id = 1)
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfTheGeneratedIdThatThrowsBeforeReplacingAnIdRolledBackShouldNotBeKept()
+    {
+        $entity = $this->createDocumentRefusingASecondId();
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver, $insertedId);
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $driver->rollback();
+        $insertedId = 2;
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertSame('t/1/2', $entity->getTitle());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
+     * Saved again after a rollback, the new row is given the id of the INSERT rolled back: the entity holds the id of
+     * its new row although the setter throws before setting it, so the changes it made are kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfTheGeneratedIdThatThrowsShouldBeKeptWhenTheIdRolledBackIsGeneratedAgain()
+    {
+        $entity = $this->createDocumentRefusingASecondId();
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $driver->rollback();
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_doc_title' => 't/1/1', 'w1_doc_id' => 1], $params[2]);
+    }
+
+    /**
+     * The autoincrement property is typed and left uninitialized, its getter returning 0 instead: the setter throws
+     * before setting the id, so the id is not set (the getter is not read: the property exists), and the changes are
+     * dropped instead of being written by an UPDATE WHERE id = 0
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfAnUninitializedGeneratedIdThatThrowsShouldNotBeKept()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = $this->createEntityWithAnUninitializedId(false);
+        $metadata = $this->createIdAndNameMetadata($entity::class);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertSame('item-1', $entity->getName());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
+     * The autoincrement property is typed and left uninitialized until the generated id: set by its setter before it
+     * throws, the changes are kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfAnUninitializedGeneratedIdThatThrowsOnceTheIdIsSetShouldBeKept()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = $this->createEntityWithAnUninitializedId(true);
+        $metadata = $this->createIdAndNameMetadata($entity::class);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_name' => 'item-1', 'w1_id' => 1], $params[1]);
+    }
+
+    /**
+     * The autoincrement field is reached through its getter and setter only, the getter returning 0 before the id is
+     * generated: the setter throws before setting the id, the getter still returns 0, so the changes are dropped
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfAGeneratedIdWithoutPropertyThatThrowsBeforeSettingItShouldNotBeKept()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = new class () implements NotifyPropertyInterface {
+            use NotifyProperty;
+
+            public int $pk = 0;
+            public ?string $name = null;
+
+            public function getId(): int
+            {
+                return $this->pk;
+            }
+
+            public function setId(int $id): void
+            {
+                $this->propertyChanged('name', $this->name, 'item-' . $id);
+                $this->name = 'item-' . $id;
+                throw new \LogicException('Forced failure of setId()');
+            }
+        };
+        $metadata = $this->createIdAndNameMetadata($entity::class, ['getter' => 'getId', 'setter' => 'setId']);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
      * Only the changes of the mapped properties are kept: a property no metadata maps, notified by the setter of the
      * autoincrement property, can never be written
      */
@@ -2256,6 +2396,100 @@ class UnitOfWorkTest extends TestCase
         return $entity;
     }
 
+    /**
+     * A Document whose setter of the id names it after the id, then refuses an id when it already holds one
+     */
+    private function createDocumentRefusingASecondId(): Document
+    {
+        $entity = new class extends Document {
+            public function setId(?int $id): void
+            {
+                if ($id !== null) {
+                    $this->setTitle($this->getTitle() . '/' . $id);
+                    if ($this->getId() !== null) {
+                        throw new \LogicException('Forced failure of setId()');
+                    }
+                }
+
+                parent::setId($id);
+            }
+        };
+        $entity->setTitle('t');
+
+        return $entity;
+    }
+
+    /**
+     * An entity whose typed id property is left uninitialized, read as 0 by its getter: its setter names it after the
+     * id, then throws, once the id is set ($setFirst) or before
+     */
+    private function createEntityWithAnUninitializedId(bool $setFirst): NotifyPropertyInterface
+    {
+        return new class ($setFirst) implements NotifyPropertyInterface {
+            use NotifyProperty;
+
+            private int $id;
+            private ?string $name = 'n';
+
+            public function __construct(private readonly bool $setFirst)
+            {
+            }
+
+            public function getId(): int
+            {
+                return $this->id ?? 0;
+            }
+
+            public function setId(int $id): void
+            {
+                if ($this->setFirst) {
+                    $this->propertyChanged('id', null, $id);
+                    $this->id = $id;
+                }
+                $this->propertyChanged('name', $this->name, 'item-' . $id);
+                $this->name = 'item-' . $id;
+                throw new \LogicException('Forced failure of setId()');
+            }
+
+            public function getName(): ?string
+            {
+                return $this->name;
+            }
+
+            public function setName(?string $name): void
+            {
+                $this->propertyChanged('name', $this->name, $name);
+                $this->name = $name;
+            }
+        };
+    }
+
+    /**
+     * Metadata of the given class: an autoincrement field "id" (with the given options), and a field "name"
+     *
+     * @param class-string $class
+     * @param array<string, string> $idOptions
+     * @return Metadata<object>
+     */
+    private function createIdAndNameMetadata(string $class, array $idOptions = []): Metadata
+    {
+        $metadata = new Metadata($this->services->serializerFactory());
+        $metadata->setEntity($class);
+        $metadata->setConnectionName('main');
+        $metadata->setDatabase('bouh_world');
+        $metadata->setTable('user');
+        $metadata->addField([
+            'primary'       => true,
+            'autoincrement' => true,
+            'fieldName'     => 'id',
+            'columnName'    => 'id',
+            'type'          => 'int',
+        ] + $idOptions);
+        $metadata->addField(['fieldName' => 'name', 'columnName' => 'name', 'type' => 'string']);
+
+        return $metadata;
+    }
+
     private function createSlot(string $day): Slot
     {
         $entity = new Slot();
@@ -2512,9 +2746,12 @@ class UnitOfWorkTest extends TestCase
         ?array &$closed,
         ?array &$params = null,
         ?MetadataRepository &$metadataRepository = null,
-        ?Driver &$driver = null
+        ?Driver &$driver = null,
+        ?int &$insertedId = null
     ): UnitOfWork {
         $queries = [];
+        // The id generated by the next INSERT
+        $insertedId = 1;
         $closed = [];
         $params = [];
         $metadataRepository = new MetadataRepository($this->services->serializerFactory());
@@ -2531,12 +2768,12 @@ class UnitOfWorkTest extends TestCase
             ->setConstructorArgs([$this->createStub(FakeMysqli::class)])
             ->onlyMethods(['getInsertedId', 'closeStatement'])
             ->getMock();
-        $driver->method('getInsertedId')->willReturnCallback(function () use (&$failOn): int {
+        $driver->method('getInsertedId')->willReturnCallback(function () use (&$failOn, &$insertedId): int {
             if ($failOn === 'getInsertedId') {
                 throw new QueryException('Forced failure of getInsertedId()');
             }
 
-            return 1;
+            return $insertedId;
         });
         $driver->method('closeStatement')->willReturnCallback(function (string $statement) use (&$closed): void {
             $closed[] = $statement;

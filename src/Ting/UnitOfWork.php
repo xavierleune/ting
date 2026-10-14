@@ -990,16 +990,20 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 // The INSERT wrote every value: no change left, and the values of the mutable fields are stored
                 $this->entitiesChanged->offsetUnset($entity);
                 $written = $metadata->getEntityMutableValues($entity);
+                // Read before the generated id is written back: an id held already (the one of an INSERT rolled back)
+                // is not the one of the row inserted
+                $idBefore = $metadata->getAutoincrementValue($entity);
+                $insertedId = null;
                 try {
-                    $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
+                    $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary(), $insertedId);
                 } catch (\Throwable $exception) {
-                    if ($metadata->hasAutoincrementValueSet($entity)) {
+                    if ($metadata->holdsGeneratedId($entity, $idBefore, $insertedId)) {
                         // The id is set before the failure: the changes are kept, as when the setter does not throw
                         $this->keepInsertedValues($entity, $metadata, $written);
                     } else {
-                        // The id is not set: the entity has no key its row can be updated by. The changes made
-                        // before the failure are dropped, and the current values of the mutable fields are the
-                        // stored ones
+                        // The id is not set (or is still the one held before): the entity has no key its row can be
+                        // updated by. The changes made before the failure are dropped, and the current values of the
+                        // mutable fields are the stored ones
                         $this->entitiesChanged->offsetUnset($entity);
                         $this->keepMutableValues($entity, $metadata);
                     }
