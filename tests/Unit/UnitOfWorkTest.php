@@ -44,6 +44,7 @@ use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use tests\fixtures\Fake\Mysqli as FakeMysqli;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Account;
@@ -58,6 +59,7 @@ use tests\fixtures\model\Order;
 use tests\fixtures\model\PrimaryOnMultiField;
 use tests\fixtures\model\Slot;
 use tests\fixtures\model\SlotRepository;
+use tests\fixtures\model\VirtualIdEntity;
 
 class UnitOfWorkTest extends TestCase
 {
@@ -1051,6 +1053,96 @@ class UnitOfWorkTest extends TestCase
         $unitOfWork->pushSave($entity, $metadata)->process();
 
         $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
+     * The autoincrement property is virtual (PHP 8.4 hooks), its value kept in another property: it has no raw value,
+     * so it is read through its getter. Set before its hook throws, the changes are kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    #[RequiresPhp('>= 8.4.0')]
+    public function testAChangeMadeByASetterOfAVirtualGeneratedIdThatThrowsOnceTheIdIsSetShouldBeKept()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = new VirtualIdEntity();
+        $metadata = $this->createIdAndNameMetadata(VirtualIdEntity::class, ['getter' => 'getId', 'setter' => 'setId']);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertSame(1, $entity->id);
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $entity->throwing = false;
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_name' => 'item-1', 'w1_id' => 1], $params[1]);
+    }
+
+    /**
+     * The autoincrement property is unset by the constructor, so that __get() serves it: it has no raw value, so it is
+     * read through its getter. Set before the setter throws, the changes are kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfAGeneratedIdServedByMagicMethodsThatThrowsOnceTheIdIsSetShouldBeKept()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = new class () implements NotifyPropertyInterface {
+            use NotifyProperty;
+
+            public bool $throwing = true;
+            /** @var int|null */
+            public $id;
+            public ?string $name = null;
+            /** @var array<string, mixed> */
+            private array $data = [];
+
+            public function __construct()
+            {
+                unset($this->id);
+            }
+
+            public function __get(string $name): mixed
+            {
+                return $this->data[$name] ?? null;
+            }
+
+            public function __set(string $name, mixed $value): void
+            {
+                $this->data[$name] = $value;
+            }
+
+            public function getId(): ?int
+            {
+                return $this->id;
+            }
+
+            public function setId(?int $id): void
+            {
+                $this->id = $id;
+                $this->propertyChanged('name', $this->name, 'item-' . $id);
+                $this->name = 'item-' . $id;
+                if ($this->throwing) {
+                    throw new \LogicException('Forced failure of setId()');
+                }
+            }
+        };
+        $metadata = $this->createIdAndNameMetadata($entity::class, ['getter' => 'getId', 'setter' => 'setId']);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertSame(1, $entity->getId());
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $entity->throwing = false;
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_name' => 'item-1', 'w1_id' => 1], $params[1]);
     }
 
     /**

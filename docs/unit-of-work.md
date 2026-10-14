@@ -130,7 +130,8 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   are not kept: the entity holds no id of its new row to update it by. The id counts as set when it is not `null` and
   differs from the one held before the `INSERT`, or equals the generated one: an id kept from an `INSERT` rolled back
   is not the id of the new row, and a typed property not initialized holds no id, whatever its getter returns (an id
-  reached through its getter only, with no property named after it, is read through it, before and after). Retry as
+  with no value of its own, with no property named after it, a virtual property or an untyped property unset to be
+  served by `__get()`, is read through its getter, before and after). Retry as
   described in [Retrying a failed batch](#retrying-a-failed-batch).
 
 The `autoincrement` property is read directly, not through its getter, which may refuse an id not generated yet. It is
