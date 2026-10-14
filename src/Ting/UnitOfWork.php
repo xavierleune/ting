@@ -992,9 +992,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 $written = $metadata->getEntityMutableValues($entity);
                 try {
                     $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
-                } finally {
-                    $this->keepInsertedValues($entity, $metadata, $written);
+                } catch (\Throwable $exception) {
+                    // The id is not set: the entity has no key its row can be updated by. The changes made before
+                    // the failure are dropped, and the current values of the mutable fields are the stored ones
+                    $this->entitiesChanged->offsetUnset($entity);
+                    $this->keepMutableValues($entity, $metadata);
+
+                    throw $exception;
                 }
+                $this->keepInsertedValues($entity, $metadata, $written);
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
@@ -1003,10 +1009,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     }
 
     /**
-     * The generated id has been written back (or failed to): the values inserted are the stored ones, but for the
-     * autoincrement field, stored with its generated value (a mutable key: a value object with a serializer of its
-     * own). The generated id is not a change; the changes its setter made to other fields (a slug named after the
-     * id...) were not inserted: they are kept, written by the next save.
+     * The generated id has been written back: the values inserted are the stored ones, but for the autoincrement
+     * field, stored with its generated value (a mutable key: a value object with a serializer of its own). The
+     * generated id is not a change; the changes its setter made to other mapped fields (a slug named after the id...)
+     * were not inserted: they are kept, written by the next save (see markSaved()).
      *
      * @template E of object
      * @param Metadata<E> $metadata
@@ -1016,13 +1022,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     {
         $autoincrement = $metadata->getAutoincrementProperty();
         if ($autoincrement !== null) {
-            $changes = $this->entitiesChanged[$entity] ?? [];
-            unset($changes[$autoincrement], $written[$autoincrement]);
-            if ($changes === []) {
-                $this->entitiesChanged->offsetUnset($entity);
-            } else {
-                $this->entitiesChanged[$entity] = $changes;
-            }
+            unset($written[$autoincrement]);
+            $this->markSaved($entity, $metadata, [$autoincrement => true]);
 
             if ($metadata->isMutable($autoincrement)) {
                 try {
