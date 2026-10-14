@@ -301,35 +301,8 @@ class Result implements ResultInterface
                         throw new QueryException('Query invalid: usage of asterisk in column definition is forbidden');
                     }
 
-                    /**
-                     * Match column format table.column (as alias)
-                     */
-                    self::match(
-                        self::PARSE_RAW_COLUMN,
-                        $column,
-                        $matches
-                    );
-
-                    // TRUE, FALSE and NULL are constants, not columns
-                    if (
-                        $matches !== []
-                        && (
-                            $matches['table'] !== ''
-                            || !\in_array(strtolower($matches['column']), ['true', 'false', 'null'], true)
-                        )
-                    ) {
-                        $columnComponent = [
-                            'complex' => false,
-                            'column' => $matches['column']
-                        ];
-
-                        // An unmatched named group is an empty string, never unset
-                        $columnComponent['table'] = $matches['table'];
-
-                        if (isset($matches['alias'])) {
-                            $columnComponent['alias'] = $matches['alias'];
-                        }
-                    } else { // Match dynamic column, ie : max(table.column), table.column || table.id, ...
+                    $columnComponent = self::rawColumn($column);
+                    if ($columnComponent === null) { // Match dynamic column, ie : max(table.column), table.column || table.id, ...
                         $column = trim($column, self::BLANKS);
                         self::match(self::PARSE_DYNAMIC_COLUMN, $column, $matches);
                         $prefix = $noAlias ? '' : ($matches['prefix'] ?? '');
@@ -360,13 +333,19 @@ class Result implements ResultInterface
                             $expression = $column;
                         }
 
-                        $columnComponent = [
-                            'complex' => true,
-                            'table' => '',
-                            'column' => $expression,
-                            // Without alias, named after its column or its function, else ?column?
-                            'alias' => $alias !== '' ? $alias : (self::expressionName($expression) ?? '?column?'),
-                        ];
+                        // A column aliased without AS (u.name n) is a column, as with AS
+                        $columnComponent = $alias !== '' ? self::rawColumn($expression) : null;
+                        if ($columnComponent !== null && !isset($columnComponent['alias'])) {
+                            $columnComponent['alias'] = $alias;
+                        } else {
+                            $columnComponent = [
+                                'complex' => true,
+                                'table' => '',
+                                'column' => $expression,
+                                // Without alias, named after its column or its function, else ?column?
+                                'alias' => $alias !== '' ? $alias : (self::expressionName($expression) ?? '?column?'),
+                            ];
+                        }
                     }
 
                     $columnsMatches[] = $columnComponent;
@@ -485,6 +464,33 @@ class Result implements ResultInterface
         }
 
         $this->fields = $fields;
+    }
+
+    /**
+     * A column of the select list made of a column, table.column, with its alias after AS; null for an expression
+     * (TRUE, FALSE and NULL are constants, not columns)
+     * @return array{complex: false, table: string, column: string, alias?: string}|null
+     * @throws QueryException
+     */
+    private static function rawColumn(string $column): ?array
+    {
+        if (
+            !self::match(self::PARSE_RAW_COLUMN, $column, $matches)
+            || (
+                $matches['table'] === ''
+                && \in_array(strtolower($matches['column']), ['true', 'false', 'null'], true)
+            )
+        ) {
+            return null;
+        }
+
+        // An unmatched named group is an empty string, never unset
+        $rawColumn = ['complex' => false, 'table' => $matches['table'], 'column' => $matches['column']];
+        if (isset($matches['alias'])) {
+            $rawColumn['alias'] = $matches['alias'];
+        }
+
+        return $rawColumn;
     }
 
     /**

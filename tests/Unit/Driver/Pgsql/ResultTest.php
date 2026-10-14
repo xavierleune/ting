@@ -694,7 +694,7 @@ class ResultTest extends TestCase
                     $column('prénom', 'ü', 'app'),
                     ['name' => 'clé', 'orgName' => 'id', 'table' => 'ü', 'schema' => 'app'],
                     ['name' => 'total_é', 'orgName' => 'count(*)', 'table' => '', 'schema' => ''],
-                    ['name' => 'nöm', 'orgName' => 'ü.name', 'table' => '', 'schema' => ''],
+                    ['name' => 'nöm', 'orgName' => 'name', 'table' => 'ü', 'schema' => 'app'],
                 ],
             ],
             'a parenthesized join starting with a derived table' => [
@@ -1007,7 +1007,7 @@ class ResultTest extends TestCase
                     ['name' => 'x', 'orgName' => "'a'", 'table' => '', 'schema' => ''],
                     ['name' => 'y', 'orgName' => '2', 'table' => '', 'schema' => ''],
                     ['name' => 's', 'orgName' => '(a + b)', 'table' => '', 'schema' => ''],
-                    ['name' => 'c', 'orgName' => 't.b', 'table' => '', 'schema' => ''],
+                    ['name' => 'c', 'orgName' => 'b', 'table' => 't', 'schema' => ''],
                     ['name' => 'd', 'orgName' => 'CASE WHEN a THEN 1 END', 'table' => '', 'schema' => ''],
                 ],
             ],
@@ -1036,7 +1036,7 @@ class ResultTest extends TestCase
                 'SELECT u.name normalized, f(x) normalized, x || y normalized, x IS NOT NFKD NORMALIZED FROM users u',
                 ['users'],
                 [
-                    ['name' => 'normalized', 'orgName' => 'u.name', 'table' => '', 'schema' => ''],
+                    ['name' => 'normalized', 'orgName' => 'name', 'table' => 'u', 'schema' => ''],
                     ['name' => 'normalized', 'orgName' => 'f(x)', 'table' => '', 'schema' => ''],
                     ['name' => 'normalized', 'orgName' => 'x || y', 'table' => '', 'schema' => ''],
                     ['name' => '?column?', 'orgName' => 'x IS NOT NFKD NORMALIZED', 'table' => '', 'schema' => ''],
@@ -1720,6 +1720,60 @@ class ResultTest extends TestCase
      */
     #[\PHPUnit\Framework\Attributes\DataProvider('selectListProvider')]
     public function testSetQueryShouldParseTheSelectList(string $query, array $tables, array $expected)
+    {
+        $this->assertSame($expected, $this->parseColumns($query, $tables, \count($expected)));
+    }
+
+    public static function bareAliasOfAColumnProvider(): array
+    {
+        $column = fn (string $name, string $orgName, string $table = 'u') => [
+            'name' => $name,
+            'orgName' => $orgName,
+            'table' => $table,
+            'schema' => '',
+        ];
+        $id = $column('id', 'id');
+
+        return [
+            'table.column alias' => ['SELECT u.id, u.name n FROM users u', ['users', 'users'], [$id, $column('n', 'name')]],
+            'a quoted alias' => ['SELECT u.name "N", u.id FROM users u', ['users', 'users'], [$column('N', 'name'), $id]],
+            'a quoted column' => ['SELECT u."Name" n FROM users u', ['users'], [$column('n', 'Name')]],
+            'a column without table' => ['SELECT name n, u.id FROM users u', ['users', 'users'], [$column('n', 'name'), $id]],
+            'comments before the alias' => [
+                "SELECT u.name/* c */n, u.id -- c\nid2 FROM users u",
+                ['users', 'users'],
+                [$column('n', 'name'), $column('id2', 'id')],
+            ],
+            'before a clause' => [
+                'SELECT u.id, u.name n FROM users u WHERE u.id = 1',
+                ['users', 'users'],
+                [$id, $column('n', 'name')],
+            ],
+            'last of the query, without FROM' => ['SELECT u.id, u.name n', ['users', 'users'], [$id, $column('n', 'name')]],
+            'before a clause, without FROM' => [
+                'SELECT u.id, u.name n LIMIT 1',
+                ['users', 'users'],
+                [$id, $column('n', 'name')],
+            ],
+            // Not an alias: the keyword ends the select list, or a postfix operator the expression
+            'FROM' => ['SELECT u.id, u.name FROM users u', ['users', 'users'], [$id, $column('name', 'name')]],
+            'NOTNULL' => [
+                'SELECT u.id, u.name NOTNULL FROM users u',
+                ['users', false],
+                [$id, $column('?column?', 'u.name NOTNULL', '')],
+            ],
+            // A constant is no column
+            'TRUE' => ['SELECT true t, u.id FROM users u', [false, 'users'], [$column('t', 'true', ''), $id]],
+        ];
+    }
+
+    /**
+     * A column aliased without AS is a column, as aliased with AS: its values go to the entity of its table
+     * @param array<int, string|false> $tables
+     * @param list<array<string, string>> $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('bareAliasOfAColumnProvider')]
+    public function testSetQueryShouldReadAColumnAliasedWithoutAs(string $query, array $tables, array $expected)
     {
         $this->assertSame($expected, $this->parseColumns($query, $tables, \count($expected)));
     }
