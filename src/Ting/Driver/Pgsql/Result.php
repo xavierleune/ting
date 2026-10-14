@@ -368,13 +368,15 @@ class Result implements ResultInterface
         }
 
         // The values of a row are matched to the columns by position: a column read from the query that the result
-        // lacks, or one more column in the result, would shift them
+        // lacks, or one more column in the result, would shift them. A result without column (SELECT ... INTO) has
+        // no value to shift
         $numFields = pg_num_fields($resultResource);
-        if (\count($columnsMatches) !== $numFields) {
+        if ($numFields !== 0 && \count($columnsMatches) !== $numFields) {
             throw new QueryException(sprintf(
-                'Query invalid: %d columns read from the query, but its result has %d: the values cannot be matched '
-                . 'to the columns',
+                'Query invalid: %d %s read from the query, but its result has %d: the values cannot be matched to '
+                . 'the columns',
                 \count($columnsMatches),
+                \count($columnsMatches) === 1 ? 'column' : 'columns',
                 $numFields
             ));
         }

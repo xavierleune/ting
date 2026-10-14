@@ -960,10 +960,11 @@ Hydrators and Transactions
     `objectDatabaseIs()`, `objectSchemaIs()` and when reading the row.
 * **PostgreSQL: a query read into another number of columns than its result throws.** The Pgsql driver matches the
   values of a row to the columns read from the query by position. When the columns it reads from the query are not as
-  many as the columns of the result (a query the parser misreads, an `INSERT ... SELECT a, b ... RETURNING id`, a
-  `SELECT ... INTO`), 3.x hydrated each column with the value of another one, or with `null`; 4.0 throws a
+  many as the columns of the result (a query the parser misreads, `INSERT ... SELECT a, b ... RETURNING id`,
+  `EXPLAIN SELECT a, b ...`), 3.x hydrated each column with the value of another one, or with `null`; 4.0 throws a
   `CCMBenchmark\Ting\Driver\QueryException` naming both numbers (`Query invalid: 3 columns read from the query, but
-  its result has 4: ...`) when the collection is built. Run such a query without a collection, or rewrite it.
+  its result has 4: ...`) when the collection is built. A result without column (`SELECT ... INTO`) is not checked.
+  Run such a query without a collection, or rewrite it.
 * The same case-insensitive fallback applies to MySQL results: a column read as `BOO_NAME` now matches the metadata
   column `boo_name` (MySQL column names are case-insensitive, 3.x left it unhydrated), and a table read as `T_BOUH`
   matches the metadata of `t_bouh` when no metadata has the exact name. Under `lower_case_table_names=0` (Linux

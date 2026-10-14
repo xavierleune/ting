@@ -1185,8 +1185,24 @@ class ResultTest extends TestCase
     public static function columnCountMismatchProvider(): array
     {
         return [
-            'more columns in the result' => ['SELECT p.id, p.name FROM people p', 3, 2],
-            'fewer columns in the result' => ['SELECT p.id, p.name FROM people p', 1, 2],
+            'more columns in the result' => [
+                'SELECT p.id, p.name FROM people p',
+                3,
+                'Query invalid: 2 columns read from the query, but its result has 3: the values cannot be matched to '
+                . 'the columns',
+            ],
+            'fewer columns in the result' => [
+                'SELECT p.id, p.name FROM people p',
+                1,
+                'Query invalid: 2 columns read from the query, but its result has 1: the values cannot be matched to '
+                . 'the columns',
+            ],
+            'one column read' => [
+                'SELECT p.id FROM people p',
+                2,
+                'Query invalid: 1 column read from the query, but its result has 2: the values cannot be matched to '
+                . 'the columns',
+            ],
         ];
     }
 
@@ -1198,7 +1214,7 @@ class ResultTest extends TestCase
     public function testSetQueryShouldRaiseExceptionWhenTheResultHasAnotherNumberOfColumns(
         string $query,
         int $numFields,
-        int $parsed
+        string $message
     ) {
         NativeFunctionMock::override('pg_num_fields', $numFields);
         NativeFunctionMock::override('pg_field_table', 'people');
@@ -1206,16 +1222,35 @@ class ResultTest extends TestCase
         $result = new Result();
         $result->setResult(new PgsqlResult());
 
-        $this->assertThrows(
-            QueryException::class,
-            fn () => $result->setQuery($query),
-            sprintf(
-                'Query invalid: %d columns read from the query, but its result has %d: the values cannot be '
-                . 'matched to the columns',
-                $parsed,
-                $numFields
-            )
-        );
+        $this->assertThrows(QueryException::class, fn () => $result->setQuery($query), $message);
+    }
+
+    public static function resultWithoutColumnProvider(): array
+    {
+        return [
+            'SELECT INTO TEMP' => ['SELECT a, b INTO TEMP x FROM t'],
+            'SELECT INTO' => ['SELECT 1 AS a INTO x'],
+            'SELECT without column' => ['SELECT FROM t'],
+        ];
+    }
+
+    /**
+     * A result without column (SELECT ... INTO creates a table and returns no row, SELECT FROM t reads no column) has
+     * no value to shift: the query does not throw, as before the check of the number of columns
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('resultWithoutColumnProvider')]
+    public function testSetQueryShouldAcceptAResultWithoutColumn(string $query)
+    {
+        NativeFunctionMock::override('pg_num_fields', 0);
+        NativeFunctionMock::override('pg_field_table', false);
+        NativeFunctionMock::override('pg_result_seek', true);
+        NativeFunctionMock::override('pg_fetch_array', false);
+
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+        $result->setQuery($query);
+
+        $this->assertSame([], iterator_to_array($result));
     }
 
     public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
