@@ -588,8 +588,21 @@ class Hydrator implements HydratorInterface
         foreach ($result as $table => $entity) {
 
             // All no valid entity is replaced by a null value, unless mapObjectTo() already removed it from the row
-            if (isset($validEntities[$table]) === false && \array_key_exists($table, $result)) {
-                $result[$table] = null;
+            if (isset($validEntities[$table]) === false) {
+                if (\array_key_exists($table, $result)) {
+                    $result[$table] = null;
+                }
+
+                // $entity is the empty object built for its columns (LEFT JOIN without match): it receives nothing and
+                // is not managed, what was mapped to it is removed from the row as when it exists
+                foreach ($this->mapAliases[$table] ?? [] as $fromAndColumn) {
+                    unset($result[0]->{$fromAndColumn[0]});
+                }
+                foreach ($this->mapObjects[$table] ?? [] as $fromAndColumn) {
+                    unset($result[$fromAndColumn[0]]);
+                }
+
+                continue;
             }
 
             // It's a valid entity (unknown data are put in a value table 0)

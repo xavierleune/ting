@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Repository;
 use CCMBenchmark\Ting\Driver\CacheResult;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Driver\Pgsql\Result as PgsqlResult;
+use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 use CCMBenchmark\Ting\Exceptions\HydratorException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Repository\Hydrator;
@@ -974,6 +975,76 @@ class HydratorTest extends TestCase
         $this->assertSame(['bouh'], array_keys($data));
         $this->assertSame('Sylvain', $data['bouh']->getFirstname());
         $this->assertNull($data['bouh']->getCity());
+    }
+
+    #[DataProvider('joinedColumnsFirstProvider')]
+    public function testHydrateWithMapObjectAndMapAliasShouldIgnoreAReceivingEntityWhichIsNull(bool $joinedFirst)
+    {
+        $services = new TingServices();
+        $services->metadataRepository()
+            ->batchLoadMetadata('tests\fixtures\model', __DIR__ . '/../../fixtures/model/*Repository.php');
+
+        $field = static function (string $name, string $orgName, string $table, string $orgTable, int $type) {
+            $field = new \stdClass();
+            $field->name     = $name;
+            $field->orgname  = $orgName;
+            $field->table    = $table;
+            $field->orgtable = $orgTable;
+            $field->type     = $type;
+            return $field;
+        };
+        $bouhFields = [
+            $field('fname', 'boo_firstname', 'bouh', 'T_BOUH_BOO', MYSQLI_TYPE_VAR_STRING),
+            $field('name', 'boo_name', 'bouh', 'T_BOUH_BOO', MYSQLI_TYPE_VAR_STRING),
+        ];
+        $cityFields = [
+            $field('cityId', 'cit_id', 'cit', 'T_CITY_CIT', MYSQLI_TYPE_LONG),
+            $field('citname', 'cit_name', 'cit', 'T_CITY_CIT', MYSQLI_TYPE_VAR_STRING),
+        ];
+        $timeField = $field('current_time', '', '', '', MYSQLI_TYPE_VAR_STRING);
+        // The receiving entity is the one of the LEFT JOIN without match: every column of the bouh is null
+        $mockMysqliResult = new MysqliResult([
+            $joinedFirst ? [3, 'Palaiseau', null, null, '1234'] : [null, null, 3, 'Palaiseau', '1234'],
+        ]);
+        $mockMysqliResult->setFieldsCallback(
+            fn () => $joinedFirst
+                ? [...$cityFields, ...$bouhFields, $timeField]
+                : [...$bouhFields, ...$cityFields, $timeField]
+        );
+
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('bouh_world');
+
+        $unitOfWork = new class (
+            $services->connectionPool(),
+            $services->metadataRepository(),
+            $services->queryFactory()
+        ) extends UnitOfWork {
+            /** @var list<object> */
+            public array $managed = [];
+
+            public function manage(NotifyPropertyInterface $entity, ?Metadata $metadata = null): void
+            {
+                $this->managed[] = $entity;
+                parent::manage($entity, $metadata);
+            }
+        };
+
+        $hydrator = new Hydrator();
+        // BouhReadOnlyRepository maps T_BOUH_BOO of bouh_world too
+        $hydrator->preferRepository(BouhRepository::class);
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($unitOfWork);
+        $hydrator->mapObjectTo('cit', 'bouh', 'setCity');
+        $hydrator->mapAliasTo('current_time', 'bouh', 'setRetrievedTime');
+        $data = $hydrator->setResult($result)->getIterator()->current();
+
+        // No entity receives the city nor the virtual column: both are removed from the row, as when the entity exists
+        $this->assertSame(['bouh' => null], $data);
+        // The empty entity built for the columns of the bouh is neither given the city nor managed
+        $this->assertSame([City::class], array_map(get_class(...), $unitOfWork->managed));
     }
 
     public function testHydrateWithUnserializeAlias()
