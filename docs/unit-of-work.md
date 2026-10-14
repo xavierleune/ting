@@ -122,7 +122,8 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   change, but a change its setter makes to another mapped field (a slug named after the id, say) was not inserted: it
   is written by the next save of the entity, as any change (`isPropertyChanged()` reports it). A change made by a
   setter that throws is kept too once the setter has set the id; when it throws before setting the id, its changes
-  are not kept: the entity has no id to update its row by. Retry as described in
+  are not kept: the entity has no id to update its row by (an id reached through its getter only is read through
+  it, which must return `null` before the id is set, not `0` or `''`). Retry as described in
   [Retrying a failed batch](#retrying-a-failed-batch).
 
 The `autoincrement` property is read directly, not through its getter, which may refuse an id not generated yet. It is
