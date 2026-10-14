@@ -648,6 +648,16 @@ class Metadata
     }
 
     /**
+     * @return string|null the property of the autoincrement field, null without one
+     *
+     * @internal
+     */
+    public function getAutoincrementProperty(): ?string
+    {
+        return $this->autoincrement['fieldName'] ?? null;
+    }
+
+    /**
      * Set the provided value to autoincrement if applicable
      *
      * @return Metadata<T>|false false without autoincrement

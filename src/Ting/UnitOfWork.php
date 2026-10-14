@@ -987,20 +987,56 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                     $driver->addRollbackListener($this, $entity);
                 }
 
+                // The INSERT wrote every value: no change left, and the values of the mutable fields are stored
+                $this->entitiesChanged->offsetUnset($entity);
+                $written = $metadata->getEntityMutableValues($entity);
                 try {
                     $metadata->setEntityPropertyForAutoIncrement($entity, $connection->primary());
                 } finally {
-                    // The INSERT wrote every value: no change left, and the generated id is not one
-                    $this->entitiesChanged->offsetUnset($entity);
-                    // Once the generated id is written back: a mutable autoincrement key (a value object with a
-                    // serializer of its own) is stored with the generated value
-                    $this->keepMutableValues($entity, $metadata);
+                    $this->keepInsertedValues($entity, $metadata, $written);
                 }
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
             }
         );
+    }
+
+    /**
+     * The generated id has been written back (or failed to): the values inserted are the stored ones, but for the
+     * autoincrement field, stored with its generated value (a mutable key: a value object with a serializer of its
+     * own). The generated id is not a change; the changes its setter made to other fields (a slug named after the
+     * id...) were not inserted: they are kept, written by the next save.
+     *
+     * @template E of object
+     * @param Metadata<E> $metadata
+     * @param array<string, mixed> $written property name => database value inserted, for the mutable fields
+     */
+    private function keepInsertedValues(NotifyPropertyInterface $entity, Metadata $metadata, array $written): void
+    {
+        $autoincrement = $metadata->getAutoincrementProperty();
+        if ($autoincrement !== null) {
+            $changes = $this->entitiesChanged[$entity] ?? [];
+            unset($changes[$autoincrement], $written[$autoincrement]);
+            if ($changes === []) {
+                $this->entitiesChanged->offsetUnset($entity);
+            } else {
+                $this->entitiesChanged[$entity] = $changes;
+            }
+
+            if ($metadata->isMutable($autoincrement)) {
+                try {
+                    [$readable, $value] = $metadata->getEntityPropertyIfReadable($entity, $autoincrement);
+                    if ($readable) {
+                        $written[$autoincrement] = $value;
+                    }
+                } catch (\Throwable) {
+                    // Its database value cannot be computed: not stored, as by getEntityMutableValues()
+                }
+            }
+        }
+
+        $this->storeMutableValues($entity, $written);
     }
 
     /**

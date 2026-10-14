@@ -740,6 +740,92 @@ class UnitOfWorkTest extends TestCase
         $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
     }
 
+    /**
+     * The setter of the autoincrement property changes other fields once the id is known: those changes were not
+     * written by the INSERT, they are written by the next save
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeBySettingTheGeneratedIdShouldBeWrittenByTheNextSave()
+    {
+        $entity = $this->createDocumentNamedByItsId();
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame('item-1', $entity->getTitle());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
+        // Notified through its setter, and a mutable field modified in place
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        // Written by the INSERT, unchanged since
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(
+            [
+                'v1_doc_title' => null,
+                'v2_doc_payload' => '{"tags":[]}',
+                'v3_doc_published_at' => '2026-01-01 10:00:00',
+            ],
+            $params[0]
+        );
+        $this->assertSame(
+            ['v1_doc_title' => 'item-1', 'v2_doc_published_at' => '2026-01-02 10:00:00', 'w1_doc_id' => 1],
+            $params[1]
+        );
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfTheGeneratedIdThatThrowsShouldBeKept()
+    {
+        $entity = $this->createDocumentNamedByItsId(true);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertNull($entity->getId());
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'payload'));
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeBySettingTheGeneratedIdShouldBeInsertedAfterARollback()
+    {
+        $entity = $this->createDocumentNamedByItsId();
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $driver->rollback();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        // Inserted again with every value: nothing left to write
+        $this->assertSame(['INSERT', 'INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(
+            [
+                'v1_doc_title' => 'item-1',
+                'v2_doc_payload' => '{"tags":[]}',
+                'v3_doc_published_at' => '2026-01-02 10:00:00',
+            ],
+            $params[1]
+        );
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'publishedAt'));
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testSavingAnEntityNotManagedWithItsAutoincrementIdShouldUpdateItsRow()
     {
@@ -1990,6 +2076,36 @@ class UnitOfWorkTest extends TestCase
         $entity = new Document();
         $entity->setId(1);
         $entity->setTitle('title');
+        $entity->setPayload((object) ['tags' => []]);
+        $entity->setPublishedAt(new \DateTime('2026-01-01 10:00:00'));
+
+        return $entity;
+    }
+
+    /**
+     * A new Document whose setId() names it after its id when it has no title (notified), and moves its publication
+     * one day later (modified in place, not notified); throwing, it throws once those changes are made, the id not set
+     */
+    private function createDocumentNamedByItsId(bool $throwing = false): Document
+    {
+        $entity = new class ($throwing) extends Document {
+            public function __construct(private readonly bool $throwing)
+            {
+            }
+
+            public function setId(?int $id): void
+            {
+                if ($id !== null && $this->getTitle() === null) {
+                    $this->setTitle('item-' . $id);
+                    $this->getPublishedAt()?->modify('+1 day');
+                }
+                if ($this->throwing) {
+                    throw new \LogicException('Forced failure of setId()');
+                }
+
+                parent::setId($id);
+            }
+        };
         $entity->setPayload((object) ['tags' => []]);
         $entity->setPublishedAt(new \DateTime('2026-01-01 10:00:00'));
 
