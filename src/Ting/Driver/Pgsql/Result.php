@@ -365,6 +365,18 @@ class Result implements ResultInterface
             throw new QueryException('Query invalid: can\'t parse columns');
         }
 
+        // The values of a row are matched to the columns by position: a column read from the query that the result
+        // lacks, or one more column in the result, would shift them
+        $numFields = pg_num_fields($resultResource);
+        if (\count($columnsMatches) !== $numFields) {
+            throw new QueryException(sprintf(
+                'Query invalid: %d columns read from the query, but its result has %d: the values cannot be matched '
+                . 'to the columns',
+                \count($columnsMatches),
+                $numFields
+            ));
+        }
+
         // Whether each column is keyed by the name of a table read only in a derived table
         $byDerivedTable = [];
         foreach ($columnsMatches as $match) {

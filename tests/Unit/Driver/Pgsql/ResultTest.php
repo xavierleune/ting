@@ -111,7 +111,7 @@ class ResultTest extends TestCase
 
     public function testSetQueryShouldNotRaiseExceptionWhenThereIsNoFromInTheQuery()
     {
-        NativeFunctionMock::override('pg_num_fields', 0);
+        NativeFunctionMock::override('pg_num_fields', 1);
         NativeFunctionMock::override('pg_field_table', 'table');
 
         $result = new Result();
@@ -152,6 +152,7 @@ class ResultTest extends TestCase
         NativeFunctionMock::override('pg_field_table', fn ($result, $index) => $tables[$index] ?? false);
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_fetch_array', array_fill(0, 20, 'v'));
+        NativeFunctionMock::override('pg_num_fields', self::countColumns($query));
 
         $result = new Result();
         $result->setConnectionName('connectionName');
@@ -169,6 +170,32 @@ class ResultTest extends TestCase
             ],
             $result->current()
         );
+    }
+
+    /**
+     * The number of columns the parser reads from the query: the result of the server has as many when the parser
+     * reads the query right. It is the number the parser names when the result has none
+     */
+    private static function countColumns(string $query): int
+    {
+        NativeFunctionMock::override('pg_num_fields', -1);
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+        try {
+            $result->setQuery($query);
+        } catch (QueryException $exception) {
+            $counted = preg_match(
+                '/^Query invalid: (\d+) columns read from the query, but its result has -1:/',
+                $exception->getMessage(),
+                $matches
+            );
+            if ($counted === 1) {
+                return (int) $matches[1];
+            }
+        }
+
+        // The query throws before the columns are counted: it throws again
+        return 0;
     }
 
     public static function asteriskColumnProvider(): array
@@ -841,6 +868,7 @@ class ResultTest extends TestCase
         NativeFunctionMock::override('pg_field_table', fn ($result, $index) => $tables[$index] ?? false);
         NativeFunctionMock::override('pg_result_seek', true);
         NativeFunctionMock::override('pg_fetch_array', array_fill(0, 20, 'v'));
+        NativeFunctionMock::override('pg_num_fields', \count($expected));
 
         $result = new Result();
         $result->setResult(new PgsqlResult());
@@ -1142,6 +1170,42 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function columnCountMismatchProvider(): array
+    {
+        return [
+            'more columns in the result' => ['SELECT p.id, p.name FROM people p', 3, 2],
+            'fewer columns in the result' => ['SELECT p.id, p.name FROM people p', 1, 2],
+        ];
+    }
+
+    /**
+     * A query parsed into another number of columns than its result (a misread query, a composite expanded by the
+     * server) would hydrate each column with the value of another one, or with none
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('columnCountMismatchProvider')]
+    public function testSetQueryShouldRaiseExceptionWhenTheResultHasAnotherNumberOfColumns(
+        string $query,
+        int $numFields,
+        int $parsed
+    ) {
+        NativeFunctionMock::override('pg_num_fields', $numFields);
+        NativeFunctionMock::override('pg_field_table', 'people');
+
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $result->setQuery($query),
+            sprintf(
+                'Query invalid: %d columns read from the query, but its result has %d: the values cannot be '
+                . 'matched to the columns',
+                $parsed,
+                $numFields
+            )
+        );
+    }
+
     public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
     {
         // FOR ends a SELECT without FROM (FOR UPDATE), not COLLATION FOR (...)
@@ -1429,6 +1493,7 @@ class ResultTest extends TestCase
         NativeFunctionMock::override('pg_fetch_array', [1, 1, 2, 3, 6, 7, 8]);
 
         NativeFunctionMock::override('pg_field_table', fn ($result, $index) => 'table');
+        NativeFunctionMock::override('pg_num_fields', 7);
 
         $result = new Result();
         $result->setResult($mockPgsqlResult);

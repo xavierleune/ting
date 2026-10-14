@@ -48,7 +48,7 @@ class StatementTest extends TestCase
             }
         );
 
-        NativeFunctionMock::override('pg_num_fields', 0);
+        NativeFunctionMock::override('pg_num_fields', 1);
         NativeFunctionMock::override('pg_field_table', 'Bouh');
         NativeFunctionMock::override('pg_result_seek', 0);
         NativeFunctionMock::override('pg_fetch_array', false);
@@ -73,7 +73,7 @@ class StatementTest extends TestCase
 
     public function testExecuteShouldCallDriverExecuteWithParameters()
     {
-        NativeFunctionMock::override('pg_num_fields', 0);
+        NativeFunctionMock::override('pg_num_fields', 1);
         NativeFunctionMock::override('pg_field_table', 'Bouh');
         NativeFunctionMock::override(
             'pg_execute',
