@@ -1228,29 +1228,58 @@ class ResultTest extends TestCase
     public static function resultWithoutColumnProvider(): array
     {
         return [
-            'SELECT INTO TEMP' => ['SELECT a, b INTO TEMP x FROM t'],
-            'SELECT INTO' => ['SELECT 1 AS a INTO x'],
-            'SELECT without column' => ['SELECT FROM t'],
+            'SELECT INTO TEMP' => ['SELECT a, b INTO TEMP x FROM t', 0, []],
+            'SELECT INTO' => ['SELECT 1 AS a INTO x', 0, []],
+            'SELECT without column' => ['SELECT FROM t', 2, [[], []]],
         ];
     }
 
     /**
-     * A result without column (SELECT ... INTO creates a table and returns no row, SELECT FROM t reads no column) has
-     * no value to shift: the query does not throw, as before the check of the number of columns
+     * A result without column (SELECT ... INTO creates a table and returns no row, SELECT FROM t returns rows without
+     * column) has no value to shift and no field to read: its rows hold no column
+     *
+     * @param list<array{}> $expected
      */
     #[\PHPUnit\Framework\Attributes\DataProvider('resultWithoutColumnProvider')]
-    public function testSetQueryShouldAcceptAResultWithoutColumn(string $query)
+    public function testSetQueryShouldReadNoColumnOfAResultWithoutColumn(string $query, int $rows, array $expected)
     {
         NativeFunctionMock::override('pg_num_fields', 0);
-        NativeFunctionMock::override('pg_field_table', false);
+        // PHP throws a ValueError for a field the result does not have
+        NativeFunctionMock::override('pg_field_table', static function (): never {
+            throw new \ValueError('pg_field_table(): Argument #2 ($field) must be less than the number of fields');
+        });
         NativeFunctionMock::override('pg_result_seek', true);
-        NativeFunctionMock::override('pg_fetch_array', false);
+        NativeFunctionMock::override('pg_fetch_array', static function () use (&$rows): array|false {
+            return $rows-- > 0 ? [] : false;
+        });
 
         $result = new Result();
         $result->setResult(new PgsqlResult());
-        $result->setQuery($query);
 
-        $this->assertSame([], iterator_to_array($result));
+        $rowsRead = null;
+        $types = $this->collectErrorTypes(function () use ($result, $query, &$rowsRead): void {
+            $result->setQuery($query);
+            $rowsRead = iterator_to_array($result);
+        }, $thrown);
+
+        $this->assertNull($thrown);
+        $this->assertSame([], $types);
+        $this->assertSame($expected, $rowsRead);
+    }
+
+    public function testSetQueryShouldRaiseExceptionWhenTheLastStatementHasNoColumnAndItsResultNone()
+    {
+        // The last statement returns no column, the query none: it is not read as a result without column
+        NativeFunctionMock::override('pg_num_fields', 0);
+
+        $result = new Result();
+        $result->setResult(new PgsqlResult());
+
+        $this->assertThrows(
+            QueryException::class,
+            fn () => $result->setQuery('SELECT id FROM t; COMMIT'),
+            'Query invalid: can\'t parse columns'
+        );
     }
 
     public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
