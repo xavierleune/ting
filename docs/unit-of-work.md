@@ -89,7 +89,8 @@ batch in its order:
 
 1. call `detachAll()`: the queue is emptied, and no entity is managed any more. Outside a transaction, before calling
    it, check whether the failing entity, if it was to be inserted, is managed (`isManaged()`): its `INSERT` then ran,
-   and only reading or setting its generated key failed (note whether it holds its id, see step 3);
+   and only reading or setting its generated key failed. If so, check too whether the unit of work kept changes of its
+   setter (`isPropertyChanged()` reports a change of a mapped field the setter modifies): `detachAll()` forgets them;
 2. then read again every entity of the batch whose row existed before the batch (read from the database, or built by
    hand and saved earlier), and apply your changes to the fresh objects; only the entities whose row did not exist
    before the batch are pushed again as they are. Read them after `detachAll()`, not before: it would detach the fresh
@@ -102,11 +103,13 @@ batch in its order:
    * outside a transaction, the writes done before the failure are kept: push the failing entity and the ones after
      it, and leave out the entities written before the failure. A failing entity found managed at step 1 has its row
      inserted:
-     * if it holds its generated id (its setter set it, then threw), push it again: detached, it is saved by an
-       `UPDATE` of every field, which writes the changes its setter made (kept, see
-       [Saving an entity not managed](#saving-an-entity-not-managed)). Left out, those changes are lost;
-     * if its id is still `null` (reading the generated key failed, or its setter threw before setting it), leave it
-       out: pushed again, it would be inserted a second time.
+     * if changes of its setter were kept (the setter set the generated id, then threw), push it again: detached, it
+       holds its id and is saved by an `UPDATE` of every field, which writes those changes (see
+       [Saving an entity not managed](#saving-an-entity-not-managed)). Left out, they are lost;
+     * otherwise, leave it out: its row holds every value the `INSERT` wrote. When the unit of work dropped the
+       changes of its setter, the entity may hold no id (`null`, or a typed property not initialized, whatever its
+       getter returns) or an id that is not the one of its row (kept from an `INSERT` rolled back): pushed again, it
+       would be inserted a second time, or would update another row.
 
 ### Saving an entity not managed
 
