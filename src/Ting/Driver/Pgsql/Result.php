@@ -227,17 +227,25 @@ class Result implements ResultInterface
         $brackets = 0;
         $totalTokens = count($tokens);
         $noAlias = false;
+        // The last token before the current one that is not blank
+        $previous = '';
 
         foreach ($tokens as $index => $token) {
+            $before = $previous;
+            if (!self::isBlank($token)) {
+                $previous = $token;
+            }
+            // Any keyword, reserved included, is a name after AS: AS from, AS case, AS select
+            $isAlias = $before === 'as';
             if ($index < $firstColumn) {
                 continue;
             }
 
             // The END of a CASE is no alias: CASE nests
-            if ($token === 'case') {
+            if ($token === 'case' && !$isAlias) {
                 $noAlias = true;
                 $cases++;
-            } elseif ($token === 'end' && $cases > 0) {
+            } elseif ($token === 'end' && $cases > 0 && !$isAlias) {
                 $cases--;
             }
 
@@ -252,15 +260,11 @@ class Result implements ResultInterface
 
             if ($startCapture) {
                 // The FROM, or a clause of a SELECT without FROM (WHERE, UNION, LIMIT...), ends the select list; not
-                // a name (t.order, AS order) nor WITHIN GROUP
-                $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]))
+                // a name (t.order, AS order, AS from) nor WITHIN GROUP
+                $isEnd = ($token === 'from' && !isset($comparisonFroms[$index]) && !$isAlias)
                     || (
                         \in_array($token, ['into', ...self::AFTER_FROM_CLAUSE], true)
-                        && !\in_array(
-                            $tokens[self::previousSignificant($tokens, $index)],
-                            ['.', 'as', ...(self::NOT_A_CLAUSE_AFTER[$token] ?? [])],
-                            true
-                        )
+                        && !\in_array($before, ['.', 'as', ...(self::NOT_A_CLAUSE_AFTER[$token] ?? [])], true)
                     );
                 // The parenthesis closing a parenthesized main SELECT ends its last column
                 $isClosed = $brackets < $selectDepth;
@@ -366,7 +370,7 @@ class Result implements ResultInterface
             }
 
             // The columns of the main SELECT: not those of a sub-query, nor of the CTEs of a WITH query
-            if ($token === 'select' && $brackets === $selectDepth) {
+            if ($token === 'select' && $brackets === $selectDepth && !$isAlias) {
                 $startCapture = true;
                 $firstColumn = self::findFirstColumn($tokens, $index);
             }
@@ -503,8 +507,14 @@ class Result implements ResultInterface
         // are not visible outside of them. They nest: the end of the outermost one read so far is enough
         $derivedUntil = -1;
         [$closing, $subQueries] = self::matchParentheses($tokens);
+        // The last token before the current one that is not blank: a keyword after AS is an alias (AS from)
+        $previous = '';
 
         foreach ($tokens as $index => $token) {
+            $isAlias = $previous === 'as';
+            if (!self::isBlank($token)) {
+                $previous = $token;
+            }
             $isJoin = isset($joins[$index]);
             if ($token === '(' || $token === '[') {
                 $states[] = $isJoin ? self::FROM_CLAUSE : self::NO_SELECT;
@@ -536,6 +546,9 @@ class Result implements ResultInterface
             }
 
             $top = array_key_last($states);
+            if ($isAlias) {
+                continue;
+            }
             if ($token === 'select') {
                 $states[$top] = self::SELECT_LIST;
                 continue;
@@ -1008,20 +1021,6 @@ class Result implements ResultInterface
         } while (isset($tokens[$index]) && self::isBlank($tokens[$index]));
 
         return $index;
-    }
-
-    /**
-     * Position of the last token before $index that is not blank (0 when none)
-     *
-     * @param list<string> $tokens
-     */
-    private static function previousSignificant(array $tokens, int $index): int
-    {
-        do {
-            $index--;
-        } while ($index > 0 && self::isBlank($tokens[$index]));
-
-        return max($index, 0);
     }
 
     /**

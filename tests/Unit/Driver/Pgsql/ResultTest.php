@@ -1363,6 +1363,78 @@ class ResultTest extends TestCase
         );
     }
 
+    public static function keywordAliasProvider(): array
+    {
+        return [
+            'FROM' => ['SELECT p.id AS from, p.name FROM people p', [['from', 'id', 'p'], ['name', 'name', 'p']]],
+            'FROM after a comment' => [
+                "SELECT p.id AS /* c */ from, p.name FROM people p",
+                [['from', 'id', 'p'], ['name', 'name', 'p']],
+            ],
+            'FROM after a line break' => [
+                "SELECT p.id AS\nFROM, p.name FROM people p",
+                [['FROM', 'id', 'p'], ['name', 'name', 'p']],
+            ],
+            'FROM, last column' => [
+                'SELECT p.name, p.id AS from FROM people p',
+                [['name', 'name', 'p'], ['from', 'id', 'p']],
+            ],
+            'FROM, without FROM clause' => ['SELECT 1 AS from, 2 AS b', [['from', '1', ''], ['b', '2', '']]],
+            'LIMIT and ORDER' => ['SELECT 1 AS limit, 2 AS order', [['limit', '1', ''], ['order', '2', '']]],
+            'WHERE and GROUP' => [
+                'SELECT p.id AS where, p.name AS group FROM people p',
+                [['where', 'id', 'p'], ['group', 'name', 'p']],
+            ],
+            'UNION and INTO' => [
+                'SELECT p.id AS union, p.name AS into FROM people p',
+                [['union', 'id', 'p'], ['into', 'name', 'p']],
+            ],
+            'HAVING, WINDOW, OFFSET, FETCH, FOR' => [
+                'SELECT 1 AS having, 2 AS window, 3 AS offset, 4 AS fetch, 5 AS for',
+                [['having', '1', ''], ['window', '2', ''], ['offset', '3', ''], ['fetch', '4', ''], ['for', '5', '']],
+            ],
+            'SELECT' => ['SELECT 1 AS select, 2 AS b', [['select', '1', ''], ['b', '2', '']]],
+            'DISTINCT before FROM' => [
+                'SELECT p.name, p.id AS distinct FROM people p',
+                [['name', 'name', 'p'], ['distinct', 'id', 'p']],
+            ],
+            'IS then DISTINCT' => [
+                'SELECT p.ok AS is, p.id AS distinct FROM people p',
+                [['is', 'ok', 'p'], ['distinct', 'id', 'p']],
+            ],
+            'CASE and END' => ['SELECT 1 AS case, 2 AS end', [['case', '1', ''], ['end', '2', '']]],
+            'END inside a CASE' => [
+                'SELECT CASE WHEN p.ok THEN (SELECT 1 AS end) END AS k, p.id FROM people p',
+                [['k', 'CASE WHEN p.ok THEN (SELECT 1 AS end) END', ''], ['id', 'id', 'p']],
+            ],
+            'a FROM alias before a qualified column' => [
+                'SELECT id AS from, p.name FROM people p',
+                [['from', 'id', 'p'], ['name', 'name', 'p']],
+            ],
+        ];
+    }
+
+    /**
+     * Any keyword, reserved included, is an alias after AS (a ColLabel for PostgreSQL), not a clause
+     *
+     * @param list<array{string, string, string}> $expected name, orgName, table
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('keywordAliasProvider')]
+    public function testSetQueryShouldReadAKeywordAfterAsAsAnAlias(string $query, array $expected)
+    {
+        $this->assertSame(
+            $expected,
+            array_map(
+                fn (array $column) => [$column['name'], $column['orgName'], $column['table']],
+                $this->parseColumns(
+                    $query,
+                    array_map(fn (array $column) => $column[2] === '' ? false : 'people', $expected),
+                    \count($expected)
+                )
+            )
+        );
+    }
+
     public function testSetQueryShouldNotEndTheSelectListOnTheForOfCollationFor()
     {
         // FOR ends a SELECT without FROM (FOR UPDATE), not COLLATION FOR (...)
