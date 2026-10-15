@@ -453,16 +453,16 @@ Other changes:
 * `Connection::__construct()` (internal) throws a `RuntimeException` on an empty `$name` or `$database`.
 * A subclass overriding `Query\Generator::getByCriteria()` must accept its new optional `array $order = []` and
   `int $limit = 0`. The second argument of `Driver\Mysqli\Driver::__construct()` must be a `mysqli_driver` (or `null`).
-* Protected properties typed after 4.0.0-rc.1 (untyped until then), which a subclass redeclaring them must follow:
+* Protected properties typed (or narrowed) after 4.0.0-rc.1, which a subclass redeclaring them must follow:
 
   | Class                                            | Properties                                                          |
   |--------------------------------------------------|---------------------------------------------------------------------|
   | `ConnectionPool`                                 | `array $connectionConfig`, `$databaseOptions`, `$connectionReplicas`, `$connections` |
   | `MetadataRepository`                             | `array $metadataList`, `array $entityToRepository`                  |
-  | `Driver\Mysqli\Driver`                           | `mysqli_driver $driver`, `object $connection` (never `null`)        |
+  | `Driver\Mysqli\Driver`                           | `mysqli_driver $driver`, `object $connection` (never `null`), `string $currentDatabase` (was `?string`) |
   | `Driver\Mysqli\Result`, `Driver\Pgsql\Result`    | `?object $result`, `?array $iteratorCurrent`                        |
   | `Driver\Mysqli\Statement`                        | `object $driverStatement`                                           |
-  | `Driver\Pgsql\Driver`                            | `?object $connection`, `?object $result`, `string $dsn` (`''` until `connect()`) |
+  | `Driver\Pgsql\Driver`                            | `?object $connection`, `?object $result`, `string $name`, `string $dsn` (`''` until `connect()`) |
   | `Driver\Pgsql\Statement`                         | `?object $connection`, `string $statementName`                      |
   | `Query\Query`                                    | `string $sql`                                                       |
   | `Repository\Metadata`, `MetadataCacheGenerator`  | `?string $repository`, `string $cacheDir`                           |
@@ -515,9 +515,9 @@ Edge cases, misuses and rarely hit changes.
 
 * The `port` key is required for the primary and every replica: without it, a warning then a `TypeError` (3.x warned
   and used the default port).
-* A charset the server rejects when `reconnect()` / `ping()` re-apply it is no longer kept as current (the session
-  keeps the server default, and the next `setCharset()` reports it); Mysqli `setCharset()` throws a `DriverException`
-  instead of a `mysqli_sql_exception` under `MYSQLI_REPORT_STRICT`.
+* A charset the server rejects when `reconnect()` / `ping()` re-apply it is no longer kept as current (Pgsql
+  `reconnect()` returned `false`; the session keeps the server default, and the next `setCharset()` reports it);
+  Mysqli `setCharset()` throws a `DriverException` instead of a `mysqli_sql_exception` under `MYSQLI_REPORT_STRICT`.
 * Mysqli sends the `timezone` option as a single-quoted string: under the sql_mode `ANSI_QUOTES`, 3.x sent an
   identifier, which failed silently, so the configured time zone now applies.
 * `reconnect()` before `connect()` throws a `NeverConnectedException` (Mysqli, Pgsql). Two Pgsql drivers with the
