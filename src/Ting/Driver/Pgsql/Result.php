@@ -1078,12 +1078,28 @@ class Result implements ResultInterface
                 return null;
             }
             $index = self::nextSignificant($tokens, self::skipParentheses($tokens, $index));
-            // SEARCH ... SET column, CYCLE ... USING column: their last keyword is followed by a column
-            foreach (['search' => 'set', 'cycle' => 'using'] as $clause => $last) {
-                if (($tokens[$index] ?? '') !== $clause) {
-                    continue;
+            // SEARCH {BREADTH | DEPTH} FIRST BY column [, ...] SET column (set may name a column)
+            if (($tokens[$index] ?? '') === 'search') {
+                $index = self::nextSignificant($tokens, self::nextSignificant($tokens, $index));
+                $index = self::nextSignificant($tokens, $index);
+                if (($tokens[$index] ?? '') !== 'by') {
+                    return null;
                 }
-                while (isset($tokens[$index]) && $tokens[$index] !== $last) {
+                $index = self::skipColumnList($tokens, $index);
+                if (($tokens[$index] ?? '') !== 'set') {
+                    return null;
+                }
+                $index = self::nextSignificant($tokens, self::nextSignificant($tokens, $index));
+            }
+            // CYCLE column [, ...] SET column [TO value DEFAULT value] USING column: the values are constants, and
+            // USING is reserved
+            if (($tokens[$index] ?? '') === 'cycle') {
+                $index = self::skipColumnList($tokens, $index);
+                if (($tokens[$index] ?? '') !== 'set') {
+                    return null;
+                }
+                $index = self::nextSignificant($tokens, self::nextSignificant($tokens, $index));
+                while (isset($tokens[$index]) && $tokens[$index] !== 'using') {
                     $index = $tokens[$index] === '('
                         ? self::nextSignificant($tokens, self::skipParentheses($tokens, $index))
                         : self::nextSignificant($tokens, $index);
@@ -1098,6 +1114,21 @@ class Result implements ResultInterface
             }
             $index = self::nextSignificant($tokens, $index);
         }
+    }
+
+    /**
+     * Position of the token following the list of column names (name [, ...]) after the token at $before
+     *
+     * @param list<string> $tokens lowercase tokens
+     */
+    private static function skipColumnList(array $tokens, int $before): int
+    {
+        $index = self::nextSignificant($tokens, self::nextSignificant($tokens, $before));
+        while (($tokens[$index] ?? '') === ',') {
+            $index = self::nextSignificant($tokens, self::nextSignificant($tokens, $index));
+        }
+
+        return $index;
     }
 
     /**

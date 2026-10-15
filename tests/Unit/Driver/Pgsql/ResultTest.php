@@ -1126,6 +1126,33 @@ class ResultTest extends TestCase
                 [],
                 [['name' => 'v', 'orgName' => 'n', 'table' => 't', 'schema' => '']],
             ],
+            // SET is not reserved: a column may be named set
+            'WITH RECURSIVE query with SEARCH BY a column named set' => [
+                'WITH RECURSIVE c (set) AS (SELECT 1) SEARCH DEPTH FIRST BY set SET ord'
+                . ' (SELECT u.name FROM users u) UNION SELECT o.title FROM other o',
+                [],
+                [['name' => 'name', 'orgName' => 'name', 'table' => 'u', 'schema' => '']],
+            ],
+            'WITH RECURSIVE query with SEARCH BY several columns and SET a column named set' => [
+                'WITH RECURSIVE c (a, "b", set) AS (SELECT 1, 2, 3) SEARCH BREADTH FIRST BY a , "b",set SET set'
+                . ' (SELECT u.name FROM users u) UNION SELECT o.title FROM other o',
+                [],
+                [['name' => 'name', 'orgName' => 'name', 'table' => 'u', 'schema' => '']],
+            ],
+            'WITH RECURSIVE query with SEARCH and CYCLE on columns named set' => [
+                'WITH RECURSIVE t (set, n) AS (SELECT 1, 1 UNION ALL SELECT set, n + 1 FROM t WHERE n < 3)'
+                . ' SEARCH DEPTH FIRST BY set SET ord CYCLE set, n SET set TO \'Y\' DEFAULT \'N\' USING path'
+                . ' (SELECT t.n AS v FROM t) UNION ALL SELECT 0',
+                [],
+                [['name' => 'v', 'orgName' => 'n', 'table' => 't', 'schema' => '']],
+            ],
+            'WITH RECURSIVE query with CYCLE on a column named set, its marks cast' => [
+                'WITH RECURSIVE t (set) AS (SELECT 1 UNION ALL SELECT set + 1 FROM t WHERE set < 3)'
+                . ' CYCLE set SET mark TO (1)::int DEFAULT (0)::int USING path, u AS (SELECT 1 x)'
+                . ' (SELECT t.set AS v FROM t) UNION ALL SELECT 0',
+                [],
+                [['name' => 'v', 'orgName' => 'set', 'table' => 't', 'schema' => '']],
+            ],
             'WITH query with a data-modifying CTE before its parenthesized main SELECT' => [
                 'WITH d AS (DELETE FROM app.users u WHERE u.id = 1 RETURNING u.id)'
                 . ' (SELECT d.id AS removed FROM d) EXCEPT SELECT 2',
