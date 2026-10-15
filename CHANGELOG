@@ -24,9 +24,7 @@
     * BC NotifyProperty::__serialize() and __debugInfo() return mangled keys (the private properties of a parent or child class were silently lost in a cache or a session) and __serialize() honours __sleep() (ignored since 3.12); payloads written by 3.x are still read, and 3.13 reads those written by 4.0
     * BC ResultInterface::setObjectToFetch(), added in 4.0.0-rc.1, is removed: HydratorValueObject builds its objects from the rows, with or without cache (a cache hit returned raw rows), and no longer writes a static property named after a column
     * Include the 3.13.0 to 3.15.0 changes: ResetInterface on ConnectionPool, UnitOfWork and Repository (worker mode); the 3.14 / 3.15 deprecations are removed as listed above
-    * A "datetime" field without serializer hydrates a DateTimeImmutable when its property is typed DateTimeImmutable, nullable or not (same Y-m-d H:i:s format, immutable field); a property typed DateTimeInterface, DateTime or a union, or not typed, still gets a DateTime, as in 3.x (a DateTimeInterface property can hold a DateTime)
     * Add Connection::getName() and optional driver interfaces, implemented by the Pgsql driver: SequenceAwareDriverInterface (getInsertedIdForSequence()), DefaultValuesInsertDriverInterface (an entity without value is inserted with INSERT INTO t DEFAULT VALUES: PostgreSQL rejected () VALUES ()) and RollbackListenerAwareDriverInterface (Mysqli too, see the retry fix below)
-    * Add shortcuts for everyday code: Repository::getBySql() / getOneBySql() (entities of a query of your own), transactional(callable), countBy(), existsBy(), deleteBy(), getBy() offset, getOneBy() order, Query::queryValue(), CollectionInterface::toArray(), and Repository::getQueryBuilder() typed by its $type (PHPDoc)
     * Tooling: tests migrated from atoum to PHPUnit; PHPStan level 8 without baseline, with a type coverage check
     * Fix regressions of 4.0.0-rc.1 in the drivers: Mysqli prepared queries bind their parameters again (NULL was bound, ccmbenchmark/ting#108) and return true without result set; Mysqli Driver::execute() without collection and Query::query() on a statement without result set no longer throw a TypeError; drivers work again without ConnectionPool and without user or password
     * Fix other regressions of 4.0.0-rc.1: collections and hydrators are Countable again; Hydrator::objectSchemaIs() overrides the schema read by Pgsql again; Pgsql reads a column without table again and logs the query with its named parameters; Serializer\BackedEnum::serialize() returns a string again; a cached collection without result comes back empty
@@ -45,6 +43,15 @@
     * Fix floats sent with 14 significant digits (since 3.x, the precision ini setting): they are sent with the digits that read back as the same float, with a '.' whatever the locale; Pgsql sends INF / NAN as Infinity / NaN, Mysqli throws a QueryException for them in a query that is not prepared
     * Fix the PostgreSQL column parser (since 3.x) on valid queries whose columns were lost, shifted or hydrated into the wrong entity: COUNT(*), DISTINCT, ARRAY[...], literals, quoted identifiers, comments, dollar quotes, keywords as aliases, parenthesized SELECTs, UNION, WITH, FROM lists, sub-queries, derived tables, CTEs; long queries no longer hit the PCRE limit (tables lost silently)
     * Security: Mysqli Driver::execute() quotes string values with single quotes; double quotes allowed SQL injection under the sql_mode NO_BACKSLASH_ESCAPES (real_escape_string() then only doubles single quotes) and made values identifiers under ANSI_QUOTES
+
+    Developer experience:
+    * Repository::getBySql() / getOneBySql() read the entities of the repository with a query of your own (prepared), without building a HydratorSingleObject collection
+    * Repository::transactional(callable) commits when the callback returns, rolls back and throws again when it throws
+    * Repository::countBy(), existsBy() and deleteBy() count, test and delete by criteria, with the rules of getBy()
+    * getBy() takes an offset (pagination), getOneBy() an order
+    * Query::queryValue() returns the first column of the first row (COUNT(*), MAX()...), CollectionInterface::toArray() the items in a list
+    * Repository::getQueryBuilder() is typed by its $type (PHPDoc): no more @var on the Aura builder
+    * A "datetime" field without serializer hydrates a DateTimeImmutable when its property is typed DateTimeImmutable, nullable or not (same Y-m-d H:i:s format, immutable field); a property typed DateTimeInterface, DateTime or a union, or not typed, still gets a DateTime, as in 3.x (a DateTimeInterface property can hold a DateTime)
 
 4.0.0-rc.1 (2025-12-15):
     * BC PHP 8.0 dropped, minimum version is now PHP 8.1

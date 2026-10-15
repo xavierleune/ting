@@ -514,10 +514,16 @@ public function getBySql(string $sql, array $params = [], bool $forcePrimary = f
 public function getOneBySql(string $sql, array $params = [], bool $forcePrimary = false): ?object;
 ```
 
-Each row gives the entity of the first table of the query: select the table of the repository first. For joins
-returning several entities, or other columns, use a query and a hydrator: see [Hydrators](hydrators.md).
+Each row gives the entity of the table of its first column: select the columns of the table of the repository first,
+before any computed column. A row whose first table matched nothing (an outer join) gives `null`. `getOneBySql()`
+throws a `CCMBenchmark\Ting\Exceptions\RepositoryException` when its row gives another object (another entity, or a
+`stdClass` for a computed column); add a `LIMIT 1` to its query, the rows after the first one are read for nothing. For
+joins returning several entities, or other columns, use a query and a hydrator: see [Hydrators](hydrators.md).
 
-Add them as methods of your repository:
+Both run a prepared query: keep the SQL constant and vary the parameters, since each distinct SQL keeps a prepared
+statement for the life of the connection.
+
+Wrap your queries in methods of your repository:
 
 ```php
 use CCMBenchmark\Ting\Repository\CollectionInterface;
