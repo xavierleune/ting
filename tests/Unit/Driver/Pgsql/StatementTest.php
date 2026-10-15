@@ -108,7 +108,7 @@ class StatementTest extends TestCase
         $statement->setQuery('SELECT firstname FROM Bouh');
         $statement->execute($params, $collection);
 
-        $this->assertSame(['Sylvain', 3, 'A very long description', 32.1, '2014-03-01 14:02:05'], $outerValues);
+        $this->assertSame(['Sylvain', 3, 'A very long description', '32.1', '2014-03-01 14:02:05'], $outerValues);
     }
 
     /**
@@ -129,6 +129,31 @@ class StatementTest extends TestCase
         $statement->execute(['no' => false, 'yes' => true]);
 
         $this->assertSame(['0', '1'], $outerValues);
+    }
+
+    /**
+     * pg_execute() converts a float with `precision` (14 by default) significant digits
+     */
+    public function testExecuteShouldSendFloatsWithAllTheirDigits()
+    {
+        NativeFunctionMock::override(
+            'pg_execute',
+            function ($connection, $statementName, $values) use (&$outerValues) {
+                $outerValues = $values;
+                return new PgsqlResult();
+            }
+        );
+        $previousPrecision = ini_set('precision', '14');
+
+        try {
+            $statement = new Statement('MyStatementName', ['price' => null, 'ratio' => null], 'connectionName', 'database');
+            $statement->setConnection(new Pgsql());
+            $statement->execute(['price' => 1234567.123456789, 'ratio' => \NAN]);
+        } finally {
+            ini_set('precision', (string) $previousPrecision);
+        }
+
+        $this->assertSame(['1234567.123456789', 'NaN'], $outerValues);
     }
 
     public function testSetCollectionWithResult()

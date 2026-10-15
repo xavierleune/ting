@@ -548,6 +548,70 @@ class DriverTest extends TestCase
         $this->assertSame('SELECT * FROM T_USER_USE WHERE login = \'zzz" OR "1"="1\'', $outerSql);
     }
 
+    /**
+     * (string) on a float keeps `precision` (14 by default) significant digits: the value sent must read back as the
+     * same float, whatever the ini settings and the locale
+     */
+    public function testFloatValuesShouldBeSentWithAllTheirDigits()
+    {
+        $driverFake = $this->createStub(Mysqli::class);
+        $driverFake->method('query')->willReturnCallback(function ($sql) use (&$outerSql) {
+            $outerSql = $sql;
+
+            return true;
+        });
+        $previousPrecision          = ini_set('precision', '14');
+        $previousSerializePrecision = ini_set('serialize_precision', '17');
+        $previousLocale             = setlocale(\LC_NUMERIC, '0');
+        setlocale(\LC_NUMERIC, 'fr_FR.UTF-8', 'fr_FR', 'de_DE.UTF-8', 'de_DE');
+
+        try {
+            $driver = new Driver($driverFake);
+            $driver->execute(
+                'SELECT :a, :b, :c, :d, :e, :f, :g, :h, :i',
+                [
+                    'a' => 1234567.123456789,
+                    'b' => 1760000000.123456,
+                    'c' => 0.1,
+                    'd' => 0.30000000000000004,
+                    'e' => 1e25,
+                    'f' => -1.5e-7,
+                    'g' => -0.0,
+                    'h' => 3.0,
+                    'i' => 1.7976931348623157e308,
+                ]
+            );
+        } finally {
+            ini_set('precision', (string) $previousPrecision);
+            ini_set('serialize_precision', (string) $previousSerializePrecision);
+            setlocale(\LC_NUMERIC, (string) $previousLocale);
+        }
+
+        $this->assertSame(
+            'SELECT 1234567.123456789, 1760000000.123456, 0.1, 0.30000000000000004, 1.0E+25, -1.5E-7, -0, 3, '
+            . '1.7976931348623157E+308',
+            $outerSql
+        );
+    }
+
+    /**
+     * MySQL has no literal for an infinite or NaN value: INF would be read as a column name
+     */
+    public function testNonFiniteFloatValuesShouldBeRefused()
+    {
+        foreach ([\INF, -\INF, \NAN] as $value) {
+            $driverFake = $this->createStub(Mysqli::class);
+            $driverFake->method('query')->willReturnCallback(fn () => $this->fail('The query should not be sent'));
+
+            $driver = new Driver($driverFake);
+            $this->assertThrows(
+                QueryException::class,
+                fn () => $driver->execute('UPDATE t SET price = :price', ['price' => $value]),
+                'The value of parameter price is not a finite number: MySQL has no literal for it'
+            );
+        }
+    }
+
     public function testNullValueShouldNotBeQuoted()
     {
         $driverFake       = $this->createMock(Mysqli::class);

@@ -35,6 +35,7 @@ use CCMBenchmark\Ting\Exceptions\ConnectionException;
 use CCMBenchmark\Ting\Exceptions\DatabaseException;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Driver\DriverInterface;
+use CCMBenchmark\Ting\Driver\FloatLiteral;
 use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
@@ -314,8 +315,15 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
                 if (!\array_key_exists($match[1], $params)) {
                     throw QueryException::missingParameter($match[1]);
                 }
+                $value = $params[$match[1]];
+                if (\is_float($value) && !is_finite($value)) {
+                    // INF or NAN would be read as a column name
+                    throw new QueryException(
+                        'The value of parameter ' . $match[1] . ' is not a finite number: MySQL has no literal for it'
+                    );
+                }
 
-                return (string) $this->quoteValue($params[$match[1]]);
+                return (string) $this->quoteValue($value);
             },
             $sql
         ));
@@ -354,13 +362,15 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
      * Quote value according to the type of variable
      *
      * Strings are quoted with single quotes: real_escape_string() only doubles single quotes under the sql_mode
-     * NO_BACKSLASH_ESCAPES, and a double-quoted string is an identifier under ANSI_QUOTES.
+     * NO_BACKSLASH_ESCAPES, and a double-quoted string is an identifier under ANSI_QUOTES. A float is written with all
+     * its digits: (string) keeps only `precision` significant digits (14 by default).
      */
     protected function quoteValue(mixed $value): string | int | float
     {
         return match (\gettype($value)) {
             "boolean" => (int) $value,
-            "integer", "double" => $value,
+            "integer" => $value,
+            "double" => FloatLiteral::format($value),
             "NULL" => 'null',
             default => "'" . $this->connection->real_escape_string($value) . "'",
         };
