@@ -60,6 +60,7 @@ use tests\fixtures\model\PrimaryOnMultiField;
 use tests\fixtures\model\Slot;
 use tests\fixtures\model\SlotRepository;
 use tests\fixtures\model\VirtualIdEntity;
+use tests\fixtures\ValueObject\AccountId;
 
 class UnitOfWorkTest extends TestCase
 {
@@ -967,6 +968,45 @@ class UnitOfWorkTest extends TestCase
 
         $this->assertSame(['INSERT', 'INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
         $this->assertSame(['v1_doc_title' => 't/1/1', 'w1_doc_id' => 1], $params[2]);
+    }
+
+    /**
+     * The same, with an id held as a value object (serializer of its own): the id held is compared to the generated
+     * one by its database value, so the changes are kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByASetterOfAValueObjectIdThatThrowsShouldBeKeptWhenTheIdRolledBackIsGeneratedAgain()
+    {
+        $entity = new class extends Account {
+            public function setId(int|AccountId|null $id): void
+            {
+                if ($id !== null) {
+                    $this->setName($this->getName() . '/' . (\is_int($id) ? $id : $id->value));
+                    if ($this->getId() !== null) {
+                        throw new \LogicException('Forced failure of setId()');
+                    }
+                }
+
+                parent::setId($id);
+            }
+        };
+        $entity->setName('t');
+        $metadata = AccountRepository::initMetadata($this->services->serializerFactory());
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, $metadataRepository, $driver);
+
+        $driver->startTransaction();
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $driver->rollback();
+        $this->assertThrows(\LogicException::class, function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        }, 'Forced failure of setId()');
+
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'name'));
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['v1_acc_name' => 't/1/1', 'w1_acc_id' => 1], $params[2]);
     }
 
     /**
