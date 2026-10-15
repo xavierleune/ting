@@ -1340,6 +1340,38 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * A getter normalizing its own value through its setter while the UPDATE is built: the value written is the
+     * current one, the change is forgotten as any change written
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeWhileTheEntityIsUpdatedShouldBeForgottenWhenItsValueIsTheOneWritten()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = new class extends Document {
+            public function getTitle(): ?string
+            {
+                $title = parent::getTitle();
+                if ($title !== null && $title !== trim($title)) {
+                    $this->setTitle(trim($title));
+                }
+
+                return parent::getTitle();
+            }
+        };
+        $entity->setTitle('entity');
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $entity->setTitle(' changed ');
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['entity', 'changed'], array_column($params, 'v1_doc_title'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $this->assertCount(2, $queries);
+    }
+
+    /**
      * @return Document&object{onId: ?\Closure}
      */
     private function createDocumentCallingBackOnId(): Document
