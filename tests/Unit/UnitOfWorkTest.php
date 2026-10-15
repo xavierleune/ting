@@ -1010,7 +1010,7 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
-     * A process() nested in another one (a save from the setter of the generated id, an event handler) writes the
+     * A process() nested in another one (a save of another entity from the setter of the generated id) writes the
      * entities still queued: the outer process() does not write them a second time
      */
     #[AllowMockObjectsWithoutExpectations]
