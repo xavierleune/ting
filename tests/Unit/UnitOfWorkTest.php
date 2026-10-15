@@ -1414,6 +1414,48 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * Same when that read changes a property already compared, found written: its change is kept
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByTheReadOfAValueWrittenToAPropertyAlreadyComparedShouldStayTracked()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = BouhRepository::initMetadata($this->services->serializerFactory());
+        $entity = new class extends Bouh {
+            public ?int $readsBeforeRefresh = null;
+
+            public function getName()
+            {
+                $name = parent::getName();
+                if ($name !== trim($name)) {
+                    $this->setFirstname('normalized');
+                    $this->setName(trim($name));
+                }
+                if ($this->readsBeforeRefresh !== null && --$this->readsBeforeRefresh === 0) {
+                    $this->setFirstname('refreshed');
+                }
+
+                return parent::getName();
+            }
+        };
+        $entity->setName('name');
+        $entity->setFirstname('first');
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        // name read first: it normalizes the firstname before the firstname is read, so the firstname written is the
+        // current one; the read of name comparing the value written then refreshes the firstname
+        $entity->setName(' changed ');
+        $entity->setFirstname('changed');
+        $entity->readsBeforeRefresh = 3;
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertContains('normalized', end($params));
+        $this->assertSame('refreshed', $entity->getFirstname());
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'firstname'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+    }
+
+    /**
      * @return Document&object{onId: ?\Closure}
      */
     private function createDocumentCallingBackOnId(): Document
