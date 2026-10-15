@@ -296,7 +296,9 @@ How Ting deals with hooks:
 
 * **`set` hooks are bypassed when Ting writes a property** (hydration, auto-increment value after an insert): the value
   coming from the database is stored as is, without running the hook. Do not rely on a `set` hook to normalize or
-  validate database values.
+  validate database values. A virtual property (hooks without a value of its own) has nothing to store a value in: Ting
+  writes it through its `set` hook. Used as the `autoincrement` primary key, it holds no id of its own: an entity not
+  managed is always inserted (see [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)).
 * **`get` hooks are applied when Ting reads a property**: the value returned by the hook is the one written to the
   database.
 

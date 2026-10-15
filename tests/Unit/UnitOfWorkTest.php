@@ -1160,6 +1160,32 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * The autoincrement property is virtual (PHP 8.4 hooks) and has no setter option: the generated id is written
+     * through its set hook. Holding an id, the entity not managed is still new: the property has no value of its own
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    #[RequiresPhp('>= 8.4.0')]
+    public function testTheGeneratedIdOfAVirtualPropertyWithoutSetterShouldBeWrittenThroughItsSetHook()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $entity = new VirtualIdEntity();
+        $entity->throwing = false;
+        $metadata = $this->createIdAndNameMetadata(VirtualIdEntity::class);
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(1, $entity->id);
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'id'));
+
+        $other = new VirtualIdEntity();
+        $other->throwing = false;
+        $other->id = 5;
+        $unitOfWork->pushSave($other, $metadata);
+        $this->assertTrue($unitOfWork->isNew($other));
+    }
+
+    /**
      * The autoincrement property is unset by the constructor, so that __get() serves it: it has no raw value, so it is
      * read through its getter. Set before the setter throws, the changes are kept
      */
