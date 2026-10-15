@@ -427,8 +427,10 @@ When the metadata of the repository map the class of the entity, `save()` and `d
 another repository maps the same class (another table such as an archive, or a lighter projection without some
 columns): `$mainArtRepository->save($art)` writes into the table of `MainArtRepository`, `$userRepository->save($user)`
 writes every column of `UserRepository`. `pushSave()` and `pushDelete()` called on the unit of work, and `save()`
-through a repository of another class, use the metadata registered for the class of the entity: those of the last
-repository built, or registered last.
+or `delete()` of an entity of another class than the one of the repository (a subclass included), use the metadata
+registered for the class of the entity: those of the last repository built, or registered last. Without metadata
+registered for that class (a subclass of the entity of the repository), they throw a
+`CCMBenchmark\Ting\Driver\QueryException` ("Could not find repository matching entity").
 
 ```php
 use App\Entity\City;

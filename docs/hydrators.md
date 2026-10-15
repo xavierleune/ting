@@ -280,9 +280,10 @@ When the entity of `$to` is `null` in a row (an alias of a `LEFT JOIN` without m
 `stdClass` all the same: its value is lost for that row. Map a column to an alias that is always present (the root
 entity of the query), or leave it unmapped and read it from the `stdClass`.
 
-Only a column of the `stdClass` reaches `$column`: a plain column of a mapped table, aliased with `AS` or without
-(`u.name AS label`, `u.name label`), goes to the entity of its table by its column name, and `$column` gets `null`.
-Make it an expression (`u.name || '' AS label`) to pass it to `$column`.
+Only a column of the `stdClass` reaches `$column`: a plain column of a mapped table that its metadata map, aliased
+with `AS` or without (`u.name AS label`, `u.name label`), goes to the entity of its table by its column name, and
+`$column` gets `null`. Make it an expression (`u.name || '' AS label`) to pass it to `$column`. A column the metadata
+do not map stays in the `stdClass`, and reaches `$column`.
 
 ### Unserializing a column without metadata
 
@@ -421,8 +422,10 @@ The aliases of a PostgreSQL query are the keys of the row, and of `mapObjectTo()
 `objectDatabaseIs()` and `objectSchemaIs()`: they are in lowercase, quoted or not (`FROM "MyUsers" "U"` gives the key
 `u`). Two aliases differing only by case (`"U"` and `u`) whose columns are read would share that key: the query throws
 a `CCMBenchmark\Ting\Driver\QueryException`, rename one of them. The columns of a table read only in a derived table or
-a CTE are keyed by the name of the table, which the query cannot rename: when it differs only by case from another key
-(`FROM users u JOIN (SELECT name AS nm FROM "U") s`), they are keyed by no table and land in the `0` object.
+a CTE, read without the alias of the derived table (`SELECT title FROM (SELECT title FROM articles) s`), are keyed by
+the name of the table, which the query cannot rename: when it differs only by case from another key
+(`FROM users u JOIN (SELECT name AS nm FROM "U") s`), they are keyed by no table and land in the `0` object. Qualified
+by that alias (`SELECT s.title FROM (SELECT title FROM articles) s`), they are keyed by the alias (`s`).
 
 The same fallback applies to MySQL results: a column read as `BOO_NAME` matches the metadata column `boo_name` (MySQL
 column names are case-insensitive), and a table read as `T_BOUH` the metadata of `t_bouh` when no metadata has the

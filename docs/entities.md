@@ -304,7 +304,9 @@ How Ting deals with hooks:
   virtual one is written through its `set` hook. A `readonly` property is only initialized: hydrating an entity whose
   property is already initialized (by its constructor, say) fails.
 * **`get` hooks are applied when Ting reads a property**: the value returned by the hook is the one written to the
-  database.
+  database. Except for the `autoincrement` property, read as is, without its hook, to know whether an entity not
+  managed is inserted or updated (`get => $this->id ?? 0` does not make a new entity look stored): see
+  [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed).
 
 Without hooks, public properties are read and written directly, but changes made by assigning them are not reported:
 such an entity can be inserted, but its updates are not detected.
