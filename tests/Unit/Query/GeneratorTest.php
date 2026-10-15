@@ -32,6 +32,7 @@ use CCMBenchmark\Ting\ConnectionPoolInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver as PgsqlDriver;
+use CCMBenchmark\Ting\Driver\SphinxQL\Driver as SphinxQLDriver;
 use CCMBenchmark\Ting\Query\Generator;
 use CCMBenchmark\Ting\Query\PreparedQuery;
 use CCMBenchmark\Ting\Query\Query;
@@ -312,6 +313,31 @@ class GeneratorTest extends TestCase
             )
         );
         $this->assertSame(1, $this->mockConnection->calls['primary']);
+    }
+
+    public function testGetByCriteriaWithOffsetShouldUseTheSyntaxOfTheDriver()
+    {
+        $services = new TingServices();
+        $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', ['id']);
+        $generator->getByCriteria(['id' => 1], $services->collectionFactory(), false, ['id' => 'ASC'], 10, 20);
+        $this->assertStringEndsWith(' ORDER BY `id` ASC LIMIT 10 OFFSET 20', $this->mockQueryFactory->getCalls[0][0]);
+
+        $pgsql = $this->createStub(Connection::class);
+        $pgsql->method('replica')->willReturn(new PgsqlDriver());
+        $generator = new Generator($pgsql, $this->mockQueryFactory, '', 'table', ['id']);
+        $generator->getByCriteria(['id' => 1], $services->collectionFactory(), false, [], 10, 20);
+        $this->assertStringEndsWith(' LIMIT 10 OFFSET 20', $this->mockQueryFactory->getCalls[1][0]);
+
+        // SphinxQL has no OFFSET keyword
+        $sphinx = $this->createStub(Connection::class);
+        $sphinx->method('replica')->willReturn(new SphinxQLDriver());
+        $generator = new Generator($sphinx, $this->mockQueryFactory, '', 'table', ['id']);
+        $generator->getByCriteria(['id' => 1], $services->collectionFactory(), false, [], 10, 20);
+        $this->assertStringEndsWith(' LIMIT 20, 10', $this->mockQueryFactory->getCalls[2][0]);
+
+        // Without offset, the limit alone
+        $generator->getByCriteria(['id' => 1], $services->collectionFactory(), false, [], 10);
+        $this->assertStringEndsWith(' LIMIT 10', $this->mockQueryFactory->getCalls[3][0]);
     }
 
     /**

@@ -209,7 +209,9 @@ prepared again on the next execution.
 `Repository::getQueryBuilder(string $type)` returns an [aura/sqlquery](https://github.com/auraphp/Aura.SqlQuery)
 builder for the dialect of the repository's connection (MySQL or PostgreSQL). `$type` is one of the
 `Repository::QUERY_SELECT`, `QUERY_INSERT`, `QUERY_UPDATE` or `QUERY_DELETE` constants. Turn the builder into SQL with
-`getStatement()` and run it with a Ting query: Aura's named placeholders are the same as Ting's.
+`getStatement()` and run it with a Ting query: Aura's named placeholders are the same as Ting's. The return type
+follows `$type` (`SelectInterface` for `QUERY_SELECT`, `UpdateInterface`... of `Aura\SqlQuery\Common`), so static
+analysis needs no `@var`.
 
 ```php
 public function findWithBuilder(string $name): CollectionInterface

@@ -29,6 +29,7 @@ namespace CCMBenchmark\Ting\Query;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Driver\DefaultValuesInsertDriverInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
+use CCMBenchmark\Ting\Driver\SphinxQL;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 
 class Generator
@@ -116,6 +117,7 @@ class Generator
      * @template T
      * @param array<string, mixed> $primariesValue column name => value
      * @param CollectionFactoryInterface<T> $collectionFactory
+     * @param array<string, string> $order column name => direction
      * @return QueryInterface<T>
      *
      * @internal
@@ -123,12 +125,13 @@ class Generator
     public function getOneByCriteria(
         array $primariesValue,
         CollectionFactoryInterface $collectionFactory,
-        bool $forcePrimary = false
+        bool $forcePrimary = false,
+        array $order = []
     ): QueryInterface {
         $driver = $this->getDriver($forcePrimary);
 
         [$sql, $params] = $this->getSqlAndParamsByCriteria($primariesValue, $driver);
-        $sql .=  ' LIMIT 1';
+        $this->updateSQLWithOrderAndLimit($sql, $driver, $order, 1);
 
         $query = $this->queryFactory->get($sql, $this->connection, $collectionFactory);
         $query->setParams($params);
@@ -163,6 +166,7 @@ class Generator
      * @param array<string, mixed>       $criteria column name => value
      * @param CollectionFactoryInterface<T> $collectionFactory
      * @param array<string, string>      $order column name => direction
+     * @param int                        $offset rows skipped, only with a limit
      * @return QueryInterface<T>
      */
     public function getByCriteria(
@@ -170,12 +174,13 @@ class Generator
         CollectionFactoryInterface $collectionFactory,
         bool $forcePrimary = false,
         array $order = [],
-        int $limit = 0
+        int $limit = 0,
+        int $offset = 0
     ): QueryInterface {
         $driver = $this->getDriver($forcePrimary);
 
         [$sql, $params] = $this->getSqlAndParamsByCriteria($criteria, $driver);
-        $this->updateSQLWithOrderAndLimit($sql, $driver, $order, $limit);
+        $this->updateSQLWithOrderAndLimit($sql, $driver, $order, $limit, $offset);
 
         $query = $this->queryFactory->get($sql, $this->connection, $collectionFactory);
         $query->setParams($params);
@@ -360,16 +365,28 @@ class Generator
      * @param DriverInterface $driver
      * @param array<string, string> $order column name => direction
      * @param int             $limit
+     * @param int             $offset rows skipped, only with a limit
      * @return void
      */
-    protected function updateSQLWithOrderAndLimit(string &$sql, DriverInterface $driver, array $order = [], int $limit = 0): void
-    {
+    protected function updateSQLWithOrderAndLimit(
+        string &$sql,
+        DriverInterface $driver,
+        array $order = [],
+        int $limit = 0,
+        int $offset = 0
+    ): void {
         if (count($order) > 0) {
             $sql .= $this->generateOrder($order, $driver);
         }
 
-        if ($limit > 0) {
+        if ($limit > 0 && $offset > 0 && $driver instanceof SphinxQL\Driver) {
+            // SphinxQL has no OFFSET keyword
+            $sql .= ' LIMIT ' . $offset . ', ' . $limit;
+        } elseif ($limit > 0) {
             $sql .= $this->generateLimit($limit);
+            if ($offset > 0) {
+                $sql .= ' OFFSET ' . $offset;
+            }
         }
     }
 

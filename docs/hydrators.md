@@ -695,7 +695,7 @@ A collection has a single cursor, the one of its result: it cannot be iterated t
 again inside a `foreach` over it — a nested `foreach`, `json_encode($collection)`, `iterator_count($collection)`,
 `iterator_to_array($collection)` — restarts the result and leaves it at its end, so the outer loop stops after its
 current item, without error. Only `first()` and `count()` are safe inside the loop. To go through the items several
-times, copy them first (`$items = iterator_to_array($collection, false);`).
+times, copy them first (`$items = $collection->toArray();`).
 
 ## Writing a hydrator
 

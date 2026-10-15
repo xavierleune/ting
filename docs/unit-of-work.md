@@ -225,23 +225,16 @@ The unit of work does not open transactions. Wrap `process()` in a transaction s
 [Transactions](repositories.md#transactions)) when the writes must succeed or fail together:
 
 ```php
-$cityRepository->startTransaction();
-try {
-    $unitOfWork
-        ->pushSave($city)
-        ->pushSave($newCity)
-        ->pushDelete($oldCity)
-        ->process();
-} catch (\Throwable $e) {
-    $cityRepository->rollback();
-    throw $e;
-}
-$cityRepository->commit();
+$cityRepository->transactional(fn () => $unitOfWork
+    ->pushSave($city)
+    ->pushSave($newCity)
+    ->pushDelete($oldCity)
+    ->process());
 ```
 
-`commit()` stays outside the `try`: a failed `commit()` throws a `CCMBenchmark\Ting\Exceptions\TransactionException`
-and leaves no transaction open, so a `rollback()` after it would throw too and hide the original error (see
-[Transactions](repositories.md#transactions)).
+Written by hand, `commit()` stays outside the `try`: a failed `commit()` throws a
+`CCMBenchmark\Ting\Exceptions\TransactionException` and leaves no transaction open, so a `rollback()` after it would
+throw too and hide the original error (see [Transactions](repositories.md#transactions)).
 
 After a rollback, the rows written in the transaction no longer exist, or no longer hold the values written:
 
