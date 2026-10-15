@@ -36,6 +36,7 @@ use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
+use CCMBenchmark\Ting\Driver\QueryException as DriverQueryException;
 use CCMBenchmark\Ting\Entity\NotifyPropertyInterface;
 use CCMBenchmark\Ting\Driver\Mysqli;
 use CCMBenchmark\Ting\Driver\SphinxQL;
@@ -44,7 +45,6 @@ use CCMBenchmark\Ting\Exceptions\RepositoryException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
-use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\PreparedQuery;
@@ -305,12 +305,13 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * Run a SELECT of your own as a prepared query and hydrate the entity of the first table of each row: the entities
-     * of the repository when the query reads its table first
+     * Run a SELECT of your own as a prepared query and hydrate, for each row, the entity of the table of its first
+     * column: the entities of the repository when the columns of its table come first. Keep the SQL constant and vary
+     * the parameters: each distinct SQL keeps a prepared statement for the life of the connection.
      *
      * @param array<string, mixed> $params parameter name => value
      * @return CollectionInterface<T>
-     * @throws QueryException
+     * @throws DriverQueryException on a missing parameter or a query refused by the database
      */
     public function getBySql(string $sql, array $params = [], bool $forcePrimary = false): CollectionInterface
     {
@@ -323,17 +324,33 @@ abstract class Repository implements ResetInterface
     }
 
     /**
-     * Run a SELECT of your own as getBySql() and return the entity of its first row
+     * Run a SELECT of your own as getBySql() and return the entity of its first row (add a LIMIT 1: the rows after the
+     * first one are read for nothing)
      *
      * @param array<string, mixed> $params parameter name => value
-     * @return T|null null without row
-     * @throws QueryException
+     * @return T|null null without row, or when the first column of the first row comes from a table without match
+     *                (an outer join)
+     * @throws DriverQueryException on a missing parameter or a query refused by the database
+     * @throws RepositoryException when the first column of the row is not one of the entity of the repository
      */
     public function getOneBySql(string $sql, array $params = [], bool $forcePrimary = false): ?object
     {
         $entity = $this->getBySql($sql, $params, $forcePrimary)->first();
+        if ($entity === null || $entity === false) {
+            return null;
+        }
 
-        return \is_object($entity) ? $entity : null;
+        $class = $this->metadata->getEntity();
+        if ($class !== null && !is_a($entity, $class)) {
+            throw new RepositoryException(sprintf(
+                'Repository::getOneBySql() read %s instead of %s: select the columns of the table of the repository'
+                . ' first',
+                get_debug_type($entity),
+                $class
+            ));
+        }
+
+        return $entity;
     }
 
     /**

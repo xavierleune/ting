@@ -36,6 +36,7 @@ use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Driver\StatementInterface;
 use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
+use CCMBenchmark\Ting\Exceptions\RepositoryException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
@@ -340,6 +341,18 @@ class RepositoryTest extends TestCase
         [$repository] = $this->createPreparedRepository(rows: []);
 
         $this->assertNull($repository->getOneBySql('SELECT * FROM T_BOUH_BOO WHERE boo_id = :id', ['id' => 3]));
+    }
+
+    public function testGetOneBySqlShouldRejectARowWhoseFirstColumnIsNotOfTheEntity()
+    {
+        [$repository] = $this->createPreparedRepository(table: '');
+
+        $this->assertThrows(
+            RepositoryException::class,
+            fn () => $repository->getOneBySql('SELECT COUNT(*) OVER () AS name FROM T_BOUH_BOO'),
+            'Repository::getOneBySql() read stdClass instead of tests\fixtures\model\Bouh: select the columns of the'
+            . ' table of the repository first'
+        );
     }
 
     public function testCountByShouldCountTheMatchingRowsAsAnInteger()
@@ -1281,7 +1294,7 @@ class RepositoryTest extends TestCase
      * @param list<list<string>> $rows values of the column boo_name
      * @return array{0: BouhRepository, 1: object{log: list<array{0: string, 1: array<string, mixed>, 2: string}>}}
      */
-    private function createPreparedRepository(array $rows = [['Bouh']]): array
+    private function createPreparedRepository(array $rows = [['Bouh']], string $table = 'T_BOUH_BOO'): array
     {
         $services = new TingServices();
         $services->metadataRepository()->batchLoadMetadata(
@@ -1292,13 +1305,14 @@ class RepositoryTest extends TestCase
             /** @var list<array{0: string, 1: array<string, mixed>, 2: string}> */
             public array $log = [];
         };
-        $driverFor = fn (string $role) => new class ($role, $rows, $recorder, $this) extends FakeDriver {
+        $driverFor = fn (string $role) => new class ($role, $rows, $table, $recorder, $this) extends FakeDriver {
             /**
              * @param list<list<string>> $rows
              */
             public function __construct(
                 private readonly string $role,
                 private readonly array $rows,
+                private readonly string $table,
                 private readonly object $recorder,
                 private readonly RepositoryTest $test
             ) {
@@ -1310,6 +1324,7 @@ class RepositoryTest extends TestCase
                     $sql,
                     $this->role,
                     $this->rows,
+                    $this->table,
                     $this->recorder,
                     $this->test
                 ) implements StatementInterface {
@@ -1320,6 +1335,7 @@ class RepositoryTest extends TestCase
                         private readonly string $sql,
                         private readonly string $role,
                         private readonly array $rows,
+                        private readonly string $table,
                         private readonly object $recorder,
                         private readonly RepositoryTest $test
                     ) {
@@ -1336,7 +1352,7 @@ class RepositoryTest extends TestCase
                         $result = new Result();
                         $result->setConnectionName('main');
                         $result->setDatabase('bouh_world');
-                        $result->setResult($this->test->bouhResult($this->rows));
+                        $result->setResult($this->test->bouhResult($this->rows, $this->table));
                         $collection->set($result);
 
                         return $collection;
@@ -1372,16 +1388,17 @@ class RepositoryTest extends TestCase
 
     /**
      * @param list<list<string>> $rows values of the column boo_name
+     * @param string $table the table of the column, '' for a column without table
      */
-    public function bouhResult(array $rows): MysqliResult
+    public function bouhResult(array $rows, string $table): MysqliResult
     {
         $mysqliResult = new MysqliResult($rows);
-        $mysqliResult->setFieldsCallback(function () {
+        $mysqliResult->setFieldsCallback(function () use ($table) {
             $field = new \stdClass();
             $field->name = 'name';
             $field->orgname = 'boo_name';
-            $field->table = 'bouh';
-            $field->orgtable = 'T_BOUH_BOO';
+            $field->table = $table === '' ? '' : 'bouh';
+            $field->orgtable = $table;
             $field->type = MYSQLI_TYPE_VAR_STRING;
 
             return [$field];
