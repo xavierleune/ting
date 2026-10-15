@@ -147,7 +147,7 @@ class Result implements ResultInterface
 
     /**
      * The distance to the main SELECT of a table read before it (in a CTE), plus its depth: further than any table of
-     * the main statement that may supply a column (its FROM clause, its derived tables, its select list)
+     * the main statement that may supply a column (its FROM clause and its derived tables)
      */
     private const BEFORE_MAIN_SELECT = \PHP_INT_MAX >> 2;
 
@@ -551,8 +551,8 @@ class Result implements ResultInterface
         // FROM (a JOIN b ON ...), hold items of the FROM clause around them
         $depths = [0];
         // At each depth of parentheses, whether the tables read there may supply a column of the main SELECT: not in a
-        // condition (ON, WHERE, HAVING...) nor in the clauses after it, nor in what they hold; and whether they may
-        // at its start, as the depth around it
+        // condition (ON, WHERE, HAVING...) nor in the clauses after it, nor in a sub-query of the select list, nor in
+        // what they hold; and whether they may at its start
         $feeds = [true];
         $parentFeeds = [true];
         // The opening parentheses of the parenthesized joins read
@@ -577,10 +577,11 @@ class Result implements ResultInterface
             }
             $isJoin = isset($joins[$index]);
             if ($token === '(' || $token === '[') {
+                // A sub-query of the select list gives its column no table: what it reads supplies no column
+                $parentFeeds[] = end($feeds) && ($isJoin || end($states) !== self::SELECT_LIST);
+                $feeds[] = end($parentFeeds);
                 $states[] = $isJoin ? self::FROM_CLAUSE : self::NO_SELECT;
                 $depths[] = $isJoin ? end($depths) : end($depths) + 1;
-                $parentFeeds[] = end($feeds);
-                $feeds[] = end($feeds);
                 // The first item of a parenthesized join follows its parenthesis
                 if (!$isJoin) {
                     continue;
