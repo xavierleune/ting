@@ -695,7 +695,8 @@ class Metadata
      * Tells, once the setter of the autoincrement field threw, whether the entity holds the id of the row inserted:
      * the value of the field (see getAutoincrementValue()) is not null and either differs from the one read before
      * the generated id was written back (the setter set it, whatever the type it stores it as), or equals the
-     * generated id (the id held before, such as the one of an INSERT rolled back, is the one generated again)
+     * generated id (the id held before, such as the one of an INSERT rolled back, is the one generated again), as it
+     * is or as its database value (a value object serialized by the serializer of the field)
      *
      * @param mixed $before the value of the autoincrement field before the generated id was written back
      * @param mixed $insertedId the generated id, null when it was not read
@@ -705,15 +706,28 @@ class Metadata
     public function holdsGeneratedId(object $entity, mixed $before, mixed $insertedId): bool
     {
         $value = $this->getAutoincrementValue($entity);
-        if ($value === null) {
+        if ($value === null || $this->autoincrement === null) {
             return false;
         }
 
-        if ($value !== $before || $value === $insertedId) {
+        if ($value !== $before || self::isSameId($value, $insertedId)) {
             return true;
         }
 
-        return \is_scalar($value) && \is_scalar($insertedId) && (string) $value === (string) $insertedId;
+        try {
+            $databaseValue = $this->getDatabaseValueOfProperty($this->autoincrement['fieldName'], $value);
+        } catch (\Throwable) {
+            // Not a value its serializer takes (a raw value differing from the one its getter returns)
+            return false;
+        }
+
+        return self::isSameId($databaseValue, $insertedId);
+    }
+
+    private static function isSameId(mixed $value, mixed $insertedId): bool
+    {
+        return $value === $insertedId
+            || (\is_scalar($value) && \is_scalar($insertedId) && (string) $value === (string) $insertedId);
     }
 
     /**

@@ -131,7 +131,8 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   is written by the next save of the entity, as any change (`isPropertyChanged()` reports it). A change made by a
   setter that throws is kept too once the setter has set the id; when it throws before setting the id, its changes
   are not kept: the entity holds no id of its new row to update it by. The id counts as set when it is not `null` and
-  differs from the one held before the `INSERT`, or equals the generated one: an id kept from an `INSERT` rolled back
+  differs from the one held before the `INSERT`, or equals the generated one (compared by its database value too: an
+  id held as a value object is serialized by the serializer of the field): an id kept from an `INSERT` rolled back
   is not the id of the new row, and a typed property not initialized holds no id, whatever its getter returns (an id
   with no value of its own, with no property named after it, a virtual property or an untyped property unset to be
   served by `__get()`, is read through its getter, before and after). Retry as
