@@ -736,6 +736,26 @@ class ResultTest extends TestCase
                 ['book'],
                 [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive']],
             ],
+            // PostgreSQL gives no table to the column of a sub-query of the select list
+            'the same table in a CTE and in a sub-query of the select list' => [
+                'WITH c AS (SELECT id, title FROM archive.book)'
+                . ' SELECT id, title, (SELECT count(*) FROM book) n, EXISTS (SELECT 1 FROM book) e FROM c',
+                ['book', 'book', false, false],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive'],
+                    ['name' => 'title', 'orgName' => 'title', 'table' => 'book', 'schema' => 'archive'],
+                    ['name' => 'n', 'orgName' => '(SELECT count(*) FROM book)', 'table' => '', 'schema' => ''],
+                    ['name' => 'e', 'orgName' => 'EXISTS (SELECT 1 FROM book)', 'table' => '', 'schema' => ''],
+                ],
+            ],
+            'the same table in a CTE and in a function call of the select list' => [
+                'WITH c AS (SELECT id FROM archive.book) SELECT id, coalesce((SELECT max(id) FROM book), 0) m FROM c',
+                ['book', false],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive'],
+                    ['name' => 'm', 'orgName' => 'coalesce((SELECT max(id) FROM book), 0)', 'table' => '', 'schema' => ''],
+                ],
+            ],
             'the same table in an ON condition and in a derived table after it' => [
                 'WITH c AS (SELECT id FROM archive.book)'
                 . ' SELECT id FROM other o JOIN x ON o.a IN (SELECT 1 FROM app.book), (SELECT id FROM book) s',
