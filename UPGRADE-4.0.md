@@ -1,198 +1,66 @@
 UPGRADE FROM 3.X to 4.0
 =======================
 
-PHP Version
------------
+Ting 3.14 and 3.15 already offer most of the new names and forms of 4.0 and deprecate the old ones: upgrade to 3.15
+first, fix its deprecations, then upgrade to 4.0. This guide lists the major changes first, then the interfaces and
+extension points to adapt, the type hints, and finally the [smaller behaviour changes](#smaller-behaviour-changes),
+which only matter in edge cases.
 
-* PHP 8.0 and 8.1 support has been dropped. The minimum required version is now **PHP 8.2**.
-* Update your `composer.json` to require `"php": ">=8.2"`
+Requirements
+------------
 
-Symfony
--------
-
-* Symfony 6 support has been dropped: `symfony/property-access` now requires `^7.0 || ^8.0`. The optional
-  `symfony/uid` and `symfony/cache` (suggested, not required) are tested with `^7.0 || ^8.0`.
+* PHP 8.2 minimum (PHP 8.0 and 8.1 dropped): require `"php": ">=8.2"`.
+* Symfony 6 dropped: `symfony/property-access` requires `^7.0 || ^8.0`. The optional `symfony/uid` and
+  `symfony/cache` are tested with `^7.0 || ^8.0`.
 
 Primary / Replica (formerly Master / Slave)
 -------------------------------------------
 
-The master / slave terminology has been replaced by primary / replica. The old names have been removed, without
-aliases:
+The master / slave names are removed, without aliases:
 
-| Before (3.x)                                                      | After (4.0)                                                         |
-|-------------------------------------------------------------------|---------------------------------------------------------------------|
-| `ConnectionPool(Interface)::master(string $name, string $database)` | `ConnectionPool(Interface)::primary(string $name, string $database)` |
-| `ConnectionPool(Interface)::slave(string $name, string $database)`  | `ConnectionPool(Interface)::replica(string $name, string $database)` |
-| `Connection::master()`                                            | `Connection::primary()`                                             |
-| `Connection::slave()`                                             | `Connection::replica()`                                             |
-| `Query::selectMaster($value)` (not declared by `QueryInterface`)  | `Query(Interface)::selectPrimary(bool $usePrimary)`                 |
-| `Repository::pingMaster()`                                        | `Repository::pingPrimary()`                                         |
-| `$forceMaster` parameter of `Repository::get()`, `getAll()`, `getBy()`, `getOneBy()`, `Metadata` and `Generator` methods | `$forcePrimary` |
-| `master` configuration key                                        | `primary`                                                           |
-| `slaves` configuration key                                        | `replicas`                                                          |
+| Before (3.x)                                                     | After (4.0)                                           |
+|------------------------------------------------------------------|-------------------------------------------------------|
+| `ConnectionPool(Interface)::master()` / `slave()`                | `ConnectionPool(Interface)::primary()` / `replica()`  |
+| `Connection::master()` / `slave()`                               | `Connection::primary()` / `replica()`                 |
+| `Query::selectMaster($value)` (not declared by `QueryInterface`) | `Query(Interface)::selectPrimary(bool $usePrimary)`   |
+| `Repository::pingMaster()`                                       | `Repository::pingPrimary()`                           |
+| `$forceMaster` of `Repository::get()`, `getAll()`, `getBy()`, `getOneBy()`, `Metadata` and `Generator` methods | `$forcePrimary` |
+| `master` / `slaves` configuration keys                           | `primary` / `replicas`                                |
 
 ```php
 // Before (3.x):
-$connectionPool->setConfig([
-    'main' => [
-        'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
-        'master'    => ['host' => 'db-primary', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
-        'slaves'    => [
-            ['host' => 'db-replica-1', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
-        ],
-    ],
-]);
+$connectionPool->setConfig(['main' => [
+    'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
+    'master'    => ['host' => 'db-primary', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
+    'slaves'    => [['host' => 'db-replica-1', 'user' => 'app', 'password' => 'secret', 'port' => 3306]],
+]]);
 $city = $cityRepository->get(3, forceMaster: true);
 
 // After (4.0):
-$connectionPool->setConfig([
-    'main' => [
-        'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
-        'primary'   => ['host' => 'db-primary', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
-        'replicas'  => [
-            ['host' => 'db-replica-1', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
-        ],
-    ],
-]);
+$connectionPool->setConfig(['main' => [
+    'namespace' => '\CCMBenchmark\Ting\Driver\Mysqli',
+    'primary'   => ['host' => 'db-primary', 'user' => 'app', 'password' => 'secret', 'port' => 3306],
+    'replicas'  => [['host' => 'db-replica-1', 'user' => 'app', 'password' => 'secret', 'port' => 3306]],
+]]);
 $city = $cityRepository->get(3, forcePrimary: true);
 ```
 
-* Ting 3.14 already offers the new names and deprecates the old ones: you can migrate on 3.x first, fix the
-  deprecations, then upgrade to 4.0.
-* Named arguments must be renamed too, otherwise PHP throws an `Error` (unknown named parameter): `forceMaster:`
-  becomes `forcePrimary:`, and the `value:` of `selectMaster()` / `selectPrimary()` becomes `usePrimary:`. They are
-  the exception to the migration on 3.x: on 3.14 / 3.15 the parameters are still called `$forceMaster` (repository
-  methods) and `$value` (`selectPrimary()`), so `forcePrimary:` and `usePrimary:` only work once on 4.0. Rename them
-  when switching to 4.0, or pass these arguments positionally.
-* `ConnectionPool::setConfig()` throws a `CCMBenchmark\Ting\Exceptions\ConfigException` when a connection still uses
-  the `master` or `slaves` key (e.g. `Connection "main": the "master" key was renamed "primary" in Ting 4.0`).
-* As before, a replica falls back to the primary when no replica is configured.
-* The `port` key is now required for the primary and every replica: without it, PHP warns `Undefined array key "port"`
-  and the driver throws a `TypeError` (`connect()` takes an `int $port`). 3.x only warned, and connected to the
-  default port.
-
-Database Timezone Option: an Invalid Value Now Fails Every Connection
----------------------------------------------------------------------
-
-**Check the `timezone` of your database options before upgrading.** In 3.x, the `timezone` option
-(`ConnectionPool::setDatabaseOptions(['world' => ['timezone' => ...]])`) was sent to the server and its result
-ignored: a value the server rejected (a typo, a named zone such as `Europe/Paris` on a MySQL server whose time zone
-tables are not loaded) was silently dropped, and the session kept the server's time zone.
-
-In 4.0, `setTimezone()` (Mysqli and Pgsql) throws a `CCMBenchmark\Ting\Exceptions\DriverException` when the server
-rejects the time zone (`Can't set timezone Europe/Pari (...)`, with the database error), and does not record it. As
-`ConnectionPool` applies the option on **every** `primary()` / `replica()`, the rejected value is sent again, and
-throws again, on every access to the connection: a configuration that worked on 3.x (with its time zone silently
-ignored) now makes **every query on that database fail**.
-
-The fix is to correct the value, not to catch the exception:
-
-* MySQL accepts an offset (`'+00:00'`), `'SYSTEM'`, or a named zone (`'Europe/Paris'`) only when its time zone tables
-  are loaded (`mysql_tzinfo_to_sql`);
-* PostgreSQL accepts the names listed by `SELECT name FROM pg_timezone_names` (`Europe/Paris`, `UTC`...);
-* to keep the server's time zone, which is what 3.x did with a rejected value, remove the option.
-
-Try the value on each server first: `SET time_zone = '<value>';` (MySQL) or `SET timezone = '<value>';`
-(PostgreSQL). With Mysqli, the value is now sent as a single-quoted string: under the sql_mode `ANSI_QUOTES`, 3.x sent
-it as an identifier, which always failed silently, so the time zone configured there now applies for the first time.
-
-Repository reads: property names and entity values
---------------------------------------------------
-
-`Repository::get()`, `getBy()` and `getOneBy()` now take **property names** (`fieldName`) everywhere, and convert the
-values of the criteria with the serializers of the fields, as `save()` does:
-
-| Argument                                  | Before (3.x)                            | After (4.0)                                    |
-|-------------------------------------------|-----------------------------------------|------------------------------------------------|
-| Composite primary key of `get([...])`     | column names, raw values                | property names, converted values               |
-| Criteria of `getBy()` / `getOneBy()`      | property names, raw values              | property names, converted values               |
-| `$order` of `getBy()`                     | column names                            | property names                                 |
-| Order direction other than `ASC` / `DESC` | ignored (invalid SQL when all were)     | `ValueException`                               |
-| Empty array in the criteria               | invalid SQL (`IN ()`)                   | `ValueException`                               |
-
-The `CountryLanguage` call below uses the sample model (`sample/src/model/CountryLanguageRepository.php`). The `City`
-criteria are illustrative: they assume `status` (an enum `CityStatus`) and `createdAt` (a `datetime`) fields, which the
-sample `City` does not have.
-
-```php
-// Before (3.x):
-$language = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
-$cities = $cityRepository->getBy(
-    ['status' => CityStatus::Active->value, 'createdAt' => $date->format('Y-m-d H:i:s')],
-    order: ['cit_name' => 'ASC'],
-);
-
-// After (4.0):
-$language = $countryLanguageRepository->get(['code' => 'AGO', 'language' => 'Kongo']);
-$cities = $cityRepository->getBy(
-    ['status' => CityStatus::Active, 'createdAt' => $date],
-    order: ['name' => 'ASC'],
-);
-```
-
-Each value of the criteria (and of a composite key given to `get()`) is converted as follows:
-
-| Value                             | Field                                                               | Sent as                                       |
-|-----------------------------------|---------------------------------------------------------------------|-----------------------------------------------|
-| `null`                            | any                                                                 | `IS NULL`                                     |
-| array                             | serializer implementing `Serializer\ArrayValueInterface` (`Json`)   | serialized as a whole, `=`                    |
-| empty array                       | other fields                                                        | `ValueException`: nothing can match           |
-| array                             | other fields                                                        | `IN (...)`, each element converted as below   |
-| object                            | with a serializer                                                   | serialized, `=` (or element of the `IN` list) |
-| `Stringable` object               | without serializer                                                  | as is (the driver casts it to string)         |
-| other object                      | without serializer                                                  | `ValueException`                              |
-| scalar (string, int, float, bool) | serializer implementing `Serializer\ScalarValueInterface` (`Ip`, `Boolean`) | serialized, `=` (or element of the `IN` list) |
-| scalar (string, int, float, bool) | other fields                                                        | as is                                         |
-
-* An unknown key throws a `CCMBenchmark\Ting\Exceptions\ValueException`, as in 3.x for the criteria, but with a new
-  message (`Undefined property "foo" in the criteria of Repository::getBy()` instead of
-  `Undefined property foo in your criteria`). When the key is a column name, the message names the property to use,
-  e.g.
-  `"cit_name" is a column name: use the property name "name" in the order of Repository::getBy()`.
-* An order direction other than `ASC` or `DESC` (case-insensitive) throws a `ValueException` (3.x ignored it, and
-  produced an invalid `ORDER BY` without column when every direction was invalid), e.g.
-  `Invalid direction "UP" for property "name" in the order of Repository::getBy(): use "ASC" or "DESC"`.
-* An empty array throws a `ValueException`
-  (`Empty array for property "id" in the criteria of Repository::getBy(): nothing can match`)
-  instead of sending invalid SQL: return early when the list may be empty (`if ($ids === []) { return ...; }`).
-* `null` or a nested array inside an `IN` list throws a `ValueException`: an `IN` list never matches `NULL`.
-* Empty criteria (`getBy([])`, `getOneBy([])`) throw a `ValueException` instead of sending invalid SQL (`WHERE ` with
-  nothing after it), e.g. `No criteria in Repository::getBy(): use Repository::getAll() to read every row`; so does
-  `get([])` (`No primary key value in Repository::get()`). Use `getAll()` to read every row.
-* Scalars are still sent as is: database values (`CityStatus::Active->value`, a formatted date) keep working, only
-  column-name keys must be renamed. Passing the PHP value (enum, `DateTime`...) is now possible.
-* Except for a field whose serializer's PHP value is a scalar, i.e. implements the new marker interface
-  `CCMBenchmark\Ting\Serializer\ScalarValueInterface` (`Serializer\Ip`, `Driver\Mysqli\Serializer\Boolean`,
-  `Driver\Pgsql\Serializer\Boolean`): its scalars (and each scalar of an `IN` list) are serialized, like `save()`
-  does. Pass the PHP value: `['ip' => '10.0.0.1']` instead of `['ip' => 167772161]` (which `Ip` now rejects with a
-  `Serializer\RuntimeException`; in 3.x, `'10.0.0.1'` was compared with the integer column and MySQL cast it to `10`),
-  `['active' => false]` instead of `['active' => 'f']` or `0`. A value the serializer converts to `NULL` throws a
-  `ValueException`, e.g. `Invalid value 'f' for property "active" in the criteria of Repository::getBy(): the
-  serializer of the field converts it to NULL`. A custom serializer whose PHP value is a scalar can implement the
-  interface too.
-* With a `Json` field, an array is now compared as a whole with the JSON encoding of the value, instead of becoming an
-  `IN` list. See [the caveats on JSON equality](docs/repositories.md#criteria-keys-and-values).
-* A custom serializer whose PHP value is an array can implement the marker interface
-  `CCMBenchmark\Ting\Serializer\ArrayValueInterface` to get the same behaviour.
-* `get()` with a single value (one primary key) follows the same rules: an object is now serialized, including by a
-  serializer that comes from the type of the field (`datetime`, `uuid`...), and so is a scalar for a
-  `ScalarValueInterface` serializer; other scalars and `null` are unchanged.
-* Ting 3.15 already accepts both the 3.x and the 4.0 forms, and deprecates the 3.x ones: you can migrate on 3.x first,
-  fix the deprecations, then upgrade to 4.0. 3.15 does not cover everything: it still sends the scalars of
-  `Ip` and `Boolean` fields as is and doesn't reject empty criteria, without deprecation, so check these by hand.
+* `ConnectionPool::setConfig()` throws a `ConfigException` on a `master` or `slaves` key
+  (`Connection "main": the "master" key was renamed "primary" in Ting 4.0`).
+* Named arguments must be renamed too (otherwise an `Error`, unknown named parameter): `forceMaster:` becomes
+  `forcePrimary:`, the `value:` of `selectMaster()` / `selectPrimary()` becomes `usePrimary:`. 3.14 / 3.15 still name
+  them `$forceMaster` and `$value`: rename them when switching to 4.0, or pass them positionally.
 
 Services Container Removed
 --------------------------
 
-`CCMBenchmark\Ting\Services`, `CCMBenchmark\Ting\ContainerInterface` and the optional `pimple/pimple` dependency have
-been removed, as well as the unused `Repository::$services` property. Ting is now a plain library: every dependency is
-passed to the constructors, and wiring belongs to the integration.
+`CCMBenchmark\Ting\Services`, `CCMBenchmark\Ting\ContainerInterface`, the optional `pimple/pimple` dependency and the
+unused `Repository::$services` property are removed: every dependency is passed to the constructors.
 
-* **With Symfony**, use [ting_bundle](https://github.com/xavierleune/ting_bundle): it already declares every service in
-  the Symfony container, nothing changes for you.
-* **Without a framework**, build the objects yourself, or with any PSR-11 container. Shared objects are the
-  `ConnectionPool`, `MetadataRepository`, `UnitOfWork`, `QueryFactory`, `SerializerFactory`, `Cache` and
-  `RepositoryFactory`; hydrators and `CollectionFactory` are usually created on demand:
+* **With Symfony**, use [ting_bundle](https://github.com/xavierleune/ting_bundle): it declares every service.
+* **Without a framework**, build the objects yourself or with any PSR-11 container. The `ConnectionPool`,
+  `MetadataRepository`, `UnitOfWork`, `QueryFactory`, `SerializerFactory`, `Cache` and `RepositoryFactory` are shared;
+  hydrators and `CollectionFactory` are usually created on demand (`sample/src/TingServices.php` shows it in a class):
 
 ```php
 // Before (3.x):
@@ -213,38 +81,32 @@ $hydrator->setMetadataRepository($metadataRepository);
 $hydrator->setUnitOfWork($unitOfWork);
 $cache = new Cache();
 $cache->setCache(new ArrayAdapter()); // any Symfony cache pool
+$collectionFactory = new CollectionFactory($metadataRepository, $unitOfWork, $hydrator);
 $repositoryFactory = new RepositoryFactory(
-    $connectionPool,
-    $metadataRepository,
-    $queryFactory,
-    new CollectionFactory($metadataRepository, $unitOfWork, $hydrator),
-    $unitOfWork,
-    $cache
+    $connectionPool, $metadataRepository, $queryFactory, $collectionFactory, $unitOfWork, $cache
 );
 $repository = $repositoryFactory->get(CityRepository::class);
 ```
 
-`sample/src/TingServices.php` shows this wiring in a small class.
+`RepositoryFactory::__construct()` and `Repository::__construct()` lost their last argument, the unused
+`SerializerFactoryInterface`: a repository overriding its constructor must drop it and not pass it to
+`parent::__construct()`.
 
 Cache: doctrine/cache Replaced by Symfony Cache Contracts
 --------------------------------------------------------
 
-`doctrine/cache` is abandoned. Ting now relies on [Symfony Cache Contracts](https://symfony.com/doc/current/components/cache.html#cache-contracts)
-(`symfony/cache-contracts`), the "get with a callback" API, rather than PSR-6.
+`doctrine/cache` is abandoned: Ting now uses [Symfony Cache Contracts](https://symfony.com/doc/current/components/cache.html#cache-contracts)
+(`symfony/cache-contracts`, the "get with a callback" API).
 
-* Every argument typed `Doctrine\Common\Cache\Cache` now expects a `Symfony\Contracts\Cache\CacheInterface`:
-  `Repository` and `RepositoryFactory` constructors, `QueryFactory(Interface)::getCached()` /
-  `getCachedPrepared()`, `Query\Cached\Query::setCache()` and `Cache\Cache::setCache()`.
-* Any Symfony cache pool works as is: `ArrayAdapter`, `RedisAdapter`, `MemcachedAdapter`, `ApcuAdapter`...
-  `NullAdapter` replaces `VoidCache`. Pools come from `symfony/cache` (suggested, not required).
-* `CCMBenchmark\Ting\Cache\CacheInterface` now extends Symfony's `CacheInterface` instead of Doctrine's.
-  `CCMBenchmark\Ting\Cache\Cache` exposes `get()` and `delete()`: `fetch()`, `contains()`, `save()` and
-  `getStats()` have been removed. The parameter of `delete()` is renamed `$key` (was `$id`): a call with the named
-  argument `id:` throws an `Error` (unknown named parameter).
+* Every argument typed `Doctrine\Common\Cache\Cache` now expects a `Symfony\Contracts\Cache\CacheInterface`
+  (`Repository` and `RepositoryFactory` constructors, `QueryFactory(Interface)::getCached()` / `getCachedPrepared()`,
+  `Query\Cached\Query::setCache()`, `Cache\Cache::setCache()`). Any pool of `symfony/cache` (suggested) works;
+  `NullAdapter` replaces `VoidCache`.
+* `Ting\Cache\CacheInterface` extends Symfony's `CacheInterface`. `Ting\Cache\Cache` only exposes `get()` and
+  `delete()`: `fetch()`, `contains()`, `save()` and `getStats()` are removed.
 
 ```php
 // Before (3.x):
-$cache = new \CCMBenchmark\Ting\Cache\Cache();
 $cache->setCache(new \Doctrine\Common\Cache\MemcachedCache());
 $value = $cache->fetch('key');
 if ($value === false) {
@@ -253,7 +115,6 @@ if ($value === false) {
 }
 
 // After (4.0):
-$cache = new \CCMBenchmark\Ting\Cache\Cache();
 $cache->setCache(new \Symfony\Component\Cache\Adapter\MemcachedAdapter($memcachedClient));
 $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $item) {
     $item->expiresAfter(3600);
@@ -262,359 +123,349 @@ $value = $cache->get('key', function (\Symfony\Contracts\Cache\ItemInterface $it
 });
 ```
 
-* Cached queries keep the same API (`setTtl()`, `setCacheKey()`, `setForce()`), and `setForce(true)` still recomputes
-  and stores the result. Concurrent misses on the same key are now protected against cache stampede by Symfony,
-  between the processes of a same host with its default lock (see [Cache](docs/cache.md#how-it-works)).
-  Two behaviours change with Symfony pools:
-  * a TTL of `0` stores the item without expiration of its own (`expiresAfter(null)`), so the pool's default lifetime
-    applies: a pool created with a default lifetime expires these items, unlike doctrine/cache;
-  * keys containing a reserved character (`{}()/\@:`, e.g. `user:42`) are rejected with a
-    `Psr\Cache\InvalidArgumentException` (a `Symfony\Component\Cache\Exception\InvalidArgumentException`): replace
-    these characters, or hash the variable part of the key (`'user_' . md5($id)`).
-* A negative TTL (`setTtl(-1)`) throws a `CCMBenchmark\Ting\Query\QueryException`: 3.x accepted it, and the result
-  was never cached. Use `0` or a positive lifetime.
-* If you extend cached queries: the protected `Query\Cached\Query::checkCache()` has been replaced by
-  `queryThroughCache()`.
-* `Query\Cached\Query::setVersion()` has been removed: the version has not been part of the cache key since cache
-  keys became manual (`setCacheKey()`), so it had no effect. Put the version in the key instead:
-  `$query->setCacheKey('user-list-v2')`.
-* Logging (`CacheLoggerInterface`): a read is logged as `OPERATION_GET`, flagged as a miss when no cached value was
-  served: the value had to be computed (and is stored unless the callback
-  sets `$save` to `false`), or the read failed before computing it (a key with a
-  reserved character, a pool throwing). On a miss, the read is stopped before the value is computed: its duration
-  does not include the computation (the query of a cached query), and the operations logged meanwhile (a `get()` in
-  the callback) are not nested in it. `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
+* Cached queries keep their API (`setTtl()`, `setCacheKey()`, `setForce()`) and are protected against cache stampede
+  (see [Cache](docs/cache.md#how-it-works)).
+* **Keys holding a reserved character** (`{}()/\@:`, e.g. `user:42`) are rejected with a
+  `Psr\Cache\InvalidArgumentException`: replace these characters, or hash the variable part (`'user_' . md5($id)`).
+* A TTL of `0` means "the default lifetime of the pool": a pool with a default lifetime expires these items.
+* `Query\Cached\Query::setVersion()`, which had no effect, is removed: put the version in the key
+  (`$query->setCacheKey('user-list-v2')`).
 * Values stored by doctrine/cache cannot be read by the new pools: expect a cold cache after upgrading.
 
-Util\Debug
-----------
+Repository Reads: Property Names and Entity Values
+--------------------------------------------------
 
-* `Debug::export()` and `Debug::dump()` describe objects as arrays (`['__CLASS__' => ..., 'property' => ...]`)
-  instead of cloned objects: typed properties can't hold the exported values. Property listeners are still left out,
-  and uninitialized properties are skipped.
-* A date is exported as `['__CLASS__' => ..., 'date' => '2026-01-02T03:04:05.000000+01:00', 'timezone' => ...]`,
-  other internal objects with the properties `var_dump()` shows. Virtual hooked properties are skipped, and
-  generators are not iterated (exported as `['__CLASS__' => 'Generator']`), nor the iterators over a generator
-  (`IteratorIterator`...) and `NoRewindIterator`. An iterable with object keys (a `WeakMap`, held for instance by the
-  unit of work) is exported as a list of `['key' => ..., 'value' => ...]` pairs.
-* For a quick look at an entity, `var_dump($entity)` is enough: `NotifyProperty::__debugInfo()` hides the listeners.
+`Repository::get()`, `getBy()` and `getOneBy()` take **property names** everywhere, and convert the values of the
+criteria with the serializers of the fields, as `save()` does:
 
-Generator
----------
-
-* The `Generator::getByCriteriaWithOrderAndLimit()` method has been removed.
-* Use `Generator::getByCriteria()` instead, which now accepts optional `$order` and `$limit` parameters:
+| Argument                                  | Before (3.x)                        | After (4.0)                          |
+|-------------------------------------------|-------------------------------------|--------------------------------------|
+| Composite primary key of `get([...])`     | column names, raw values            | property names, converted values     |
+| Criteria of `getBy()` / `getOneBy()`      | property names, raw values          | property names, converted values     |
+| `$order` of `getBy()`                     | column names                        | property names                       |
+| Order direction other than `ASC` / `DESC` | ignored (invalid SQL when all were) | `ValueException`                     |
+| Empty array in the criteria               | invalid SQL (`IN ()`)               | `ValueException`                     |
+| Empty criteria (`getBy([])`, `get([])`)   | invalid SQL (`WHERE ` alone)        | `ValueException`: use `getAll()`     |
 
 ```php
 // Before (3.x):
-$generator->getByCriteriaWithOrderAndLimit(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
+$language = $countryLanguageRepository->get(['cou_code' => 'AGO', 'col_language' => 'Kongo']);
+$cities = $cityRepository->getBy(
+    ['status' => CityStatus::Active->value, 'createdAt' => $date->format('Y-m-d H:i:s')],
+    order: ['cit_name' => 'ASC'],
+);
 
 // After (4.0):
-$generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
+$language = $countryLanguageRepository->get(['code' => 'AGO', 'language' => 'Kongo']);
+$cities = $cityRepository->getBy(['status' => CityStatus::Active, 'createdAt' => $date], order: ['name' => 'ASC']);
 ```
 
-* `Generator` is mostly used internally: from a repository, use `getBy($criteria, $forcePrimary, $order, $limit)`.
-  Its signature only renames `$forceMaster` to `$forcePrimary` (see "Primary / Replica").
-* `Generator` itself still works at the database level, as in 3.x: its criteria and its order take **column names**
-  and **database values**, sent as given, and an order direction other than `ASC` / `DESC` is still silently left
-  out. The rules of "Repository reads: property names and entity values" (property names, values converted by the
-  serializers, `ValueException` on an invalid direction or an empty array) are applied before it, by `Metadata` and
-  `Repository`. Code calling `Generator` directly keeps passing column names and database values; only the generated
-  parameter names changed (see "Smaller Changes for Extensions").
+Each value of the criteria (and of the keys given to `get()`) is converted as follows:
 
-Repository and RepositoryFactory Constructors
----------------------------------------------
+| Value               | Field                                                                       | Sent as                          |
+|---------------------|-----------------------------------------------------------------------------|----------------------------------|
+| `null`              | any                                                                         | `IS NULL`                        |
+| array               | serializer implementing `Serializer\ArrayValueInterface` (`Json`)           | serialized as a whole, `=`       |
+| array               | other fields                                                                | `IN (...)`, each element as below |
+| object              | with a serializer                                                           | serialized                       |
+| `Stringable` object | without serializer                                                          | as is (cast to string)           |
+| other object        | without serializer                                                          | `ValueException`                 |
+| scalar              | serializer implementing `Serializer\ScalarValueInterface` (`Ip`, `Boolean`) | serialized                       |
+| scalar              | other fields                                                                | as is                            |
 
-The `SerializerFactoryInterface` argument, unused since 3.x, has been removed from both constructors:
+* Database values of the other fields (`CityStatus::Active->value`, a formatted date) keep working: only column-name
+  keys must be renamed, and the error names the property to use
+  (`"cit_name" is a column name: use the property name "name" in the order of Repository::getBy()`).
+* **`Ip` and `Boolean` fields** take the PHP value: `['ip' => '10.0.0.1']` instead of `['ip' => 167772161]`,
+  `['active' => false]` instead of `'f'` or `0`. 3.15 still sends these scalars as is, without deprecation: check
+  them by hand.
+* **An empty array** throws: return early when the list may be empty (`if ($ids === []) { return ...; }`).
+* With a `Json` field, an array is compared as a whole with the JSON encoding of the value (see
+  [the caveats on JSON equality](docs/repositories.md#criteria-keys-and-values)). A custom serializer can implement
+  `ArrayValueInterface` or `ScalarValueInterface` to get the same behaviour.
+* `Query\Generator` still works at the database level (column names and database values, sent as given).
 
-* `Repository::__construct()` takes 6 arguments: if your repository overrides the constructor, drop the last
-  `SerializerFactoryInterface $serializerFactory` parameter and don't pass it to `parent::__construct()`. The
-  constructor is `@internal` to call, not to override: an override must keep its parameters, which
-  `RepositoryFactory` passes (see "Smaller Changes for Extensions").
-* `RepositoryFactory::__construct()` takes 6 arguments: drop the last `$serializerFactory` argument (with Symfony,
-  ting_bundle does it for you).
+Database Timezone Option
+------------------------
 
-Metadata
---------
+**Check the `timezone` of your database options before upgrading.** 3.x ignored the result of
+`ConnectionPool::setDatabaseOptions(['world' => ['timezone' => ...]])`: a value the server rejected (a typo, a named
+zone on a MySQL server without time zone tables) was silently dropped. In 4.0, `setTimezone()` (Mysqli, Pgsql) throws
+a `DriverException` (`Can't set timezone Europe/Pari (...)`), and as the option is applied on every `primary()` /
+`replica()`, **every query on that database fails**.
 
-* The `Metadata::getGetter()` method has been removed.
-* The `Metadata::getSetter()` method has been removed.
-* They returned the `getter` / `setter` option of the field (an option that already existed in 3.x), or
-  `'get' . $fieldName` / `'set' . $fieldName` without it. If you need the method names, read the field configuration:
+Fix the value rather than catching the exception. Try it with `SET time_zone = '<value>';` on MySQL (an offset such
+as `'+00:00'`, `'SYSTEM'`, or a named zone once `mysql_tzinfo_to_sql` loaded the tables) or `SET timezone =
+'<value>';` on PostgreSQL (a name of `pg_timezone_names`). To keep the server's time zone, remove the option.
+
+Unit of Work
+------------
+
+### Mutable fields modified in place are written
+
+A change made in place (`$entity->getPublishedAt()->modify('+1 day')`, `$entity->getPayload()->tag = 'x'`) calls no
+setter: 3.x silently lost it. 4.0 keeps the database value of each **mutable** field of a managed entity and, on save,
+writes those whose value changed, with the notified changes of the other fields. `isPropertyChanged()` follows.
+
+* A field is mutable by default when its serializer is `Serializer\DateTime` (a `datetime` field whose property is
+  not typed `\DateTimeImmutable`), `Serializer\Json` decoding objects, or a serializer of your own. The new `mutable`
+  field option overrides it. See [entities](docs/entities.md#tracking-changes).
+* The value compared is what the getter returns: a getter or setter transforming the value read (a getter returning
+  `new \stdClass()` for `null`, a setter converting a date to UTC) makes the next save write the transformed value.
+  See [mutable values](docs/entities.md#mutable-values).
+* A mutable field is written only once its value is known (read, set through its setter, or inserted): an entity read
+  partially never overwrites the columns it did not read.
+* Recommended: type date properties `\DateTimeImmutable` and decode JSON to arrays
+  (`'serializer_options' => ['unserialize' => ['assoc' => true]]`), which are not compared on every save. A
+  `datetime` field hydrates a `\DateTimeImmutable` only for a property typed exactly `\DateTimeImmutable` (nullable or
+  not).
+
+### Saving an entity not managed holding its id updates its row
+
+3.x inserted any entity not managed (a clone, a detached entity, one restored from a cache or a session) as a new row,
+its `autoincrement` id replaced. In 4.0, when the `autoincrement` property holds a value other than `null`, the entity
+is **updated** by its primary key with every readable mapped property, then managed. See
+[Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed).
 
 ```php
-$fields = array_column($metadata->getFields(), null, 'fieldName');
-$getter = $fields['myField']['getter'] ?? 'get' . ucfirst('myField');
-$setter = $fields['myField']['setter'] ?? 'set' . ucfirst('myField');
+$copy = clone $city;
+$copy->setId(null);          // to duplicate the row: without this line, 4.0 updates the row of $city
+$cityRepository->save($copy);
 ```
 
-* Without these options, Ting itself doesn't call `get<Field>()` blindly: it reads and writes the property through
-  Symfony PropertyAccess (`getMyField()`, `isMyField()`, a public property...), see
-  [How Ting reads and writes properties](docs/entities.md#how-ting-reads-and-writes-properties).
+* An id defaulting to `0` (`private int $id = 0;`) is an id: declare it `?int $id = null`.
+* Every field is written: an entity read partially, then detached or cloned and saved, writes its default values over
+  the columns it did not read. `manage()` it first to write its changes only.
+* An entity deleted keeps its id: saving it again updates no row.
 
-UnitOfWork
+### Lifecycle
+
+* `isManaged()` is `false` for a new entity until its `INSERT` has run, so a failed `INSERT` can be saved again: use
+  `isNew()` or `shouldBePersisted()` to know whether an entity is queued. `pushDelete()` no longer makes an entity
+  managed (an entity never inserted is only unqueued).
+* **A change made while an entity is detached is lost**: 3.x wrote it after `manage()`. Make it after `manage()`.
+* An entity inserted in a transaction rolled back is inserted again by its next save (Mysqli, Pgsql). A `commit()`
+  failing on a lost connection is treated as a rollback although the server may have committed: check the rows before
+  retrying (see [Transactions](docs/unit-of-work.md#transactions)).
+
+### Several repositories mapping the same entity class
+
+3.x used the metadata of the last repository built. In 4.0, `Repository::save()` and `delete()` write with the
+metadata of the repository called (`UnitOfWork::pushSave()` / `pushDelete()` called directly still use those
+registered for the class), and an entity is tracked with the metadata that read it. See
+[Writing](docs/repositories.md#writing) and, to override `UnitOfWork`, the
+[unit of work overrides](#unit-of-work-and-metadata-overrides).
+
+Hydrators
+---------
+
+* **One identity map per result**: with `identityMap(true)`, a hydrator given several results (kept as a service, or
+  given to several `getCollection()` calls) no longer returns the entities of an earlier result.
+* **Same table in several databases or schemas** (`City` in `world`, `CityArchive` in `world_archive`): the hydrator
+  takes the metadata of the database, then of the schema, of the result, and throws a `HydratorException` listing the
+  candidates when it stays ambiguous (3.x took the first registered). Name the database or schema of the alias with
+  `objectDatabaseIs()` / `objectSchemaIs()`, see
+  [Tables from another database](docs/hydrators.md#tables-from-another-database).
+* **Two repositories on the same table** (`UserRepository` / `User` and `UserLightRepository` / `UserLight`): 3.x
+  hydrated with the last repository built (`UserRepository::get(1)` could return a `UserLight`). The reads of a
+  repository now use its own metadata; a hydrator used outside a repository throws a `HydratorException`: call
+  `Hydrator::preferRepository(UserRepository::class)`, see
+  [Several repositories on the same table](docs/hydrators.md#several-repositories-on-the-same-table).
+* **`HydratorRelational` throws a `HydratorException`** instead of hydrating wrong objects silently:
+  * when its relations form a cycle (a bidirectional relation, an alias given to itself): declare one direction and
+    set the back reference in the setter, see [HydratorRelational](docs/hydrators.md#hydratorrelational);
+  * when the entity of an alias of a relation has no value for a primary key column (not selected, or null): 3.x
+    merged the entities of that alias under one key. Select every primary key column (a `LEFT JOIN` without match
+    is still accepted);
+  * when an alias of a relation is not in the result (a typo in `AggregateFrom` / `AggregateTo`): 3.x returned a
+    single row.
+
+  Rows without root entity (a `LEFT JOIN` on the root side) are skipped.
+
+PostgreSQL
 ----------
 
-* The `UnitOfWork::generateUid()` method has been removed.
-* The `UnitOfWork::generateUUID()` method has been removed (was deprecated in 3.x).
-* If you need unique identifiers, use PHP's built-in functions like `uniqid()` or `spl_object_hash()` directly.
-* **Mutable fields modified in place are written.** A field is mutable when its PHP value can be modified in place
-  (`$entity->getPublishedAt()->modify('+1 day')`, `$entity->getPayload()->tag = 'x'`): such a change calls no setter,
-  so it is never notified. Ting 3 silently lost it. Ting 4 keeps the database value of each mutable field of a managed
-  entity (the raw value read, as the driver returned it, then the value last written) and, on save, writes the
-  mutable fields whose database value changed (compared with the raw value, then with the raw value unserialized and
-  serialized again), together with the notified changes of the other fields. A value which does not survive a round
-  trip (microseconds, a time in a DST gap, a zero date, a JSON big integer, JSON spaces) is not rewritten while it is
-  not modified. `UnitOfWork::isPropertyChanged()` is `true` for a mutable field whose database value changed. A read
-  serializes nothing, and never fails because of this tracking; a field whose database value cannot be computed (a
-  getter refusing `null`, a JSON value decoded to `INF`) is taken as unchanged unless set through its setter. By default, a field is mutable when its
-  serializer is `Serializer\DateTime` (a `datetime` field whose property is not typed `\DateTimeImmutable`),
-  `Serializer\Json` decoding objects (without the `assoc` unserialize option nor the `JSON_OBJECT_AS_ARRAY` flag), or a serializer of your
-  own; set the new `mutable` field option to override it. See [entities](docs/entities.md#tracking-changes) for the
-  trade-offs.
-* The database value of a mutable field is compared with what its getter returns: a getter or a setter transforming
-  the value read (a getter returning `new \stdClass()` for `null`, a setter replacing `null` or converting a date to
-  UTC) makes the next save write the transformed value, even when nothing else changed — Ting 3 only wrote it with a
-  notified change. A setter converting dates to another timezone than the one they are read in shifts them at each
-  read and save: see [mutable values](docs/entities.md#mutable-values).
-* A mutable field is only written when its value is known: read from the database, set through its setter, or
-  inserted. An entity read partially (a query selecting some of its columns, a join selecting some columns of the
-  joined entity) does not write the mutable fields it did not read, so their PHP default (`null`, or a value set by
-  the constructor such as `new \DateTime()`) never overwrites the stored value. A value modified in place on such a
-  field, without its setter, is not written.
-* The other fields (scalars, `DateTimeImmutable`, enums, `json` decoded to arrays...) are updated when notified by
-  `propertyChanged()`, as in 3.x: the same value given as old and new value, objects included, is not a change.
-* Optional, recommended: type your date properties `\DateTimeImmutable`, and decode your JSON columns to arrays
-  (`'serializer_options' => ['unserialize' => ['assoc' => true]]`). A `datetime` field then hydrates a
-  `\DateTimeImmutable`, with the same `Y-m-d H:i:s` format, and is no longer compared on every save. Only the
-  `\DateTimeImmutable` type (nullable or not) does it: a property typed `\DateTimeInterface`, `\DateTime` or a union,
-  or not typed, keeps hydrating a `\DateTime`, as in 3.x (a `\DateTimeInterface` property can hold a `\DateTime`, which
-  `Serializer\DateTimeImmutable` cannot write).
-* A primary key that is mutable (e.g. a `\DateTime`), modified in place or not, targets its row by its kept database
-  value: the `UPDATE` (or `DELETE`) finds it by the value read.
-* **An entity is tracked with the metadata that read it.** When several repositories map the same class (a full
-  entity and a lighter projection), the fields not read and the kept values of the mutable fields are those of the
-  metadata the entity was read with, not those registered last for the class. Saved through another repository, the
-  fields the reading metadata do not map are written only once known (set through their setter, or written by an
-  `INSERT` or an `UPDATE`), and a save only forgets the
-  changes it wrote (and those no metadata of the class maps). `UnitOfWork::manage()` takes these metadata as an
-  optional second argument (the hydrators give them): a class overriding `manage()` must declare it
-  (`manage(NotifyPropertyInterface $entity, ?Metadata $metadata = null): void`), otherwise PHP refuses the override,
-  and pass it on to `parent::manage()`, otherwise the entity is tracked with the metadata registered for its class
-  again. Likewise, the protected `Metadata::getPrimariesKeyValuesByProperties()` takes an optional third argument,
-  `array $storedPrimaries = []` (the kept values of the mutable primary keys): an override must declare it and use it,
-  otherwise a mutable primary key no longer targets its row by the value read.
+### Keys of the rows
+
+The Pgsql driver reads tables and aliases as PostgreSQL resolves them, and names the columns without alias by its own
+rule: some keys change (in the `0` object of `Hydrator`, the arrays of `HydratorArray`, the properties set by
+`HydratorValueObject`). **Alias every computed expression with `AS`**, as with MySQL, to keep the key you read.
+
+| Expression                                         | 3.13 key                            | 4.0 key             |
+|----------------------------------------------------|-------------------------------------|---------------------|
+| `id::text`, `x::double precision`                  | `text`, `precision`                 | `id`, `x`           |
+| `count(id)`, `now()::date`                         | `count(id)`, `date`                 | `count`, `now`      |
+| `NOT flag`, `-amount`, `'x'::text`, `CASE ... END` | `flag`, `amount`, `text`, its text  | `?column?`          |
+| `SELECT nextval('s') AS nextId` (without `FROM`)   | `nextid`                            | `nextId`            |
+
+* `CAST(... AS t)` is named after a plain column only; an expression in parentheses (`(x)::text`) or a call followed
+  by `OVER`, `FILTER` or `WITHIN GROUP` is `?column?`. PostgreSQL itself names more expressions than the driver, see
+  [Columns without metadata](docs/hydrators.md#columns-without-metadata).
+* The entity of a table is keyed by its alias also for a `FROM` list (`FROM users u, orders o`) and the last table of
+  a statement ending with `;`, where 3.x keyed the columns without prefix by the table name or by no table.
+* **A plain column aliased without `AS`** (`SELECT u.name n FROM users u`) is hydrated into the entity of its table,
+  as with `AS`: `$row[0]->n` no longer exists, and `mapAliasTo()` / `unserializeAliasWith()` on such an alias no
+  longer receive the value. To keep it in `0`, make it an expression (`u.name || '' AS n`). A column the metadata do
+  not map stays in `0`.
+* **A query of several statements** is read by the columns of its last statement (`SELECT id FROM t; SELECT name FROM
+  u` was keyed `id`, is `name`). When the last statement returns no column (`BEGIN; SELECT ...; COMMIT`), `query()`
+  throws a `QueryException`, after the statements ran: run the other statements apart.
+* **A query whose columns read are not as many as those of its result** (`INSERT ... SELECT a, b ... RETURNING id`,
+  `EXPLAIN SELECT ...`) throws a `QueryException` (`3 columns read from the query, but its result has 4`): 3.13
+  shifted the values or threw a `ValueError`. Run it without a collection.
+
+### Case of identifiers and booleans
+
+* Quoted identifiers keep their case, unquoted ones are folded to lowercase, as PostgreSQL does. Tables and columns are
+  matched to the metadata exactly, then case-insensitively, so a 3.x application keeps working (and
+  `setTable('Users')` for a table `"Users"`, never matched by 3.x, now is). The same fallback applies to MySQL (a
+  column read as `BOO_NAME` matches `boo_name`). See
+  [Case of the table and column names](docs/hydrators.md#case-of-the-table-and-column-names).
+* A `bool` field without serializer reads `'f'` as `false` (3.x: `true`), whatever the driver, and the Pgsql driver
+  sends a PHP boolean as `'1'` / `'0'` (3.x sent `false` as `''`, rejected for a boolean column): a `false` bound to a
+  text column now stores `'0'`. Declare `bool` fields with `Driver\Pgsql\Serializer\Boolean`, see
+  [Types](docs/repositories.md#types).
 
 Serializers
 -----------
 
-* **`Serializer\DateTimeImmutable` (`datetime_immutable` fields) writes `Y-m-d H:i:s` by default**, as
-  `Serializer\DateTime`, instead of `\DateTimeInterface::ATOM` (`2024-01-31T10:00:00+01:00`). In 3.x, its ATOM default
-  was also the only format accepted on read, so a `datetime_immutable` field could not read a MySQL `DATETIME` or a
-  PostgreSQL `timestamp` (`2024-01-31 10:00:00`) without a `format` option. Values already stored as ATOM are still
-  read (see below). To keep writing ATOM, set the format:
-  `'serializer_options' => ['serialize' => ['format' => \DateTimeInterface::ATOM]]`.
-* `Serializer\DateTime` and `Serializer\DateTimeImmutable` read a value with their `format` first and, when it does
-  not match, with the formats databases return, whatever the format: `Y-m-d` (a `DATE`, read at midnight),
-  `Y-m-d H:i:s` with optional fractional seconds (`.123456`) and optional UTC offset (`+01`, `+0100`, `+01:00`, `Z`)
-  — a MySQL `DATETIME`, a PostgreSQL `timestamp` or `timestamptz` (`2024-01-31 10:00:00+01`) — and ATOM / RFC 3339
-  (`2024-01-31T10:00:00+01:00`, with optional fractional seconds). Anything else throws a
-  `Serializer\RuntimeException`, as an unparsable value did in 3.x: the PHP date parser is not used as a fallback, it
-  would read `now`, `tomorrow` or `+1 day` as dates, and `05/06/2024` as May 6th.
-* `Serializer\Json` honours the `JSON_OBJECT_AS_ARRAY` flag of its unserialize `options`, as `json_decode()` does:
-  such a field now decodes JSON objects to **arrays**. 3.13 forced objects (`\stdClass`) whatever the flag, as its
-  `assoc` option defaulted to `false` instead of `null`. Remove the flag to keep objects, or set `assoc` to `false`
-  explicitly. A field decoded to arrays is not mutable by default (see "UnitOfWork").
-* `unSerializeUseFormat` set to `false` is the explicit opt-in to the permissive mode: it skips the format and reads
-  with the PHP date parser (`new \DateTime($value)`), as in 3.x, except that an empty string is now rejected (it was
-  read as the current time).
+* **`Serializer\DateTimeImmutable` writes `Y-m-d H:i:s` by default** instead of `\DateTimeInterface::ATOM`. To keep
+  ATOM: `'serializer_options' => ['serialize' => ['format' => \DateTimeInterface::ATOM]]`.
+* `Serializer\DateTime` and `DateTimeImmutable` read their `format`, then the formats databases return (`Y-m-d` at
+  midnight, `Y-m-d H:i:s` with optional fractional seconds and UTC offset, ATOM). Anything else throws a
+  `Serializer\RuntimeException`: the PHP date parser, which read `now` or `+1 day` as dates, is no longer a fallback
+  (`unSerializeUseFormat => false` still opts in to it).
+* `Serializer\Json` honours the `JSON_OBJECT_AS_ARRAY` flag of its unserialize `options`: such a field now decodes
+  objects to **arrays** (3.13 forced `\stdClass`). Remove the flag, or set `assoc` to `false`, to keep objects.
 
-Query and Driver Methods
--------------------------
+Removed Methods
+---------------
 
-### Removed getInsertId() Methods
+| Removed                                                      | Use instead                                              |
+|--------------------------------------------------------------|----------------------------------------------------------|
+| `Query(Interface)::getInsertId()`, `Mysqli\Driver` / `Pgsql\Driver::getInsertId()` | `getInsertedId()`                  |
+| `Pgsql\Driver::getInsertIdForSequence($sequence)`            | `getInsertedIdForSequence($sequence)`                    |
+| `Generator::getByCriteriaWithOrderAndLimit()`                | `Generator::getByCriteria()` (new `$order`, `$limit`)    |
+| `Metadata::getGetter()`, `Metadata::getSetter()`             | the `getter` / `setter` options of the field             |
+| `UnitOfWork::generateUid()`, `generateUUID()`                | `uniqid()`, `symfony/uid`...                             |
+| `Query\Cached\Query::setVersion()`                           | the version in the cache key                             |
+| `Cache\Cache::fetch()`, `contains()`, `save()`, `getStats()` | `Cache\Cache::get()`                                     |
 
-All deprecated `getInsertId()` methods have been removed. Use `getInsertedId()` instead:
-
-**QueryInterface and Query class:**
 ```php
 // Before (3.x):
 $query->getInsertId();
+$generator->getByCriteriaWithOrderAndLimit(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
+$getter = $metadata->getGetter('myField');
 
 // After (4.0):
 $query->getInsertedId();
+$generator->getByCriteria(['status' => 'active'], $collectionFactory, false, ['name' => 'ASC'], 10);
+$getter = array_column($metadata->getFields(), null, 'fieldName')['myField']['getter'] ?? 'getMyField';
 ```
 
-**DriverInterface, Mysqli\Driver, and Pgsql\Driver:**
-```php
-// Before (3.x):
-$driver->getInsertId();
+From a repository, use `getBy($criteria, $forcePrimary, $order, $limit)`. Ting itself reads and writes properties
+through Symfony PropertyAccess, see
+[How Ting reads and writes properties](docs/entities.md#how-ting-reads-and-writes-properties).
 
-// After (4.0):
-$driver->getInsertedId();
-```
+Interfaces and Extension Points
+-------------------------------
 
-**PostgreSQL sequences:**
-```php
-// Before (3.x):
-$pgsqlDriver->getInsertIdForSequence('my_sequence');
+### New methods on the interfaces
 
-// After (4.0):
-$pgsqlDriver->getInsertedIdForSequence('my_sequence');
-```
+* `DriverInterface::ping(): bool` and `setTimezone(?string $timezone = null): void`; `connect()` is typed
+  `connect(string $hostname, ?string $username, ?string $password, int $port): static` (`ConnectionPool` passes `null`
+  for a missing user or password).
+* `ConnectionPoolInterface::setDatabaseOptions(array $options): void`.
+* `QueryInterface::selectPrimary(bool $usePrimary): static` (on `Query` since 3.x, now declared).
+* `StatementInterface::isStale(): bool`: `true` once the session the statement was prepared in is gone, so that
+  prepared queries prepare it again. A statement whose connection cannot be replaced can return `false`.
+* `CollectionInterface` and `HydratorInterface`: `count(): int` and `getIterator(): \Generator`.
+* `ConnectionPoolInterface`, `StatementInterface` and `QueryInterface` no longer declare a constructor.
 
-PostgreSQL Driver
------------------
+### Optional driver interfaces
 
-* The PostgreSQL driver now uses native PHP 8.1+ `PgSql\Connection` and `PgSql\Result` classes instead of resources.
-* This is an **internal change** and should not affect most user code.
-* The first parameter of `Driver\Pgsql\Driver::execute()` is renamed `$sql` (was `$originalSQL`), as in
-  `DriverInterface` and the Mysqli driver: a call with the named argument `originalSQL:` throws an `Error` (unknown
-  named parameter).
-* **A query of several statements** (`query()` without parameters, which PostgreSQL runs whole, returning the result
-  of the last statement) is read by the columns of its last statement, where 3.13 read those of the first one:
-  - `SELECT id FROM t; SELECT name FROM u` was keyed `id` and is keyed `name`;
-  - when the last statement returns no column (`BEGIN; SELECT id FROM t; COMMIT`, `SELECT id FROM t; COMMIT`, or a last
-    statement holding a `SELECT`: `SELECT id FROM t; INSERT INTO audit (at) SELECT now()`, `CREATE TABLE ... AS SELECT`,
-    `SELECT ... INTO`, or a last statement without column: `SELECT 1; SELECT FROM t`), `query()` throws a
-    `CCMBenchmark\Ting\Driver\QueryException` "can't parse columns". 3.13 threw a `ValueError` (an `\Error`, which
-    `catch (\Exception)` does not catch) when the first `SELECT` reads a plain column (`[table.]column`, aliased or not:
-    `SELECT id FROM t; COMMIT`). When it reads only expressions, it returned no row when the last statement returns none
-    (`BEGIN; SELECT max(id) FROM t; COMMIT`), and each row with one column holding `null`, raising an "Undefined array
-    key 0" warning per row, when the last statement returns rows without column (`SELECT 1; SELECT FROM t`). The
-    statements have already run when it is thrown: a `COMMIT` among them is done. Run the other statements apart
-    (`execute()`, or `startTransaction()` / `commit()`) and read the `SELECT` alone.
-* If you were using reflection or type checking on internal driver properties, update your code:
+* `Driver\SequenceAwareDriverInterface` (`getInsertedIdForSequence(string $sequenceName): int`): **required** for the
+  `sequenceName` option of an autoincrement field; a method of that name is no longer enough.
+* `Driver\RollbackListenerAwareDriverInterface` (`addRollbackListener(RollbackListenerInterface $listener, object
+  $subject): bool`): the unit of work registers each entity inserted in a transaction, and expects
+  `rolledBack($subject)` when the transaction ends without commit. Mysqli and Pgsql implement it. Without it, an
+  entity inserted in a transaction rolled back stays managed: `detach()` it and set its id to `null` to insert it again.
+* `Driver\DefaultValuesInsertDriverInterface` (`getDefaultValuesInsertClause(): string`): an `INSERT` without any value
+  is written `INSERT INTO t () VALUES ()` (MySQL) unless the driver implements it, as Pgsql does (`DEFAULT VALUES`).
 
-```php
-// Before (3.x):
-// $connection was a resource
+### Unit of work and metadata overrides
 
-// After (4.0):
-// $connection is a \PgSql\Connection instance
-```
+* `UnitOfWork::manage()`, `pushSave()` and `pushDelete()` take a new optional `?Metadata $metadata = null`, e.g.
+  `manage(NotifyPropertyInterface $entity, ?Metadata $metadata = null): void`: an override must declare it (otherwise
+  PHP refuses it) and pass it to the parent (otherwise the entity is tracked with the metadata of its class).
+* The protected `Metadata::getPrimariesKeyValuesByProperties()` takes a third `array $storedPrimaries = []` (kept
+  values of mutable primary keys): an override must declare and use it.
+* The protected `Metadata::getColumnsFromCriteria()` and `getPrimariesKeyValuesAsArray()` validate the keys (property
+  names only) and return converted database values: an override must do the same.
 
-DriverInterface - New Required Methods
----------------------------------------
+### Smaller Changes for Extensions
 
-If you have implemented custom drivers, you must implement these new methods:
+Elements marked `@internal` are reserved for Ting and [ting_bundle](https://github.com/xavierleune/ting_bundle) and may
+change in a minor version. Two of them stay supported for extension, as in 3.x:
 
-```php
-interface DriverInterface
-{
-    // New methods in 4.0:
-    public function ping(): bool;
-    public function setTimezone(?string $timezone = null): void;
-}
-```
+* `Repository::__construct()`: internal to **call** (`RepositoryFactory` passes its 6 arguments), but a repository may
+  **override** it, passing the same parameters to `parent::__construct()`;
+* the protected `Hydrator::hydrateColumns()`, which a hydrator extending `Hydrator` may call (see
+  [Writing a hydrator](docs/hydrators.md#writing-a-hydrator)). A subclass overriding `getIterator()` must read its rows
+  through the protected `hydratedRows()`: looping over `$this->result` breaks a read nested with the same hydrator.
 
-**Implementation example:**
-```php
-public function ping(): bool
-{
-    // Check if connection is alive
-    // Return true if connected, false otherwise
-}
+Other changes:
 
-public function setTimezone(?string $timezone = null): void
-{
-    // Set the database connection timezone
-    // e.g., for MySQL: SET time_zone = '+00:00'
-}
-```
+* `Metadata::getByCriteriaWithOrderAndLimit()` became `@internal`, like the other query methods of `Metadata`.
+* The protected `Query\Cached\Query::checkCache()` is replaced by `queryThroughCache()`.
+* Protected properties renamed or removed:
 
-`connect()` is now typed: `connect(string $hostname, ?string $username, ?string $password, int $port): static`.
-User and password stay optional in the connection configuration: `ConnectionPool` passes `null` when they are missing.
+  | Class                          | 3.13                                 | 4.0                                     |
+  |--------------------------------|--------------------------------------|-----------------------------------------|
+  | `ConnectionPool`               | `$connectionSlaves`                  | `$connectionReplicas` (already in 3.14) |
+  | `Query\Query`                  | `$selectMaster`                      | `$selectPrimary`                        |
+  | `Repository\RepositoryFactory` | `$collection`, `$serializerFactory`  | removed                                 |
+  | `Repository\Repository`        | `$services`                          | removed                                 |
+  | `Repository\Hydrator`          | `$alreadyManaged`                    | removed (one identity map per result)   |
+  | `Repository\HydratorArray`     | `$metadataRepository`, `$unitOfWork` | removed (unused)                        |
+  | `Query\Cached\Query`           | `$version`                           | removed                                 |
+  | `Driver\Pgsql\Statement`       | `$queryType`                         | removed                                 |
 
-QueryInterface - New Required Method
-------------------------------------
+* The Pgsql `setCollectionWithResult()` methods changed their parameters:
+  `Driver::setCollectionWithResult(object $resultResource, string $sql, CollectionInterface $collection)` (protected:
+  the result is passed first, 3.13 read `$this->result`) and
+  `Statement::setCollectionWithResult(object $resultResource, CollectionInterface $collection): bool` (the collection
+  is required).
+* The parameters of the generated queries (`get()`, `getBy()`, `getOneBy()`, the `INSERT` / `UPDATE` / `DELETE` of
+  the unit of work) are named `:<role><position>_<column>` (`v` for a written value, `w` for a condition, characters
+  outside `[a-zA-Z0-9_]` replaced by `_`, `__<n>` in an `IN` list), as the query logs show:
 
-If you have implemented custom queries, you must implement:
+  | Query                                 | 3.x                                | 4.0                                     |
+  |---------------------------------------|------------------------------------|-----------------------------------------|
+  | `getBy(['id' => 3, 'name' => ['a']])` | `id = :#id AND name IN (:name__1)` | `id = :w1_id AND name IN (:w2_name__1)` |
+  | INSERT                                | `VALUES (:id, :name)`              | `VALUES (:v1_id, :v2_name)`             |
+  | UPDATE                                | `SET name = :name WHERE id = :#id` | `SET name = :v1_name WHERE id = :w1_id` |
 
-```php
-interface QueryInterface
-{
-    // New method in 4.0 (already available on Query in 3.x, as selectMaster() and, since 3.14, selectPrimary()):
-    public function selectPrimary(bool $usePrimary): static;
-}
-```
-
-StatementInterface - New Required Method
-----------------------------------------
-
-If you have implemented custom statements (for a custom driver), you must implement:
-
-```php
-interface StatementInterface
-{
-    // New method in 4.0: true once the session the statement was prepared in is gone (reconnection, connection
-    // reset); prepared queries then prepare their statement again
-    public function isStale(): bool;
-}
-```
-
-A statement whose connection cannot be replaced can always return `false`.
-
-CollectionInterface and HydratorInterface
------------------------------------------
-
-If you have implemented custom collections or hydrators, `count()` and `getIterator()` are now declared with their
-types:
-
-```php
-public function count(): int;
-public function getIterator(): \Generator;
-```
-
-Constructors Removed from Interfaces
-------------------------------------
-
-`ConnectionPoolInterface`, `StatementInterface` and `QueryInterface` no longer declare a constructor. Implementations
-are free to define their own.
-
-ConnectionPoolInterface - New Method
--------------------------------------
-
-If you have implemented custom connection pools, you must implement:
-
-```php
-interface ConnectionPoolInterface
-{
-    // New method in 4.0:
-    public function setDatabaseOptions(array $options): void;
-}
-```
+* The Mysqli and Pgsql `escapeField()` double a backtick (Mysqli) or a double quote (Pgsql) in the name, and escape a
+  colon (`` `x \:y` ``) so that it is not read as a placeholder: their result is meant for SQL run through a Ting
+  driver. Code escaping the name before calling `escapeField()` must stop doing it.
+* `Connection::__construct()` (internal) throws a `RuntimeException` on an empty `$name` or `$database`.
 
 Type Hints and Strict Types
-----------------------------
+---------------------------
 
-**Every method of every Ting interface, and every public or protected method of every non-final class, now declares
-a native return type and native parameter types** (3.13 declared almost none; the few parameters left untyped are
-listed in "Native types everywhere" below). The signatures quoted in this guide are examples, not an exhaustive list:
-an implementation or an override written against 3.x must be compared with the 4.0 declaration of **each** method it
-implements or overrides, not only with the methods listed here.
+Every method of every Ting interface, and every public or protected method and property of every non-final class,
+declares native types (3.13 declared almost none). Generics and array shapes are in the PHPDoc: `Repository<T>`
+(`get()` returns `?T`, `getBy()` a `CollectionInterface<T>`), `CollectionInterface<T>`, `HydratorInterface<T>`,
+`QueryInterface<T>`, and `@phpstan-type` aliases to import (`ConnectionConfig`, `Field`...).
 
-* **Implementing an interface**: every method must declare a return type compatible with the interface (the same
-  type, or a narrower one), otherwise PHP raises a fatal error when loading the class. Its parameters may stay
-  untyped (an untyped parameter is wider), or take the type of the interface, but they must keep the default values
-  the interface declares: a parameter that became optional in 4.0 and is still required by the implementation is a
-  fatal error too. Two interface parameters became optional:
-  * `Logger\DriverLoggerInterface::startStatementExecute(string $statement, array $params = [])`: a 3.x logger
-    declaring `startStatementExecute($statement, $params)` (as the `DriverLogger` of ting_bundle 3.x did; ting_bundle
-    4.0 is already compatible) must write `$params = []`;
-  * `Driver\DriverInterface::escapeField(mixed $field = null)`: a 3.x driver declaring `escapeField($field)` must write
-    `$field = null`.
-* **Extending a non-final class** (a repository, a hydrator, a driver, a serializer...): an override must declare a
-  compatible return type, with the same fatal error otherwise; a parameter type it declares must be the type of the
-  parent, or a wider one. It must also keep the optional parameters of the parent, and the parameters the parent
-  added: `escapeField(mixed $field = null)` and `setTimezone(?string $timezone = null)` of the Mysqli, Pgsql and
-  SphinxQL drivers (`$timezone` was required in 3.x), `Query\Generator::getByCriteria()` (new optional `$order` and
-  `$limit`, see "Generator") and the protected `Driver\Pgsql\Driver::setCollectionWithResult()` (see "Smaller Changes
-  for Extensions").
+To adapt, load every class implementing a Ting interface or extending a Ting class (repositories, hydrators,
+serializers, loggers, drivers, entities): an incompatible signature is a fatal error when the class is loaded. Then run
+PHPStan or Psalm, which also reports the new generic types. An implementation or override needs the same or a narrower
+return type, the same or wider parameter types, and the optional parameters of the parent. What breaks 3.x code:
 
-Start with your repositories, which every application has:
+* **Every repository**: `initMetadata()` must declare its return type.
 
-* `MetadataInitializer::initMetadata()` now returns `Metadata`: **every repository** must declare it.
   ```php
   // Before (3.x):
   public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = [])
@@ -622,589 +473,105 @@ Start with your repositories, which every application has:
   // After (4.0):
   public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
   ```
-* A repository overriding a method of `Repository` with its 3.x signature does not load either, e.g.
-  `public function getAll($forceMaster = false)` (no return type): write
-  `public function getAll(bool $forcePrimary = false): CollectionInterface`. The methods of `Repository` in 4.0:
-  ```php
-  public function __construct(ConnectionPool $connectionPool, MetadataRepository $metadataRepository, QueryFactory $queryFactory, CollectionFactory $collectionFactory, \Symfony\Contracts\Cache\CacheInterface $cache, UnitOfWork $unitOfWork);
-  public function getCollection(?HydratorInterface $hydrator = null): Collection;
-  public function getQuery(string $sql): Query;
-  public function getPreparedQuery(string $sql): PreparedQuery;
-  public function getCachedQuery(string $sql): Cached\Query;
-  public function getCachedPreparedQuery(string $sql): Cached\PreparedQuery;
-  public function getQueryBuilder(string $type): \Aura\SqlQuery\QueryInterface;
-  public function get(mixed $primariesKeyValue, bool $forcePrimary = false): ?object;
-  public function getAll(bool $forcePrimary = false): CollectionInterface;
-  public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface;
-  public function getOneBy(array $criteria, bool $forcePrimary = false): ?object;
-  public function save(NotifyPropertyInterface $entity): void;
-  public function delete(NotifyPropertyInterface $entity): void;
-  public function startTransaction(): void;
-  public function rollback(): void;
-  public function commit(): void;
-  public function ping(): bool;
-  public function pingPrimary(): bool;
-  public function getMetadata(): Metadata;
-  public function reset(): void;
-  ```
-  An override of `getCollection()` must return `Collection` (or a subclass), not `CollectionInterface`.
 
-The other extension points you are the most likely to implement:
+* **A repository overriding a method of `Repository`** must copy its 4.0 signature, e.g.
+  `public function getAll(bool $forcePrimary = false): CollectionInterface` (was `getAll($forceMaster = false)`); an
+  override of `getCollection()` must return `Collection`.
+* **Serializers** implementing `SerializeInterface` / `UnserializeInterface` must declare a return type (`mixed` or
+  narrower); a class extending a built-in serializer must copy the return type of the method it overrides
+  (`serialize($toSerialize, array $options = []): ?string` for `DateTime`).
+* **Loggers**: the methods of `DriverLoggerInterface` and `CacheLoggerInterface` return `void`, and an implementation
+  must write `startStatementExecute(string $statement, array $params = [])` (ting_bundle 4.0 is compatible).
+* **Drivers** must keep the new defaults of `escapeField(mixed $field = null)` and `setTimezone(?string $timezone =
+  null)`. **Entities**: `propertyChanged()` and `addPropertyListener()` return `void`, and the `$listeners` of the
+  `NotifyProperty` trait is a `protected array`.
+* **Typed properties and parameters**: a subclass redeclaring a property must keep its type; `null` or an object
+  passed to a typed parameter is a `TypeError` (`setTtl(null)`), where 3.x cast it.
 
-* Loggers (ting_bundle's `DriverLogger` and `CacheLogger` included):
-  ```php
-  // DriverLoggerInterface
-  public function addConnection(string $name, string $connection, array $connectionConfig): void;
-  public function startQuery(string $sql, array $params, string $connection, string $database): void;
-  public function startPrepare(string $sql, string $connection, string $database): void;
-  public function startStatementExecute(string $statement, array $params = []): void;
-  public function stopQuery(): void;
-  public function stopPrepare(string $statement): void;
-  public function stopStatementExecute(string $statement): void;
+Smaller Behaviour Changes
+-------------------------
 
-  // CacheLoggerInterface
-  public function startOperation(string $operation, array|string $keys): void;
-  public function stopOperation(bool $miss = false): void;
-  ```
-* Entities and listeners: `NotifyPropertyInterface::addPropertyListener(PropertyListenerInterface $listener): void`,
-  `PropertyListenerInterface::propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue,
-  mixed $newValue): void`. The `NotifyProperty` trait declares `protected array $listeners = []`: an entity using the
-  trait must not redeclare `$listeners` without this type.
-* Serializers: `SerializeInterface::serialize(mixed $toSerialize, array $options = []): mixed` and
-  `UnserializeInterface::unserialize(mixed $serialized, array $options = []): mixed`. A serializer implementing them
-  directly **must now declare a return type** (`mixed`, or any narrower type such as `?string`), or PHP raises a fatal
-  error when loading it; its parameters may stay untyped. The built-in serializers declare native return types too: a
-  class **extending** one of them must declare a compatible return type on the methods it overrides (see
-  "Smaller changes for extensions").
+Edge cases, misuses and rarely hit changes.
 
-<details>
-<summary>Every method of every Ting interface in 4.0 (generated by reflection)</summary>
+### Configuration and drivers
 
-Every one of these methods is typed in 4.0; in 3.13, only `ResetInterface::reset()` had a return type. Class names are
-short: the classes of Ting, `Generator` is PHP's.
+* The `port` key is required for the primary and every replica: without it, a warning then a `TypeError` (3.x warned
+  and used the default port).
+* `setCharset()` (Mysqli, Pgsql) throws a `DriverException` when the server rejects the charset (Mysqli under
+  `MYSQLI_REPORT_STRICT` threw a `mysqli_sql_exception`).
+* Mysqli sends the `timezone` option as a single-quoted string: under the sql_mode `ANSI_QUOTES`, 3.x sent an
+  identifier, which failed silently, so the configured time zone now applies.
+* `reconnect()` before `connect()` throws a `NeverConnectedException` (Mysqli, Pgsql). Two Pgsql drivers with the
+  same parameters no longer share a session, and `reconnect()` opens a new one.
+* The Pgsql driver holds `PgSql\Connection` / `PgSql\Result` objects instead of resources (code inspecting its
+  internals must follow).
+* The named arguments `originalSQL:` of `Pgsql\Driver::execute()` and `id:` of `Cache\Cache::delete()` are renamed
+  `sql:` and `key:` (an `Error` otherwise).
 
-```php
-// Cache\CacheInterface
-public function setLogger(CacheLoggerInterface $logger): void;
+### Queries and transactions
 
-// ConnectionPoolInterface
-public function setConfig(array $config): void;
-public function primary(string $name, string $database): DriverInterface;
-public function replica(string $name, string $database): DriverInterface;
-public function closeAll(): void;
-public function setDatabaseOptions(array $options): void;
-
-// Driver\DriverInterface
-public function connect(string $hostname, ?string $username, ?string $password, int $port): static;
-public function close(): static;
-public function setName(string $name): static;
-public function setCharset(string $charset): void;
-public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): mixed;
-public function prepare(string $sql): StatementInterface;
-public function setDatabase(string $database): static;
-public function ifIsError(callable $callback): static;
-public function ifIsNotConnected(callable $callback): static;
-public function escapeField(mixed $field = null): string;
-public function startTransaction(): void;
-public function rollback(): void;
-public function commit(): void;
-public function getInsertedId(): int;
-public function getAffectedRows(): string|int;
-public function setLogger(?DriverLoggerInterface $logger = null): static;
-public static function getConnectionKey(array $connectionConfig, string $database): string;
-public function closeStatement(string $statement): void;
-public function ping(): bool;
-public function setTimezone(?string $timezone = null): void;
-
-// Driver\DefaultValuesInsertDriverInterface (new in 4.0, optional for a custom driver)
-public function getDefaultValuesInsertClause(): string;
-
-// Driver\ResultInterface
-public function setConnectionName(string $connectionName): static;
-public function setDatabase(string $database): static;
-public function setResult(mixed $result): static;
-public function getConnectionName(): ?string;
-public function getDatabase(): ?string;
-public function getNumRows(): mixed;
-
-// Driver\SequenceAwareDriverInterface (new in 4.0, see "Smaller Changes for Extensions")
-public function getInsertedIdForSequence(string $sequenceName): int;
-
-// Driver\StatementInterface
-public function execute(array $params, ?CollectionInterface $collection = null): CollectionInterface|bool;
-public function setLogger(?DriverLoggerInterface $logger = null): void;
-public function isStale(): bool;
-
-// Entity\NotifyPropertyInterface
-public function addPropertyListener(PropertyListenerInterface $listener): void;
-
-// Entity\PropertyListenerInterface
-public function propertyChanged(NotifyPropertyInterface $entity, string $propertyName, mixed $oldValue, mixed $newValue): void;
-
-// Logger\CacheLoggerInterface
-public function startOperation(string $operation, array|string $keys): void;
-public function stopOperation(bool $miss = false): void;
-
-// Logger\DriverLoggerInterface
-public function addConnection(string $name, string $connection, array $connectionConfig): void;
-public function startQuery(string $sql, array $params, string $connection, string $database): void;
-public function startPrepare(string $sql, string $connection, string $database): void;
-public function startStatementExecute(string $statement, array $params = []): void;
-public function stopQuery(): void;
-public function stopPrepare(string $statement): void;
-public function stopStatementExecute(string $statement): void;
-
-// Query\QueryFactoryInterface (CacheInterface: Symfony\Contracts\Cache\CacheInterface)
-public function get(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): QueryInterface;
-public function getPrepared(string $sql, Connection $connection, ?CollectionFactoryInterface $collectionFactory = null): PreparedQuery;
-public function getCached(string $sql, Connection $connection, CacheInterface $cache, ?CollectionFactoryInterface $collectionFactory = null): Cached\Query;
-public function getCachedPrepared(string $sql, Connection $connection, CacheInterface $cache, ?CollectionFactoryInterface $collectionFactory = null): Cached\PreparedQuery;
-
-// Query\QueryInterface
-public function query(?CollectionInterface $collection = null): CollectionInterface;
-public function execute(): mixed;
-public function setParams(array $params): static;
-public function selectPrimary(bool $usePrimary): static;
-public function getInsertedId(): int;
-public function getAffectedRows(): string|int;
-
-// Repository\CollectionFactoryInterface
-public function get(): Collection;
-
-// Repository\CollectionInterface
-public function set(ResultInterface $result): void;
-public function first(): mixed;
-public function setFromCache(bool $value): void;
-public function isFromCache(): bool;
-public function toCache(): array;
-public function fromCache(array $result): void;
-public function getIterator(): Generator;
-public function count(): int;
-
-// Repository\HydratorInterface
-public function setMetadataRepository(MetadataRepository $metadataRepository): void;
-public function setUnitOfWork(UnitOfWork $unitOfWork): void;
-public function setResult(ResultInterface $result): static;
-public function count(): int;
-public function getIterator(): Generator;
-
-// Repository\MetadataInitializer
-public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata;
-
-// ResetInterface
-public function reset(): void;
-
-// Serializer\SerializeInterface
-public function serialize(mixed $toSerialize, array $options = []): mixed;
-
-// Serializer\SerializerFactoryInterface
-public function get(string $serializerName): SerializerInterface;
-
-// Serializer\UnserializeInterface
-public function unserialize(mixed $serialized, array $options = []): mixed;
-```
-
-</details>
-
-### Native types everywhere
-
-Every return value of Ting now has a native type, and so do the parameters and properties, with a few exceptions that
-PHP cannot or need not type:
-
-* the `$toSerialize` / `$serialized` parameter of the `serialize()` / `unserialize()` methods of the built-in
-  serializers, and the `$result` parameter of `setResult()` in `Driver\Mysqli\Result`, `Driver\Pgsql\Result` and
-  `Driver\CacheResult`: untyped, which is the same as the `mixed` of their interface;
-* `Repository\HydratorRelational::identityMap($enable)`, untyped (`Hydrator::identityMap()` takes a `bool`);
-* the callables of `Repository\HydratorAggregator` (`$callableForId`, `$callableForData`, `$callableFinalizeAggregate`):
-  PHP has no `callable` property type.
-
-PHPStan (level 8, with a type coverage check) enforces it. The handles of the native extensions (`mysqli`,
-`mysqli_stmt`, `mysqli_result`, `PgSql\Connection`, `PgSql\Result`) are typed `object`, with the precise class in the
-PHPDoc: the `PgSql` classes are final and only built by a server, and the `mysqli` properties cannot be read on a
-stand-in, so tests keep passing fakes.
-
-What breaks depends on the kind of type added. The methods listed below are examples, the rules apply to every
-method:
-
-* **Return types on interfaces**: an implementation without a return type is a fatal error at load time. Every
-  interface method has one (see the list above), for instance:
-  - `Repository\MetadataInitializer::initMetadata(): Metadata`
-  - `Serializer\SerializeInterface::serialize(): mixed`, `Serializer\UnserializeInterface::unserialize(): mixed`
-  - `Repository\CollectionFactoryInterface::get(): Collection`
-  - `Repository\CollectionInterface::first(): mixed`
-* **Parameter types on interfaces**: implementations with an untyped parameter keep working (an untyped parameter is
-  wider); only callers passing another type are affected.
-  - `Driver\ResultInterface::setResult(mixed $result)`
-  - `Query\QueryFactoryInterface::get()`, `getPrepared()`, `getCached()`, `getCachedPrepared()`: `string $sql`
-  - `Repository\CollectionInterface::setFromCache(bool $value)`
-* **Return types on non-final classes**: a subclass overriding the method without a compatible return type is a fatal
-  error at load time. Every public and protected method has one, for instance:
-  - every method of `Repository\Repository` (see above): `get()` and `getOneBy()` return `?object`, `getAll()` and
-    `getBy()` a `CollectionInterface`
-  - `Repository\Metadata::getRepository(): ?string` and `createEntity(): object`
-
-  The entity template of `Repository` and `Metadata` is bound to `object` (`@template T of object`).
-* **Property types on non-final classes**: a subclass redeclaring the property must use the same type (see
-  "Smaller Changes for Extensions" for the list).
-* **Parameter types on classes**: an override without type keeps working. Values that were cast before are no longer:
-  in non-strict mode PHP still coerces scalars (`setTtl('10')`), but `null` or an object is a `TypeError`. For
-  instance:
-  - `Query\Cached\Query::setTtl(int $ttl)` and `setForce(bool $value)`
-  - `Repository\Collection::setFromCache(bool $value)`
-  - `Repository\Hydrator::identityMap(bool $enable)`, `unserializeAliasWith(string $alias, ...)`,
-    `mapAliasTo(string $from, string $to, string $column)`, `mapObjectTo(string $from, string $to, string $column)`,
-    `objectDatabaseIs(string $object, string $database)`, `objectSchemaIs(string $object, string $schema)`, and the
-    protected `hydrateColumns(string $connectionName, string $database, array $columns)`
-  - `Repository\Repository::getAll(bool $forcePrimary = false)`
-  - `Repository\Metadata::getAll(..., bool $forcePrimary = false)`
-  - `Repository\MetadataCacheGenerator::__construct(string $cacheDir, ?string $filename = null)`
-  - `MetadataRepository::findMetadataForEntity(object|string $entity, ...)` and
-    `addMetadata(string $repositoryClass, ...)`
-  - `Query\QueryFactory` (as its interface) and `Query\Query::__construct(string $sql, ...)`
-  - `Query\Generator::getDriver(bool $forcePrimary)` (protected)
-  - `Driver\Mysqli\Driver::__construct(?object $connection = null, ?mysqli_driver $driver = null)`: the second
-    argument must be a `mysqli_driver`
-  - `Driver\Mysqli\Driver::setCollectionWithResult(object $resultData, ...)` (protected),
-    `Driver\Mysqli\Statement::__construct(object $driverStatement, ...)` and `setCollectionWithResult(object $resultData,
-    ...)`, `Driver\Pgsql\Statement::__construct(string $statementName, ...)` and `setConnection(object $connection)`
-    (all internal)
-  - The `setCollectionWithResult()` methods of the Pgsql driver changed more than their types, see "Smaller Changes
-    for Extensions"
-
-Example of updated method signatures:
-```php
-// Before (3.x):
-public function setConfig($config)
-{
-    // ...
-}
-
-// After (4.0):
-public function setConfig(array $config): void
-{
-    // ...
-}
-```
-
-### Generics and array shapes
-
-For static analysis (PHPStan, Psalm), the PHPDoc of Ting is fully typed. Code analysed against Ting may get new
-reports, and the following PHPDoc types changed:
-
-* `Repository<T>`: `get()` and `getOneBy()` return `?T`, `getAll()` and `getBy()` a `CollectionInterface<T>`,
-  `getMetadata()` a `Metadata<T>`. Criteria are `array<string, mixed>` (property name => value), orders
-  `array<string, string>` (property name => direction).
-* The type parameter of `CollectionInterface<T>` and `HydratorInterface<T>` (both covariant) is the type of their
-  items: a collection iterates `T`, a hydrator yields `T`. `HydratorArray` yields `array<string, mixed>` and is no
-  longer generic. The items of `Hydrator`, `HydratorSingleObject`, `HydratorAggregator` and `HydratorRelational`
-  depend on the query: their type parameter is the type documented by the caller.
-* `QueryInterface<T>` and the query classes are typed by the items of the collections of their collection factory;
-  `query($collection)` returns a `CollectionInterface<U>` for a `CollectionInterface<U>` given.
-* `Driver\ResultInterface` is no longer generic: it iterates the rows of the driver, typed by the aliases `Column`
-  and `Row` (`list<Column>`) of the interface.
-* Array shapes are named by `@phpstan-type` aliases you can import with `@phpstan-import-type`: `ConnectionConfig`,
-  `ServerConfig` and `DatabaseOptions` (`ConnectionPoolInterface`), `ConnectionParameters` (`Driver\DriverInterface`),
-  `SerializerOptions` (`Serializer\SerializeInterface`), `Field` (`Repository\Metadata`, which now documents the
-  `sequenceName` option) and `CachedCollection` (`Repository\CollectionInterface`).
-
-Hydrators and Transactions
---------------------------
-
-* `HydratorRelational` throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when its relations form a cycle (a
-  bidirectional relation, or an alias given to itself); 3.x partially ignored them. Declare one direction and set the
-  back reference in the setter, see [HydratorRelational](docs/hydrators.md#hydratorrelational).
-* `HydratorRelational` throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when the entity of an alias of a
-  relation (source or target, root included) has no value for one of its primary key columns in a row (not selected,
-  or null): 3.x identified it by the values of its primary properties, so the entities of such an alias were merged
-  under one key (the books of every author given to the first author, or the first book given to every author), and a
-  typed primary property (`public int $id`) threw Symfony's `UninitializedPropertyException`. Select every primary key
-  column of the aliases of the relations; a `LEFT JOIN` without match (an entity `null` in the row) is still accepted.
-* When several metadata share a table on a connection (one per database or schema, e.g. `City` in `world` and
-  `CityArchive` in `world_archive`, both on `T_CITY_CIT`) and none matches the database and schema of the result, the
-  hydrator no longer takes the first metadata registered (an order that depends on the files found or on the service
-  configuration). It takes the only metadata of the same database, or when none shares the database, the only one of
-  the same schema, and otherwise throws a `CCMBenchmark\Ting\Exceptions\HydratorException` listing the candidates:
-  name the database or the schema
-  of the alias with `Hydrator::objectDatabaseIs()` / `objectSchemaIs()`, see
-  [Tables from another database](docs/hydrators.md#tables-from-another-database). A table with a single metadata is
-  still found whatever the database or the schema read, and schemas are now compared case-insensitively when no
-  exact match (PostgreSQL folds an unquoted schema of the query to lowercase).
-* PostgreSQL identifiers are resolved as PostgreSQL does: quoted ones keep their case, unquoted ones are folded to
-  lowercase. Nothing to change for a 3.x application: the hydrator matches tables and columns to the metadata exactly
-  first, then case-insensitively, so a table created as `"Users"` with `setTable('users')`, or a column read as `id`
-  with `'columnName' => 'ID'`, is hydrated as in 3.x (and `setTable('Users')`, never matched by 3.x, now is). The
-  metadata of the exact table name win unless the query names a schema that none of them has (nor is without schema)
-  and a case variant has metadata of that schema and of the database read; neither the database read alone nor a
-  preferred repository chooses a case variant over the exact name. Without metadata of the exact name, the case
-  variants are chosen from by the database and the schema read, then by the preferred repository; a
-  `HydratorException` is thrown only when they stay ambiguous, when several columns of the metadata differ only by
-  case from the column read, or when several columns of the row fall back onto the same column of the metadata
-  (`"NAME"` and `"Name"` read, `name` mapped and not read: 3.13 put both in the `0` object). The aliases, keys of the
-  row, stay in lowercase; a query reading the columns of two aliases differing only by case (`"U"` and `u`) throws a
-  `QueryException`, where 3.x mixed their columns into one entity. See
-  [Case of the table and column names](docs/hydrators.md#case-of-the-table-and-column-names).
-* **PostgreSQL: some keys of the rows change.** The Pgsql driver reads the tables and the aliases of the query as
-  PostgreSQL resolves them, and names the columns without alias by its own rule:
-  - An expression without alias is named by a minimal rule, where 3.13 took its last identifier or its whole text: a
-    cast of a column after the column (`id::text` was `text` and is `id`, `x::double precision` was `precision` and is
-    `x`), a function call cast with `::` or not after the function (`count(id)` was `count(id)` and is `count`,
-    `now()::date` was `date` and is `now`), anything else `?column?` (`NOT flag` was `flag`, `-amount` was `amount`,
-    `'x'::text` was `text`, `CASE ... END` was its text). `CAST(...)` is named only around a plain column
-    (`CAST(count(*) AS int)` is `?column?`), and an expression in parentheses is `?column?` (`(x)::text`, `(f(x))`),
-    as a call followed by `OVER`, `FILTER` or `WITHIN GROUP` (`count(*) OVER w`, `count(*) FILTER (WHERE x)`); a
-    keyword without parentheses is named as a column (`CURRENT_TIMESTAMP`, `current_date`). PostgreSQL itself names
-    more expressions (`'x'::text` `text`, `CASE ... END` `case`, `ts AT TIME ZONE 'UTC'` `timezone`, `u.tags[1]`
-    `tags`, `CAST(count(*) AS int)` `count`, `TRIM(x)` `btrim`, `count(*) OVER w` `count`): the driver does not follow
-    it there (see
-    [Columns without metadata](docs/hydrators.md#columns-without-metadata)). This name is the key of the column in the
-    `0` object of `Hydrator`, in the arrays of `HydratorArray`, and the property `HydratorValueObject` sets: alias
-    every computed expression with `AS` (`price - qty AS total`), as with MySQL, to keep the key you read.
-  - The last name of a `SELECT` without `FROM` (an unquoted alias or keyword) keeps the spelling of the query, where
-    3.13 lowercased it: `SELECT nextval('order_seq') AS nextId` was keyed `nextid` and is `nextId`,
-    `SELECT 1 AS isOk, 2 AS isKo` was `isOk`, `isko` and is `isOk`, `isKo`, `SELECT CURRENT_TIMESTAMP` was
-    `current_timestamp` and is `CURRENT_TIMESTAMP`.
-  - A query of several statements is keyed by the columns of its last statement (`SELECT id FROM t; SELECT name FROM u`
-    was `id`, is `name`): see [PostgreSQL Driver](#postgresql-driver).
-  - The alias of a table is the key of its entity also when 3.x lost it: for the last table of a statement ending with
-    `;` (`FROM app.users u;`) and for the tables of a FROM list separated by commas (`FROM users u, orders o`,
-    `JOIN orders o ON ..., carts c`), the columns without table prefix were keyed by the table name (`users`) or by no
-    table; they are keyed by the alias (`u`, `o`, `c`). Use the alias in `mapObjectTo()`, `mapAliasTo()`,
-    `objectDatabaseIs()`, `objectSchemaIs()` and when reading the row.
-  - A plain column aliased without `AS` (`SELECT u.name n FROM users u`, `u.name "N"`) is now hydrated into the
-    entity of its table, as with `AS` (and as with MySQL), not into the `0` object: `$row[0]->n` no longer exists, the
-    value is in `$row['u']`, mapped by the metadata of `users` by its column name (`name`). Its name in the result is
-    unchanged. `mapAliasTo()` and `unserializeAliasWith()` on such an alias of a column the metadata map
-    (`mapAliasTo('n', 'u', 'setNickname')`) no longer receive the value, which goes to the entity: the setter of
-    `mapAliasTo()` gets `null`, with "Undefined array key" warnings, and `unserializeAliasWith()` unserializes nothing.
-    To keep it in `0` or for these methods, make it an expression, with `AS` or not (`u.name || '' AS n`,
-    `CAST(u.name AS text) n`), or map the column to a property of the entity. A column the metadata do not map
-    (`u.nickname n`, `nickname` not declared) has no property to go to: it stays in `0`, as before, and still reaches
-    these methods.
-* **PostgreSQL: a query read into another number of columns than its result throws.** The Pgsql driver matches the
-  values of a row to the columns read from the query by position. When the columns it reads from the query are not as
-  many as the columns of the result (a query the parser misreads, `INSERT ... SELECT a, b ... RETURNING id`,
-  `EXPLAIN SELECT a, b ...`), 3.13 hydrated each column with the value of another one
-  (`INSERT INTO x (a) SELECT a FROM t RETURNING id, a`: the key `a` held the value of `id`), or with `null` past the
-  last column of the result, unless a column read past it is a plain column (`[table.]column`, aliased or not:
-  `INSERT ... SELECT a, b ... RETURNING id`, `EXPLAIN SELECT a, b ...`): it then threw a `ValueError` (an `\Error`,
-  which `catch (\Exception)` does not catch). 4.0 throws a `CCMBenchmark\Ting\Driver\QueryException` naming both
-  numbers (`Query invalid: 3 columns read from the query, but its result has 4: ...`) when the collection is built.
-  Run such a query without a collection, or rewrite it. A result without column of a single statement
-  (`SELECT ... INTO`, `SELECT FROM t`) gives rows without column, or an empty collection, where 3.13 threw that
-  `ValueError` when it read a plain column (`SELECT a, b INTO TEMP x FROM t`) and gave each row one column holding
-  `null` otherwise, raising an "Undefined array key 0" warning per row (`SELECT FROM t`).
-* The same case-insensitive fallback applies to MySQL results: a column read as `BOO_NAME` now matches the metadata
-  column `boo_name` (MySQL column names are case-insensitive, 3.x left it unhydrated), and a table read as `T_BOUH`
-  matches the metadata of `t_bouh` when no metadata has the exact name. Under `lower_case_table_names=0` (Linux
-  default) `T_BOUH` and `t_bouh` can be two tables: declare the metadata of each one with its exact name, which wins
-  (the database read, the current one of the connection, never chooses a case variant over it).
-* **Two repositories mapping the same table of the same database and schema** (a full entity and a lighter
-  projection, e.g. `UserRepository` / `User` and `UserLightRepository` / `UserLight`): in 3.x, the last repository
-  built (or the last metadata registered) hydrated the table for every read, so `UserRepository::get(1)` could return
-  a `UserLight`. The reads of a repository (`get()`, `getBy()`, `getOneBy()`, `getAll()`, its `getQuery()`... and
-  `getCollection()`) now hydrate the tables it maps with its own metadata, among the metadata of the database and the
-  schema of the table (a join on the same table of another database or schema keeps the metadata of that one). A
-  hydrator used outside a repository throws a `HydratorException` naming the candidates instead of taking the last
-  one: call `Hydrator::preferRepository(UserRepository::class)`, see
-  [Several repositories on the same table](docs/hydrators.md#several-repositories-on-the-same-table). Metadata
-  hydrating the same entity with the same fields (a repository and its subclass) are not ambiguous.
-* **Two repositories mapping the same entity class** (another table, or a lighter projection): in 3.x, writes used the
-  metadata of the last repository built, whatever the repository saving (`UserRepository::save()` could leave out
-  the columns `UserNameRepository` does not map, `MainArtRepository::save()` could write into the archive table).
-  `Repository::save()` and `delete()` now write with the metadata of the repository called when they map the class of
-  the entity. `UnitOfWork::pushSave()` / `pushDelete()` called directly still use the metadata registered for the
-  class of the entity. A subclass of `UnitOfWork` overriding `pushSave()` or `pushDelete()` must accept their new
-  optional parameter `?Metadata $metadata = null`, see [Writing](docs/repositories.md#writing).
-* The array given to a `RelationMany` method is still indexed by an internal reference, but its format changed
-  (`'book-1-'` in 3.x): use `array_values()` rather than relying on these keys.
-* `startTransaction()`, `commit()` and `rollback()` throw a `CCMBenchmark\Ting\Exceptions\TransactionException` when
-  the database refuses them (3.x did not check their result), including the `COMMIT` of a PostgreSQL transaction
-  aborted by a failed query. A failed `commit()` leaves no transaction open: calling `rollback()` after it throws, see
-  [Transactions](docs/repositories.md#transactions).
-
-Queries, Entities and the Unit of Work
---------------------------------------
-
-* **A missing placeholder value throws** a `CCMBenchmark\Ting\Driver\QueryException`
-  (`Value has not been set for param name`) with every driver, prepared query or not. In 3.x, only the non-prepared
-  Mysqli queries threw: PostgreSQL queries (prepared or not) and Mysqli prepared queries silently sent `NULL` for the
-  missing value. A value explicitly set to `null` is still sent as `NULL`. Check the queries whose parameters are
-  built conditionally.
-* **`UnitOfWork::isManaged()` is `false` for a new entity until its `INSERT` has run.** In 3.x, `pushSave()` made a
-  new entity managed at once, before `process()`; an `INSERT` that failed then left it managed, and saving it again ran
-  nothing. Use `isNew()` or `shouldBePersisted()` to know whether an entity is queued. Likewise, `pushDelete()` no
-  longer makes an entity managed: an entity never inserted (queued for its `INSERT`, or not managed and without primary
-  key) is only removed from the queue, without query, and an entity not managed but with its primary key is deleted by
-  that key and stays not managed. See [the unit of work](docs/unit-of-work.md#saving-and-deleting).
-* **A change made to an entity while it is detached is lost when it is managed again.** In 3.x, `detach()` left the
-  unit of work listening to the entity: a setter called while detached was recorded, and written by the first save
-  after `manage()`. In 4.0, the unit of work ignores the changes of an entity it does not manage: after `detach()`,
-  `$city->setName('Lyon')`, `manage($city)` then `pushSave($city)`, the `UPDATE` does not include the new name (and
-  nothing runs when it is the only change). Make the change after `manage()`.
-* **Saving an entity not managed holding its `autoincrement` id updates its row.** In 3.x, any entity not managed (a
-  clone, a detached entity, one read from a cache or a session, one built by hand with its id) was inserted as a new
-  row: its `autoincrement` id was left out of the `INSERT`, then replaced by the generated one. When its metadata have
-  an `autoincrement` field and that property holds a value other than `null` (read from the property itself, not
-  through its getter), it is now updated by its primary key with every readable mapped property, then managed;
-  `isNew()` is `false` for it. With that property `null` or not initialized, without `autoincrement` field (as for a
-  natural key), or with an `autoincrement` id that has no value of its own (no property named after the field, reached
-  through `getter` / `setter` options only, a virtual property, or an untyped property unset to be served by
-  `__get()`), it is inserted as before, whatever id its getter returns. Check:
-  - an id defaulting to `0` (`private int $id = 0;`, or a setter casting `null` to `0`) is an id: declare it nullable,
-    `null` by default (`?int $id = null`, `setId(?int $id)`);
-  - to duplicate a row, set the `autoincrement` property of the clone to `null` before saving it (or reset it in
-    `__clone()`);
-  - every field is written: an entity read partially (or restored from a cache with properties left out by
-    `__sleep()`), then detached or cloned and saved, writes its default values over the columns it did not read;
-    `manage()` it first to write its changes only;
-  - an entity deleted keeps its id: saving it again updates no row;
-  - an entity inserted in a transaction rolled back is inserted again by its next save, its id replaced: the Mysqli and
-    Pgsql drivers tell the unit of work (new optional `Driver\RollbackListenerAwareDriverInterface`); with a driver of
-    your own not implementing it, the entity stays managed and its next save writes nothing: `detach()` it (or
-    `detachAll()`), then set its id back to `null` before retrying. A `commit()` failing because the connection was
-    lost has an unknown outcome (the server may have committed before its reply was lost), but is treated as a
-    rollback: the retry inserts the entities again, which duplicates their rows if the server had committed. Check
-    the rows (or use a natural / unique key) before retrying after such a failure.
-
-  See [Saving an entity not managed](docs/unit-of-work.md#saving-an-entity-not-managed) and
-  [Transactions](docs/unit-of-work.md#transactions).
-* **A hydrator starts an empty identity map for each result.** With `identityMap(true)`, a hydrator given several
-  results (kept as a service, or given to several `getCollection()` calls) no longer returns the entities of an
-  earlier result: each read returns objects holding the values read. An entity the map returns again after its
-  `detach()` is managed again. The protected `Hydrator::$alreadyManaged` property is removed.
-* **Mysqli non-prepared queries turn the escaped colon `\:` into `:`**, as prepared queries and the PostgreSQL driver
-  already did. 3.x sent the backslash to MySQL, which dropped it inside a string literal (except under the sql_mode
-  `NO_BACKSLASH_ESCAPES`, where the backslash was kept) and received it as is elsewhere. A query that relied on the
+* **A missing placeholder value** throws a `Driver\QueryException` (`Value has not been set for param name`) with every
+  driver: 3.x sent `NULL` with PostgreSQL and with Mysqli prepared queries. A value set to `null` is still `NULL`.
+* Mysqli non-prepared queries send an escaped colon `\:` as `:`, as the other drivers: a query that relied on the
   backslash reaching MySQL must double it.
-* **SphinxQL quotes values as Mysqli does**: `null` is sent as `NULL` and booleans as `0` / `1`. 3.x sent `null` and
-  `false` as `''` (with a "Passing null to parameter" deprecation) and `true` as `'1'`.
-* **PostgreSQL: `'f'` is read as `false`, and `false` is sent as `'0'`**: a `bool` field without serializer now hydrates
-  the string `'f'` as `false`, whatever the driver (3.x cast it with `(bool)`, so the `'f'` PostgreSQL returns for false
-  was read as `true`). The Pgsql driver sends a PHP boolean parameter as `'1'` / `'0'`: 3.x sent `true` as `'1'` and
-  `false` as `''`, which PostgreSQL rejects for a boolean or numeric column, and a text column stored as `''`; so a `false`
-  bound to a text column now stores `'0'`. Check the text columns written with booleans. The serializer of the driver
-  (`Driver\Pgsql\Serializer\Boolean`) is still the way to declare a `bool` field, see
-  [Types](docs/repositories.md#types).
-* **`NotifyProperty::__serialize()` and `__debugInfo()` return mangled keys** (`"\0*\0name"` for a protected property,
-  `"\0App\Entity\City\0name"` for a private one, as `get_mangled_object_vars()`), so that the private properties of a
-  parent or child class are no longer lost. `serialize()` / `unserialize()` and `var_dump()` are not affected, and
-  payloads are compatible both ways: entities serialized by 3.x are read by 4.0, and payloads written by 4.0 are still
-  read by 3.13. Only code calling these methods directly and reading the keys must handle the mangled names.
-  An entity defining `__sleep()` is honoured again (ignored since 3.12): only the properties it lists are serialized,
-  as with `serialize()` (a private property of a parent class needs its mangled name, `"\0Parent\0name"`); a name
-  which does not exist raises the warning of `serialize()` as an `E_USER_WARNING` (PHP raises an `E_WARNING`).
-* **`NotifyProperty::addPropertyListener()` no longer adds a listener already added**: a clone keeps the listeners of
-  its original, so the unit of work would otherwise be notified twice of each change of a saved clone.
+* SphinxQL sends `null` as `NULL` and booleans as `0` / `1` (3.x: `''` for `null` and `false`).
+* Floats are sent with the digits that read back as the same float (15 to 17, 3.x: 14), with a `.` whatever the
+  locale. Pgsql sends `INF` / `NAN` as `Infinity` / `NaN`; Mysqli throws a `QueryException` for them in a
+  non-prepared query.
+* A negative TTL (`setTtl(-1)`) throws a `QueryException` (3.x never cached the result). With Pgsql, a statement
+  without column (`SELECT ... INTO`, `SELECT FROM t`) gives rows without column, or an empty collection.
+* `startTransaction()`, `commit()` and `rollback()` throw a `TransactionException` when the database refuses them,
+  including the `COMMIT` of a PostgreSQL transaction aborted by a failed query; a failed `commit()` leaves no
+  transaction open (`rollback()` then throws). When the connection was replaced or closed during a transaction,
+  `commit()` throws and `rollback()` sends nothing. See [Transactions](docs/repositories.md#transactions).
 
-Smaller Changes for Extensions
-------------------------------
+### Repository reads
 
-These changes only matter if you extend Ting classes or rely on their internals.
+* An unknown key throws a `ValueException` with a new message (`Undefined property "foo" in the criteria of
+  Repository::getBy()`), and so does an invalid direction (`Invalid direction "UP" for property "name" in the order of
+  Repository::getBy(): use "ASC" or "DESC"`).
+* `null` or a nested array inside an `IN` list, and a value its serializer converts to `NULL`, throw a
+  `ValueException`.
+* `get()` with a single value serializes an object (also with the serializer of the type of the field: `datetime`,
+  `uuid`...), and a scalar for a `ScalarValueInterface` serializer.
 
-Elements marked `@internal` (methods such as `MetadataRepository::findMetadataForEntity()` /
-`findMetadataForRepository()`, classes, traits) are reserved for Ting and for
-[ting_bundle](https://github.com/xavierleune/ting_bundle), which is released along with Ting and may use them. They are
-not covered by the backward compatibility promise for any other code: they may change in a minor version.
+### Unit of work and entities
 
-Two `@internal` members are nevertheless supported for extension, as in 3.x, and only change in a major version:
+* A value that does not survive a round trip (microseconds, a zero date, a JSON big integer) is not rewritten while it
+  is not modified; a mutable field whose database value cannot be computed is taken as unchanged unless set through
+  its setter. A mutable primary key targets its row by the value read.
+* A setter converting dates to another timezone than the one they are read in shifts them at each read and save.
+* `NotifyProperty::addPropertyListener()` no longer adds a listener already added (a clone keeps those of its
+  original).
+* `NotifyProperty::__serialize()` and `__debugInfo()` return mangled keys (`"\0*\0name"`, `"\0App\Entity\City\0name"`)
+  so that the private properties of a parent or child class are kept; `serialize()` and `var_dump()` are not affected,
+  and payloads stay compatible both ways with 3.13. `__sleep()` is honoured again (ignored since 3.12).
 
-* `Repository::__construct()`: it is internal to **call** (repositories are built by `RepositoryFactory`, which passes
-  these 6 arguments), but a repository may **override** it, with the same parameters passed to
-  `parent::__construct()` (see "Repository and RepositoryFactory Constructors");
-* the protected `Hydrator::hydrateColumns()`: a hydrator extending `Hydrator` may call it to hydrate a row, as the
-  built-in hydrators do (see [Writing a hydrator](docs/hydrators.md#writing-a-hydrator)). A subclass overriding
-  `getIterator()` reads the rows through the protected `hydratedRows()`, which calls it: looping over `$this->result`
-  and calling `hydrateColumns()` itself loses the state of the result on a read nested with the same hydrator.
+### Hydrators
 
-Elements that became `@internal` in 4.0:
+* `HydratorAggregator` throws a `HydratorException` when the callable of `callableIdIs()` returns `null` (3.x lost
+  every row) or an identifier neither int nor string that cannot be serialized.
+* An entity returned again by the identity map after its `detach()` is managed again. The keys of the array given to
+  a `RelationMany` method changed format (`'book-1-'` in 3.x): use `array_values()`.
+* A table with a single metadata is found whatever the database or schema read; schemas are compared
+  case-insensitively when none matches exactly.
+* Case variants throw: several columns of a row falling back onto one metadata column (`"NAME"` and `"Name"`), or
+  several metadata columns matching one column read, throw a `HydratorException`; two aliases differing only by case
+  (`"U"` and `u`) a `QueryException`. Under MySQL `lower_case_table_names=0`, declare the metadata of `T_BOUH` and
+  `t_bouh` with their exact names, which win.
 
-* `Metadata::getByCriteriaWithOrderAndLimit()`, like the other query methods of `Metadata` (`getByCriteria()`,
-  `getAll()`...) already were in 3.x: call `Repository::getBy($criteria, $forcePrimary, $order, $limit)`.
+### Serializers
 
-* A custom driver supporting sequences must implement `CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface`
-  (`getInsertedIdForSequence(string $sequenceName): int`): having a method of that name is no longer enough for the
-  `sequenceName` option of an autoincrement field.
+* `Serializer\BackedEnum` (int-backed) rejects a value that is not an integer (`'1.5'`, `'abc'`, `"1\n"`), and
+  `Serializer\Ip` one that is not an integer from -2147483648 to 4294967295, with a `Serializer\RuntimeException`.
+* `Serializer\Json` errors always throw a `Serializer\RuntimeException` (with `JSON_THROW_ON_ERROR`, a `JsonException`
+  escaped), and `JSON_PARTIAL_OUTPUT_ON_ERROR` returns the partial output.
+* With `unSerializeUseFormat => false`, an empty string is rejected (3.x read the current time).
 
-* A custom driver may implement the new `CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface`
-  (`addRollbackListener(RollbackListenerInterface $listener, object $subject): bool`): the unit of work registers each
-  entity it inserts in a transaction, and expects `RollbackListenerInterface::rolledBack($subject)` when the
-  transaction ends without being committed (rollback, failed `COMMIT`, connection lost or closed), nothing once it is
-  committed. The Mysqli and Pgsql drivers implement it. Without it, an entity inserted in a transaction rolled back
-  stays managed with its generated id, as if its row existed: its next save writes nothing (or updates a row that does
-  not exist). `detach()` it (or `detachAll()`), then set its id back to `null` to insert it again.
+### Cache and debugging
 
-* An INSERT without any value (an entity with only an autoincrement field, or with no field initialized) is written
-  `INSERT INTO t () VALUES ()` (MySQL syntax) unless the driver implements
-  `CCMBenchmark\Ting\Driver\DefaultValuesInsertDriverInterface` (`getDefaultValuesInsertClause(): string`), as the
-  PostgreSQL driver does (`INSERT INTO t DEFAULT VALUES`). A custom driver for a database refusing the MySQL syntax
-  should implement it.
-
-* The Mysqli and Pgsql `escapeField()` double a backtick (Mysqli) or a double quote (Pgsql) in the name, as the
-  databases expect in a quoted identifier (``a`b`` becomes `` `a``b` ``, `a"b` becomes `"a""b"`): 3.x left it as is,
-  which ended the identifier early. They also escape a colon in the name (`` `x \:y` ``, `"x \:y"`), so that the
-  drivers do not take it for a placeholder; they remove the escape, as in any SQL they are given. Their result is
-  meant for SQL run through a Ting driver, not through mysqli / pgsql directly. Code escaping such a name itself
-  before calling `escapeField()` must stop doing it.
-
-* Built-in serializers now declare native return types on `serialize()` / `unserialize()`: `Serializer\DateTime`,
-  `DateTimeImmutable`, `DateTimeZone`, `Json`, `Ip`, `Uuid`, `BackedEnum` (`unserialize()`),
-  `Driver\Mysqli\Serializer\Boolean` and `Driver\Pgsql\Serializer\Boolean`. A subclass overriding one of these methods
-  without a compatible return type is a fatal error: copy the return type of the parent method (e.g.
-  `public function serialize($toSerialize, array $options = []): ?string` for `DateTime`).
-* Protected properties renamed or removed:
-
-  | Class                          | 3.13                                 | 4.0                                       |
-  |--------------------------------|--------------------------------------|-------------------------------------------|
-  | `ConnectionPool`               | `$connectionSlaves`                  | `$connectionReplicas` (already in 3.14)   |
-  | `Query\Query`                  | `$selectMaster`                      | `$selectPrimary`                          |
-  | `Repository\RepositoryFactory` | `$collection`, `$serializerFactory`  | removed                                   |
-  | `Repository\Repository`        | `$services`                          | removed                                   |
-  | `Repository\HydratorArray`     | `$metadataRepository`, `$unitOfWork` | removed (they were unused)                |
-  | `Query\Cached\Query`           | `$version`                           | removed (see `setVersion()` above)        |
-  | `Driver\Pgsql\Statement`       | `$queryType`                         | removed                                   |
-
-  Every remaining property is now typed: a subclass redeclaring one must use the same type. The properties typed last
-  (untyped until 4.0.0-rc.1 included):
-
-  | Class                          | Properties                                                                          |
-  |--------------------------------|-------------------------------------------------------------------------------------|
-  | `ConnectionPool`               | `array $connectionConfig`, `$databaseOptions`, `$connectionReplicas`, `$connections` |
-  | `MetadataRepository`           | `array $metadataList`, `array $entityToRepository`                                   |
-  | `Driver\Mysqli\Driver`         | `mysqli_driver $driver`, `object $connection` (set by the constructor, never `null`) |
-  | `Driver\Mysqli\Result`         | `?object $result`, `?array $iteratorCurrent`                                         |
-  | `Driver\Mysqli\Statement`      | `object $driverStatement`                                                            |
-  | `Driver\Pgsql\Driver`          | `?object $connection`, `?object $result`, `string $dsn` (`''` until `connect()`)      |
-  | `Driver\Pgsql\Result`          | `?object $result`, `?array $iteratorCurrent`                                         |
-  | `Driver\Pgsql\Statement`       | `?object $connection`, `string $statementName`                                       |
-  | `Query\Query`                  | `string $sql`                                                                        |
-  | `Repository\Metadata`          | `?string $repository`                                                                |
-  | `Repository\MetadataCacheGenerator` | `string $cacheDir`                                                              |
-  | `Repository\Repository`        | `Metadata $metadata`, `Connection $connection` (no longer `null` before the constructor sets them) |
-* The protected / internal `setCollectionWithResult()` of the Pgsql driver changed their parameters, beyond their
-  types:
-
-  | Method                                         | 3.13                                                         | 4.0                                                                                  |
-  |------------------------------------------------|--------------------------------------------------------------|--------------------------------------------------------------------------------------|
-  | `Driver\Pgsql\Driver::setCollectionWithResult()` (protected) | `($sql, CollectionInterface $collection)`, reading `$this->result` | `(object $resultResource, string $sql, CollectionInterface $collection)`: the result is passed first |
-  | `Driver\Pgsql\Statement::setCollectionWithResult()` | `($resultResource, ?CollectionInterface $collection = null)` | `(object $resultResource, CollectionInterface $collection): bool`: the collection is required |
-
-  A subclass calling or overriding them must follow.
-* `Connection::__construct()` (internal, called by the repositories) types `$name` and `$database` as `string` and
-  throws a `RuntimeException` when one of them is empty (3.x only rejected `null`).
-* The protected `Metadata::getColumnsFromCriteria()` and `Metadata::getPrimariesKeyValuesAsArray()` now validate the
-  keys (property names only, `ValueException` otherwise) and return the converted database values, not the values
-  given. An override must do the same, see "Repository reads: property names and entity values".
-* The parameters of the generated queries (`get()`, `getBy()`, `getOneBy()`, and the INSERT, UPDATE and DELETE of the
-  `UnitOfWork`) are no longer named after the raw column name, which could hold characters invalid in a parameter
-  name or collide with another parameter: `:<role><position>_<column>`, the role being `v` for a written value and `w`
-  for a WHERE condition, the position that of the column in its role (from 1), and the column name with every
-  character but `[a-zA-Z0-9_]` replaced by `_`. An IN list suffixes it with `__<n>`.
-
-  | Query                                   | 3.x                                        | 4.0                                                 |
-  |-----------------------------------------|--------------------------------------------|-----------------------------------------------------|
-  | `getBy(['id' => 3, 'name' => ['a']])`   | `id = :#id AND name IN (:name__1)`         | `id = :w1_id AND name IN (:w2_name__1)`             |
-  | INSERT                                  | `VALUES (:id, :name)`                      | `VALUES (:v1_id, :v2_name)`                         |
-  | UPDATE                                  | `SET name = :name WHERE id = :#id`         | `SET name = :v1_name WHERE id = :w1_id`             |
-
-  This is visible in the query logs, and matters to code inspecting the parameters of a generated `Query` /
-  `PreparedQuery` (or of `Query\Generator`, whose protected `generateConditionAndParams()` returns the new names).
+* Cache logging: a read is logged as `OPERATION_GET`, flagged as a miss when no cached value was served, its duration
+  excluding the computation of the value; `OPERATION_STORE` and `OPERATION_EXIST` are no longer emitted.
+* `Util\Debug::export()` and `dump()` describe objects as arrays (`['__CLASS__' => ..., 'property' => ...]`), dates
+  with their value, iterables with object keys (`WeakMap`) as `['key' => ..., 'value' => ...]` pairs, and do not
+  iterate generators. For a quick look at an entity, `var_dump($entity)` is enough.
