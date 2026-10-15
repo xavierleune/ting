@@ -755,25 +755,40 @@ class Hydrator implements HydratorInterface
      */
     private function referenceFromColumns(string $table, array $columns): string|false
     {
+        $values = $this->primaryValuesFromColumns($table, $columns);
+        if ($values === [] || in_array(null, $values, true)) {
+            return false;
+        }
+
+        return $this->referenceKey($table, array_values($values));
+    }
+
+    /**
+     * Every primary value of the entity of $table in the row, read from the columns
+     *
+     * @internal not to be called from outside; a hydrator extending this class may call it
+     *
+     * @param Row $columns
+     * @return array<string, mixed> primary column name => value, null when the column is not in the row or null
+     * @throws HydratorException
+     */
+    protected function primaryValuesFromColumns(string $table, array $columns): array
+    {
         $values = [];
         foreach ($this->metadataList[$table]->getPrimaries() as $columnName => $primary) {
+            $values[$columnName] = null;
             foreach ($columns as $column) {
                 if (
                     $column['table'] === $table
                     && $this->withColumnOfMetadata($column, $columns)['orgName'] === $columnName
                 ) {
-                    if ($column['value'] === null) {
-                        return false;
-                    }
-                    $values[] = $column['value'];
-                    continue 2;
+                    $values[$columnName] = $column['value'];
+                    break;
                 }
             }
-
-            return false;
         }
 
-        return $values === [] ? false : $this->referenceKey($table, $values);
+        return $values;
     }
 
     /**

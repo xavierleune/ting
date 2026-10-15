@@ -41,6 +41,8 @@ use function array_keys;
 use function array_diff;
 use function array_map;
 use function array_unique;
+use function array_values;
+use function count;
 use function implode;
 use function in_array;
 use function iterator_to_array;
@@ -78,6 +80,12 @@ final class HydratorRelational extends Hydrator
      *                                      setter)
      */
     private array $metadataOfRow = [];
+
+    /**
+     * @var array<string, array<string, mixed>> alias of a relation => primary column name => value in the row hydrated
+     *                                          last (null when the column is not selected or null)
+     */
+    private array $primaryValuesOfRow = [];
 
     protected bool $identityMap = true;
 
@@ -175,12 +183,13 @@ final class HydratorRelational extends Hydrator
      *
      * @param object $entity the entity of $alias in the row
      * @param Metadata<object> $metadata the metadata of $alias in the row
+     * @param array<string, mixed> $primaryValues the primary values of $alias in the row
      *
      * @throws Exception
      */
-    private function saveReference(string $alias, object $entity, Metadata $metadata): string
+    private function saveReference(string $alias, object $entity, Metadata $metadata, array $primaryValues): string
     {
-        $key = $this->getIdentifiers($alias, $entity, $metadata);
+        $key = $this->getIdentifiers($alias, $metadata, $primaryValues);
 
         if (isset($this->referencesRelation[$key]) === false) {
             $this->referencesRelation[$key] = $entity;
@@ -254,6 +263,7 @@ final class HydratorRelational extends Hydrator
         $checked = false;
         foreach ($this->hydratedRows() as $result) {
             $metadataOfRow = $this->metadataOfRow;
+            $primaryValuesOfRow = $this->primaryValuesOfRow;
             if ($checked === false) {
                 $this->assertAliasesInResult($relations, $result);
                 $checked = true;
@@ -269,15 +279,27 @@ final class HydratorRelational extends Hydrator
                 $this->saveResourceFor(
                     $index,
                     $relation,
-                    $this->saveReference($relation['target'], $target, $metadataOfRow[$relation['target']]),
-                    $this->saveReference($relation['source'], $source, $metadataOfRow[$relation['source']])
+                    $this->saveReference(
+                        $relation['target'],
+                        $target,
+                        $metadataOfRow[$relation['target']],
+                        $primaryValuesOfRow[$relation['target']]
+                    ),
+                    $this->saveReference(
+                        $relation['source'],
+                        $source,
+                        $metadataOfRow[$relation['source']],
+                        $primaryValuesOfRow[$relation['source']]
+                    )
                 );
             }
 
             $rootKeys = [];
             foreach ($roots as $root) {
                 $entity = $result[$root] ?? null;
-                $rootKeys[] = $entity !== null ? $this->saveReference($root, $entity, $metadataOfRow[$root]) : null;
+                $rootKeys[] = $entity !== null
+                    ? $this->saveReference($root, $entity, $metadataOfRow[$root], $primaryValuesOfRow[$root])
+                    : null;
             }
 
             if (array_filter($rootKeys, static fn (?string $rootKey): bool => $rootKey !== null) === []) {
@@ -352,29 +374,47 @@ final class HydratorRelational extends Hydrator
         $row = parent::hydrateColumns($connectionName, $database, $columns);
         $this->metadataOfRow = $this->metadataList;
 
+        // Read from the columns, not from the entity: a primary property may be set though its column is not selected
+        // (a default value, a constructor) or be a typed property left uninitialized
+        $this->primaryValuesOfRow = [];
+        foreach ($this->config as $relation) {
+            foreach ([$relation['source'], $relation['target']] as $alias) {
+                if (isset($row[$alias], $this->metadataList[$alias])) {
+                    $this->primaryValuesOfRow[$alias] ??= $this->primaryValuesFromColumns($alias, $columns);
+                }
+            }
+        }
+
         return $row;
     }
 
     /**
-     * @param string $table
-     * @param object $entity
      * @param Metadata<object> $metadata
+     * @param array<string, mixed> $primaryValues primary column name => value in the row, null when not selected
      *
-     * @throws HydratorException
-     *
-     * @return string
+     * @throws HydratorException when the metadata have no primary key, or when a primary value is missing: the entity
+     *                           cannot be told apart from the other entities of $alias
      */
-    private function getIdentifiers(string $table, object $entity, Metadata $metadata): string
+    private function getIdentifiers(string $alias, Metadata $metadata, array $primaryValues): string
     {
-        $values = [];
-        foreach ($metadata->getPrimaries() as $primary) {
-            $values[] = $metadata->getEntityPropertyByFieldName($entity, $primary['fieldName']);
-        }
-
-        if ($values === []) {
+        if ($primaryValues === []) {
             throw new HydratorException(sprintf('No primary found for "%s"', $metadata->getEntity()));
         }
 
-        return $this->referenceKey($table, $values);
+        $missing = array_keys(array_filter($primaryValues, static fn (mixed $value): bool => $value === null));
+        if ($missing !== []) {
+            // A primary key column is never null in a table: a null one is not selected, or comes from an expression,
+            // a view or an outer join of a derived table. Part of a composite key cannot identify the entity either.
+            throw new HydratorException(sprintf(
+                'The entity of the alias "%s" (%s) has no value for its primary key %s %s: an entity of a relation is '
+                . 'identified by its primary key, every primary key column of the alias must be selected and not null',
+                $alias,
+                $metadata->getEntity(),
+                count($missing) > 1 ? 'columns' : 'column',
+                implode(', ', $missing)
+            ));
+        }
+
+        return $this->referenceKey($alias, array_values($primaryValues));
     }
 }
