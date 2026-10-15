@@ -113,7 +113,7 @@ the rows in a list.
 
 `queryValue()` runs a reading query and returns the first column of its first row, or `null` without row: a
 `COUNT(*)`, a `MAX()`... The value is the one of the driver, not converted: a string with PostgreSQL and with the Mysqli
-non-prepared queries.
+non-prepared queries. A `NULL` value returns `null` too (`MAX()` on an empty table).
 
 ```php
 $total = (int) $this->getQuery('SELECT COUNT(*) FROM user WHERE name LIKE :prefix')

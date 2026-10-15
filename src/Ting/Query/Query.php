@@ -101,19 +101,32 @@ class Query implements QueryInterface
 
     /**
      * Execute a reading query and return the first column of its first row (a COUNT(*), a MAX()...), as the driver
-     * returns it (a string with PostgreSQL and Mysqli non-prepared queries), or null without row
+     * returns it (a string with PostgreSQL and Mysqli non-prepared queries), or null without row (or when the value
+     * is NULL)
      *
      * @throws Exception
      * @throws QueryException
      */
     public function queryValue(): mixed
     {
-        $row = $this->query(new Collection(new HydratorArray()))->first();
-        if ($row === null) {
-            return null;
-        }
+        // The first column of the raw row: HydratorArray keys by name, where two columns of the same name collapse
+        $hydrator = new class () extends HydratorArray {
+            /**
+             * @return \Generator<int, array<string, mixed>>
+             */
+            public function getIterator(): \Generator
+            {
+                if ($this->result === null) {
+                    return;
+                }
+                foreach ($this->result as $key => $row) {
+                    yield $key => ['value' => reset($row)['value'] ?? null];
+                }
+            }
+        };
+        $row = $this->query(new Collection($hydrator))->first();
 
-        return $row === [] ? null : $row[array_key_first($row)];
+        return $row['value'] ?? null;
     }
 
     /**

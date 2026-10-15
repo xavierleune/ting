@@ -486,7 +486,8 @@ $deleted = $cityRepository->deleteBy(['status' => CityStatus::Archived]);
 
 Empty criteria throw a `ValueException`: write the query to empty a table. `deleteBy()` does not go through the unit of
 work: an entity of a deleted row read before stays managed, and saving it again updates no row (call
-`$unitOfWork->detach($entity)` to forget it).
+`$unitOfWork->detach($entity)` to forget it). With SphinxQL, the server decides which criteria a `DELETE` accepts (Sphinx 2 only
+accepts the document id).
 
 ## Writing your own queries
 

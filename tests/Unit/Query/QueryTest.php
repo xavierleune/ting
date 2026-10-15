@@ -67,7 +67,7 @@ class QueryTest extends TestCase
                 $field->type = MYSQLI_TYPE_VAR_STRING;
 
                 return $field;
-            }, ['total', 'label']));
+            }, ['total', 'total']));
             $result = new Result();
             $result->setConnectionName('main');
             $result->setDatabase('db');
@@ -80,7 +80,8 @@ class QueryTest extends TestCase
         $connection = $this->createStub(Connection::class);
         $connection->method('replica')->willReturn($driver);
 
-        $query = new Query('SELECT COUNT(*) AS total, MAX(label) AS label FROM t', $connection);
+        // Two columns of the same name: the first one
+        $query = new Query('SELECT COUNT(*) AS total, MAX(label) AS total FROM t', $connection);
         $this->assertSame('42', $query->queryValue());
 
         $rows = [];
