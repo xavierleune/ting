@@ -119,8 +119,13 @@ public function findRecent(array $ids, Status $status, \DateTimeImmutable $since
 An empty list, a `null` element (an `IN` list never matches `NULL`: test `IS NULL` in its own condition) or a nested
 array throw a `CCMBenchmark\Ting\Query\QueryException`, as does an element name that is already the name of another
 parameter or placeholder (`ids__1` next to a list `ids`). Other values are sent as they are: a `\Stringable` object,
-such as a Symfony `Uuid`, is cast by the driver. A prepared query prepares one statement per list length. A cached
-query is stored under the key you give: make it depend on the values of the list.
+such as a Symfony `Uuid`, is cast by the driver. A cached query is stored under the key you give: make it depend on
+the values of the list.
+
+The expansion is meant for `IN (:ids)`: PostgreSQL `= ANY(:ids)` becomes invalid SQL, and a cast written after the
+placeholder (`IN (:ids::uuid)`) applies to the last element only (cast the column instead). A prepared query prepares
+one statement per list length, kept for the life of the connection: for lists whose length varies a lot (a worker
+going through many batches), use a non-prepared `getQuery()`.
 
 ### Executing and reading the results
 
