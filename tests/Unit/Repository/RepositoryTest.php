@@ -34,6 +34,8 @@ use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Driver\StatementInterface;
+use CCMBenchmark\Ting\Logger\DriverLoggerInterface;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
@@ -311,6 +313,33 @@ class RepositoryTest extends TestCase
             'commit refused'
         );
         $this->assertSame(['start', 'commit'], $driver->log);
+    }
+
+    public function testGetBySqlShouldHydrateTheEntitiesWithAPreparedQuery()
+    {
+        [$repository, $driver] = $this->createPreparedRepository();
+
+        $entities = $repository->getBySql('SELECT * FROM T_BOUH_BOO WHERE boo_name = :name', ['name' => 'Bouh'])
+            ->toArray();
+
+        $this->assertCount(1, $entities);
+        $this->assertInstanceOf(Bouh::class, $entities[0]);
+        $this->assertSame('Bouh', $entities[0]->getName());
+        $this->assertSame(
+            [['SELECT * FROM T_BOUH_BOO WHERE boo_name = :name', ['name' => 'Bouh'], 'replica']],
+            $driver->log
+        );
+
+        $entity = $repository->getOneBySql('SELECT * FROM T_BOUH_BOO', forcePrimary: true);
+        $this->assertInstanceOf(Bouh::class, $entity);
+        $this->assertSame('primary', $driver->log[1][2]);
+    }
+
+    public function testGetOneBySqlShouldReturnNullWithoutRow()
+    {
+        [$repository] = $this->createPreparedRepository(rows: []);
+
+        $this->assertNull($repository->getOneBySql('SELECT * FROM T_BOUH_BOO WHERE boo_id = :id', ['id' => 3]));
     }
 
     public function testCountByShouldCountTheMatchingRowsAsAnInteger()
@@ -1244,5 +1273,120 @@ class RepositoryTest extends TestCase
         );
 
         return [$repository, $log];
+    }
+
+    /**
+     * A repository whose prepared statements record their executions and return a row of the Bouh table
+     *
+     * @param list<list<string>> $rows values of the column boo_name
+     * @return array{0: BouhRepository, 1: object{log: list<array{0: string, 1: array<string, mixed>, 2: string}>}}
+     */
+    private function createPreparedRepository(array $rows = [['Bouh']]): array
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../../fixtures/model/BouhRepository.php'
+        );
+        $recorder = new class () {
+            /** @var list<array{0: string, 1: array<string, mixed>, 2: string}> */
+            public array $log = [];
+        };
+        $driverFor = fn (string $role) => new class ($role, $rows, $recorder, $this) extends FakeDriver {
+            /**
+             * @param list<list<string>> $rows
+             */
+            public function __construct(
+                private readonly string $role,
+                private readonly array $rows,
+                private readonly object $recorder,
+                private readonly RepositoryTest $test
+            ) {
+            }
+
+            public function prepare($sql): StatementInterface
+            {
+                return new class (
+                    $sql,
+                    $this->role,
+                    $this->rows,
+                    $this->recorder,
+                    $this->test
+                ) implements StatementInterface {
+                    /**
+                     * @param list<list<string>> $rows
+                     */
+                    public function __construct(
+                        private readonly string $sql,
+                        private readonly string $role,
+                        private readonly array $rows,
+                        private readonly object $recorder,
+                        private readonly RepositoryTest $test
+                    ) {
+                    }
+
+                    public function execute(
+                        array $params,
+                        ?CollectionInterface $collection = null
+                    ): bool|CollectionInterface {
+                        $this->recorder->log[] = [$this->sql, $params, $this->role];
+                        if ($collection === null) {
+                            return true;
+                        }
+                        $result = new Result();
+                        $result->setConnectionName('main');
+                        $result->setDatabase('bouh_world');
+                        $result->setResult($this->test->bouhResult($this->rows));
+                        $collection->set($result);
+
+                        return $collection;
+                    }
+
+                    public function setLogger(?DriverLoggerInterface $logger = null): void
+                    {
+                    }
+
+                    public function isStale(): bool
+                    {
+                        return false;
+                    }
+                };
+            }
+        };
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn($driverFor('replica'));
+        $connectionPool->method('primary')->willReturn($driverFor('primary'));
+
+        $repository = new BouhRepository(
+            $connectionPool,
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
+        );
+
+        return [$repository, $recorder];
+    }
+
+    /**
+     * @param list<list<string>> $rows values of the column boo_name
+     */
+    public function bouhResult(array $rows): MysqliResult
+    {
+        $mysqliResult = new MysqliResult($rows);
+        $mysqliResult->setFieldsCallback(function () {
+            $field = new \stdClass();
+            $field->name = 'name';
+            $field->orgname = 'boo_name';
+            $field->table = 'bouh';
+            $field->orgtable = 'T_BOUH_BOO';
+            $field->type = MYSQLI_TYPE_VAR_STRING;
+
+            return [$field];
+        });
+
+        return $mysqliResult;
     }
 }

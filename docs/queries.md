@@ -125,8 +125,9 @@ With the default hydrator, each row is an array indexed by table name (or alias)
 that a query with joins returns all the objects involved. The shape of the rows depends on the hydrator: see
 [Hydrators](hydrators.md).
 
-To get the entities directly when the query reads a single table, pass a collection using `HydratorSingleObject` to
-`query()`:
+To get the entities directly when the query reads a single table, use `getBySql()` / `getOneBySql()` of the
+repository (see [Writing your own queries](repositories.md#writing-your-own-queries)), or pass a collection using
+`HydratorSingleObject` to `query()`:
 
 ```php
 use CCMBenchmark\Ting\Repository\HydratorSingleObject;

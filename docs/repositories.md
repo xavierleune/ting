@@ -506,24 +506,40 @@ metadata when several of them share the database and the schema of the table: tw
 table (a full entity and a lighter projection), see
 [Several repositories on the same table](hydrators.md#several-repositories-on-the-same-table).
 
+To read the entities of the repository with a query of your own, `getBySql()` runs it as a prepared query and returns
+a collection of entities, `getOneBySql()` the entity of the first row or `null`:
+
+```php
+public function getBySql(string $sql, array $params = [], bool $forcePrimary = false): CollectionInterface;
+public function getOneBySql(string $sql, array $params = [], bool $forcePrimary = false): ?object;
+```
+
+Each row gives the entity of the first table of the query: select the table of the repository first. For joins
+returning several entities, or other columns, use a query and a hydrator: see [Hydrators](hydrators.md).
+
 Add them as methods of your repository:
 
 ```php
 use CCMBenchmark\Ting\Repository\CollectionInterface;
-use CCMBenchmark\Ting\Repository\HydratorSingleObject;
 
 /**
  * @return CollectionInterface<City>
  */
 public function getCapitals(int $limit): CollectionInterface
 {
-    $query = $this->getQuery(
+    return $this->getBySql(
         'SELECT cit_id, cit_name, cit_capital, cit_status, cit_tags, cit_created_at
-        FROM t_city_cit WHERE cit_capital = :capital ORDER BY cit_name LIMIT :limit'
+        FROM t_city_cit WHERE cit_capital = :capital ORDER BY cit_name LIMIT :limit',
+        ['capital' => 1, 'limit' => $limit]
     );
-    $query->setParams(['capital' => 1, 'limit' => $limit]);
+}
 
-    return $query->query($this->getCollection(new HydratorSingleObject()));
+public function getLatestCapital(): ?City
+{
+    return $this->getOneBySql(
+        'SELECT * FROM t_city_cit WHERE cit_capital = :capital ORDER BY cit_created_at DESC LIMIT 1',
+        ['capital' => 1]
+    );
 }
 
 public function archiveOlderThan(\DateTimeImmutable $date): int
