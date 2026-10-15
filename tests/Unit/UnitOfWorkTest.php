@@ -1048,6 +1048,193 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * The statements are closed when the outermost process() ends: a process() nested in it (two saves of the same
+     * class from the setter of the generated id) closing the statement still used by the outer one would make the
+     * next one prepare it again (with Pgsql: "prepared statement already exists")
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testANestedProcessShouldNotCloseTheStatementsOfTheOuterOne()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $first = $this->createDocumentCallingBackOnId();
+        $first->setTitle('first');
+        $closedInNested = null;
+        $first->onId = function () use ($unitOfWork, $metadata, &$closed, &$closedInNested): void {
+            foreach (['audit', 'log'] as $title) {
+                $document = new Document();
+                $document->setTitle($title);
+                $unitOfWork->pushSave($document, $metadata)->process();
+            }
+            $closedInNested = $closed;
+        };
+
+        $unitOfWork->pushSave($first, $metadata)->process();
+
+        $this->assertSame([], $closedInNested);
+        $this->assertSame(['first', 'audit', 'log'], array_column($params, 'v1_doc_title'));
+        $this->assertCount(1, $closed);
+
+        // Back to the outermost level: the next process() closes its statements
+        $next = new Document();
+        $next->setTitle('next');
+        $unitOfWork->pushSave($next, $metadata)->process();
+        $this->assertCount(2, $closed);
+    }
+
+    /**
+     * A nested process() that fails does not leave the unit of work nested: the outer one closes the statements, and
+     * the next process() closes its own
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAFailedNestedProcessShouldStillLetTheOutermostOneCloseTheStatements()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $bouhMetadata = BouhRepository::initMetadata($this->services->serializerFactory());
+        $first = $this->createDocumentCallingBackOnId();
+        $first->setTitle('first');
+        $closedInNested = null;
+        $first->onId = function () use ($unitOfWork, $bouhMetadata, &$failOn, &$closed, &$closedInNested): void {
+            $failOn = 'T_BOUH_BOO';
+            try {
+                $unitOfWork->pushSave(new Bouh(), $bouhMetadata)->process();
+            } finally {
+                $failOn = null;
+                $closedInNested = $closed;
+            }
+        };
+
+        $this->assertThrows(QueryException::class, function () use ($unitOfWork, $first, $metadata): void {
+            $unitOfWork->pushSave($first, $metadata)->process();
+        }, 'Forced failure');
+
+        $this->assertSame([], $closedInNested);
+        $this->assertCount(2, $closed);
+
+        $next = new Document();
+        $next->setTitle('next');
+        $unitOfWork->pushSave($next, $metadata)->process();
+        $this->assertCount(3, $closed);
+    }
+
+    /**
+     * A getter read while the outer process() builds the INSERT of an entity saves another one: the nested process()
+     * leaves the entity being written to the outer one, which writes it once
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testANestedProcessShouldNotWriteTheEntityTheOuterOneIsWriting()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $other = new Document();
+        $other->setTitle('other');
+        $entity = $this->createDocumentCallingBackOnGetTitle();
+        $entity->setTitle('entity');
+        $queuedInNested = null;
+        $entity->onGetTitle = function () use ($unitOfWork, $metadata, $other, $entity, &$queuedInNested): void {
+            $unitOfWork->pushSave($other, $metadata)->process();
+            $queuedInNested = $unitOfWork->shouldBePersisted($entity);
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['other', 'entity'], array_column($params, 'v1_doc_title'));
+        $this->assertTrue($queuedInNested);
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertTrue($unitOfWork->isManaged($other));
+    }
+
+    /**
+     * Same for the UPDATE of a managed entity: written once, by the outer process()
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testANestedProcessShouldNotUpdateTheEntityTheOuterOneIsUpdating()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params, insertedId: $insertedId);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = $this->createDocumentCallingBackOnGetTitle();
+        $entity->setTitle('entity');
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $insertedId = 2;
+        $other = new Document();
+        $other->setTitle('other');
+        $entity->setTitle('changed');
+        $entity->onGetTitle = function () use ($unitOfWork, $metadata, $other): void {
+            $unitOfWork->pushSave($other, $metadata)->process();
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertSame(['entity', 'other', 'changed'], array_column($params, 'v1_doc_title'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+    }
+
+    /**
+     * Once the entity is written, it is no longer in progress: pushed again from the setter of its generated id, a
+     * nested process() writes it, as documented (an UPDATE matching no row: not supported)
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testANestedProcessShouldWriteTheEntityPushedAgainOnceTheOuterOneWroteIt()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = $this->createDocumentCallingBackOnId();
+        $entity->setTitle('entity');
+        $entity->onId = function () use ($unitOfWork, $metadata, $entity): void {
+            $entity->setTitle('changed');
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
+     * @return Document&object{onId: ?\Closure}
+     */
+    private function createDocumentCallingBackOnId(): Document
+    {
+        return new class extends Document {
+            public ?\Closure $onId = null;
+
+            public function setId(?int $id): void
+            {
+                parent::setId($id);
+                $onId = $this->onId;
+                $this->onId = null;
+                if ($onId !== null) {
+                    $onId();
+                }
+            }
+        };
+    }
+
+    /**
+     * @return Document&object{onGetTitle: ?\Closure}
+     */
+    private function createDocumentCallingBackOnGetTitle(): Document
+    {
+        return new class extends Document {
+            public ?\Closure $onGetTitle = null;
+
+            public function getTitle(): ?string
+            {
+                $onGetTitle = $this->onGetTitle;
+                $this->onGetTitle = null;
+                if ($onGetTitle !== null) {
+                    $onGetTitle();
+                }
+
+                return parent::getTitle();
+            }
+        };
+    }
+
+    /**
      * The autoincrement property is typed and left uninitialized, its getter returning 0 instead: the setter throws
      * before setting the id, so the id is not set (the getter is not read: the property exists), and the changes are
      * dropped instead of being written by an UPDATE WHERE id = 0
