@@ -849,13 +849,17 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
     /**
      * The save of a managed entity is done: forget the changes written (and those set back to their old value) and
-     * unqueue it. The changes of the properties some metadata of its class map are kept: not mapped by the metadata
-     * written with (a lighter projection), they are written by a save through metadata mapping them. Those no metadata
-     * maps (a relation whose setter notifies its changes, say) can never be written: they are forgotten.
+     * unqueue it (unless pushed again during its step, see completeStep()). A change notified during the step (by a
+     * getter or a serializer read to build the query) is forgotten only when the database value of the property is
+     * still the one written: otherwise it was made after the property was read, and is kept for the next save. The
+     * changes of the properties some metadata of its class map are kept: not mapped by the metadata written with (a
+     * lighter projection), they are written by a save through metadata mapping them. Those no metadata maps (a
+     * relation whose setter notifies its changes, say) can never be written: they are forgotten.
      *
      * @template E of object
      * @param Metadata<E>|null $metadata the metadata written with, null when none was found
-     * @param array<string, mixed> $written property name => anything, for the properties written
+     * @param array<string, mixed> $written property name => anything, for the properties written; [database value
+     *                                      stored before, database value written] for an UPDATE (see getChanges())
      */
     private function markSaved(NotifyPropertyInterface $entity, ?Metadata $metadata, array $written): void
     {
@@ -867,7 +871,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $read = $this->entitiesMetadata[$entity] ?? null;
         $changes = $this->entitiesChanged[$entity] ?? [];
         foreach ($changes as $property => [$oldValue, $newValue]) {
-            if ((isset($written[$property]) && isset($changedDuringStep[$property]) === false) || $oldValue === $newValue
+            if ((isset($written[$property])
+                    && (isset($changedDuringStep[$property]) === false
+                        || $this->isValueWritten($entity, $metadata, $property, $written[$property])))
+                || $oldValue === $newValue
                 || ($metadata?->hasProperty($property) !== true
                     && $read?->hasProperty($property) !== true
                     && $this->metadataRepository->isPropertyMapped($entity::class, $property) === false)
@@ -881,6 +888,27 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         } else {
             $this->entitiesChanged[$entity] = $changes;
         }
+    }
+
+    /**
+     * @template E of object
+     * @param Metadata<E>|null $metadata
+     * @return bool true when the database value of the property is the one written ($written: [database value stored
+     *              before, database value written]); false when it differs, or cannot be read
+     */
+    private function isValueWritten(NotifyPropertyInterface $entity, ?Metadata $metadata, string $property, mixed $written): bool
+    {
+        if ($metadata === null || \is_array($written) === false || \array_key_exists(1, $written) === false) {
+            return false;
+        }
+
+        try {
+            [$readable, $value] = $metadata->getEntityPropertyIfReadable($entity, $property);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $readable && $value === $written[1];
     }
 
     /**
