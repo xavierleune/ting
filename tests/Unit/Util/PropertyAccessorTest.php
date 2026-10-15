@@ -129,6 +129,22 @@ class PropertyAccessorTest extends TestCase
     }
 
     /**
+     * The Symfony property accessor only uses an adder and a remover for an iterable value: any other is written by
+     * reflection
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteANonIterableValueOfAPropertyWithAsymmetricVisibilityAndAnAdder()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new AsymmetricVisibilityMutators();
+        $accessor->setValue($entity, 'tags', ['a'], null);
+        $this->assertSame(['a (adder)'], $entity->tags);
+
+        $accessor->setValue($entity, 'tags', null, null);
+        $this->assertNull($entity->tags);
+    }
+
+    /**
      * Declared by the parent class: written in the scope of that class, not of the class of the object
      */
     #[RequiresPhp('>= 8.4.0')]
