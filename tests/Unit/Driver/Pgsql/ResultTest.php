@@ -700,6 +700,53 @@ class ResultTest extends TestCase
                 ['book'],
                 [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => '']],
             ],
+            // A table of a condition (WHERE, ON, HAVING...) supplies no column: it ranks after the tables of the CTEs
+            'the same table in a CTE and in a derived table of an EXISTS' => [
+                'WITH c AS (SELECT id, title FROM archive.book)'
+                . ' SELECT id, title FROM c WHERE EXISTS (SELECT 1 FROM (SELECT 1 FROM book) x)',
+                ['book', 'book'],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive'],
+                    ['name' => 'title', 'orgName' => 'title', 'table' => 'book', 'schema' => 'archive'],
+                ],
+            ],
+            'the same table in a derived table of an EXISTS and in a CTE' => [
+                'WITH c AS (SELECT id, title FROM book)'
+                . ' SELECT id, title FROM c WHERE EXISTS (SELECT 1 FROM (SELECT 1 FROM archive.book) x)',
+                ['book', 'book'],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => ''],
+                    ['name' => 'title', 'orgName' => 'title', 'table' => 'book', 'schema' => ''],
+                ],
+            ],
+            'the same table in a CTE and in an IN sub-query' => [
+                'WITH c AS (SELECT id FROM archive.book) SELECT id FROM c WHERE id NOT IN (SELECT id FROM book)',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive']],
+            ],
+            'the same table in a CTE and in a sub-query of an ON condition' => [
+                'WITH c AS (SELECT id FROM archive.book)'
+                . ' SELECT id FROM c JOIN other o ON o.x IN (SELECT b.id FROM book b)',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive']],
+            ],
+            'the same table in a CTE and in a sub-query of HAVING' => [
+                'WITH c AS (SELECT id FROM archive.book)'
+                . ' SELECT id FROM c GROUP BY id HAVING count(*) > (SELECT count(*) FROM book)',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'archive']],
+            ],
+            'the same table in an ON condition and in a derived table after it' => [
+                'WITH c AS (SELECT id FROM archive.book)'
+                . ' SELECT id FROM other o JOIN x ON o.a IN (SELECT 1 FROM app.book), (SELECT id FROM book) s',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => '']],
+            ],
+            'the same table in a derived table and, closer, in an EXISTS' => [
+                'SELECT id FROM (SELECT id FROM (SELECT id FROM app.book) s1) s2 WHERE EXISTS (SELECT 1 FROM book)',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => 'app']],
+            ],
             'tables of nested CTEs: the closest to the main SELECT' => [
                 'WITH c AS (SELECT x.id FROM (SELECT y.id FROM archive.book y) x), d AS (SELECT z.id FROM book z)'
                 . ' (SELECT id FROM c UNION SELECT id FROM d)',

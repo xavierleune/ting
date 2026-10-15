@@ -147,9 +147,16 @@ class Result implements ResultInterface
 
     /**
      * The distance to the main SELECT of a table read before it (in a CTE), plus its depth: further than any table of
-     * the main statement, closer than a table outside of its parentheses (the next SELECT of a UNION)
+     * the main statement that may supply a column (its FROM clause, its derived tables, its select list)
      */
-    private const BEFORE_MAIN_SELECT = \PHP_INT_MAX >> 1;
+    private const BEFORE_MAIN_SELECT = \PHP_INT_MAX >> 2;
+
+    /**
+     * The distance to the main SELECT of a table read in a condition of the main statement (ON, WHERE, HAVING...),
+     * plus its depth: it supplies no column, further than a table of a CTE, closer than a table outside of the
+     * parentheses of the main SELECT (the next SELECT of a UNION)
+     */
+    private const IN_CONDITION = \PHP_INT_MAX >> 1;
 
     protected ?string $connectionName = null;
     protected ?string $database = null;
@@ -534,8 +541,8 @@ class Result implements ResultInterface
         $aliasToSchema = [];
         $derivedTables = [];
         // How far from the main SELECT each table and each alias was read: 0 at its depth, deeper further, before it
-        // (in a CTE) further than any depth of the main statement, and outside of its parentheses (the next SELECT of
-        // a UNION) the furthest
+        // (in a CTE) further than any depth of the main statement that may supply a column, in a condition further
+        // still, and outside of its parentheses (the next SELECT of a UNION) the furthest
         $tableDistance = [];
         $aliasDistance = [];
         // At each depth of parentheses: no SELECT, its select list, or its FROM clause (until the clause after it)
@@ -543,6 +550,11 @@ class Result implements ResultInterface
         // At each depth of parentheses, the depth of the SELECT it belongs to: the parentheses of a join, as
         // FROM (a JOIN b ON ...), hold items of the FROM clause around them
         $depths = [0];
+        // At each depth of parentheses, whether the tables read there may supply a column of the main SELECT: not in a
+        // condition (ON, WHERE, HAVING...) nor in the clauses after it, nor in what they hold; and whether they may
+        // at its start, as the depth around it
+        $feeds = [true];
+        $parentFeeds = [true];
         // The opening parentheses of the parenthesized joins read
         $joins = [];
         // The derived tables (sub-queries of the FROM clause but LATERAL ones, bodies of the CTEs): the aliases inside
@@ -567,6 +579,8 @@ class Result implements ResultInterface
             if ($token === '(' || $token === '[') {
                 $states[] = $isJoin ? self::FROM_CLAUSE : self::NO_SELECT;
                 $depths[] = $isJoin ? end($depths) : end($depths) + 1;
+                $parentFeeds[] = end($feeds);
+                $feeds[] = end($feeds);
                 // The first item of a parenthesized join follows its parenthesis
                 if (!$isJoin) {
                     continue;
@@ -576,6 +590,8 @@ class Result implements ResultInterface
                 if (\count($states) > 1) {
                     array_pop($states);
                     array_pop($depths);
+                    array_pop($feeds);
+                    array_pop($parentFeeds);
                 }
                 continue;
             }
@@ -597,12 +613,23 @@ class Result implements ResultInterface
             if (($isAlias && $states[$top] !== self::NO_SELECT) || $isField) {
                 continue;
             }
+            if ($token === 'on' && $states[$top] === self::FROM_CLAUSE) {
+                $feeds[$top] = false;
+            } elseif (
+                $token === 'select'
+                || $token === 'join'
+                || ($token === ',' && $states[$top] === self::FROM_CLAUSE)
+            ) {
+                $feeds[$top] = $parentFeeds[$top];
+            }
             if ($token === 'select') {
                 $states[$top] = self::SELECT_LIST;
                 continue;
             }
             if ($states[$top] === self::FROM_CLAUSE && \in_array($token, self::AFTER_FROM_CLAUSE, true)) {
+                // WHERE, GROUP BY, HAVING...: conditions and clauses supplying no column, until the next SELECT
                 $states[$top] = self::SELECT_LIST;
+                $feeds[$top] = false;
                 continue;
             }
 
@@ -619,8 +646,9 @@ class Result implements ResultInterface
             $depth = $depths[$top];
             $distance = match (true) {
                 $index < $mainSelect => self::BEFORE_MAIN_SELECT + $depth,
-                $depth >= $selectDepth => $depth - $selectDepth,
-                default => \PHP_INT_MAX - $depth,
+                $depth < $selectDepth => \PHP_INT_MAX - $depth,
+                !$feeds[$top] => self::IN_CONDITION + $depth,
+                default => $depth - $selectDepth,
             };
             $item = self::readFromItem($tokensWithCase, $tokens, $closing, $subQueries, $index);
             if ($item['derived'] !== null) {
