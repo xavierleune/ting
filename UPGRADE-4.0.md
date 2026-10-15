@@ -214,7 +214,8 @@ writes those whose value changed, with the notified changes of the other fields.
   `new \stdClass()` for `null`, a setter converting a date to UTC) makes the next save write the transformed value.
   See [mutable values](docs/entities.md#mutable-values).
 * A mutable field is written only once its value is known (read, set through its setter, or inserted): an entity read
-  partially never overwrites the columns it did not read.
+  partially never overwrites the columns it did not read while it is managed (an entity not managed, detached or
+  cloned, writes its default values, see the next section).
 * Recommended: type date properties `\DateTimeImmutable` and decode JSON to arrays
   (`'serializer_options' => ['unserialize' => ['assoc' => true]]`), which are not compared on every save. A
   `datetime` field hydrates a `\DateTimeImmutable` only for a property typed exactly `\DateTimeImmutable` (nullable or
@@ -343,7 +344,7 @@ Removed Methods
 
 | Removed                                                      | Use instead                                              |
 |--------------------------------------------------------------|----------------------------------------------------------|
-| `Query(Interface)::getInsertId()`, `Mysqli\Driver` / `Pgsql\Driver::getInsertId()` | `getInsertedId()`                  |
+| `Query(Interface)::getInsertId()`, `DriverInterface::getInsertId()` (Mysqli, Pgsql) | `getInsertedId()`                   |
 | `Pgsql\Driver::getInsertIdForSequence($sequence)`            | `getInsertedIdForSequence($sequence)`                    |
 | `Generator::getByCriteriaWithOrderAndLimit()`                | `Generator::getByCriteria()` (new `$order`, `$limit`)    |
 | `Metadata::getGetter()`, `Metadata::getSetter()`             | the `getter` / `setter` options of the field             |
@@ -450,6 +451,22 @@ Other changes:
   colon (`` `x \:y` ``) so that it is not read as a placeholder: their result is meant for SQL run through a Ting
   driver. Code escaping the name before calling `escapeField()` must stop doing it.
 * `Connection::__construct()` (internal) throws a `RuntimeException` on an empty `$name` or `$database`.
+* A subclass overriding `Query\Generator::getByCriteria()` must accept its new optional `array $order = []` and
+  `int $limit = 0`. The second argument of `Driver\Mysqli\Driver::__construct()` must be a `mysqli_driver` (or `null`).
+* Protected properties typed after 4.0.0-rc.1 (untyped until then), which a subclass redeclaring them must follow:
+
+  | Class                                            | Properties                                                          |
+  |--------------------------------------------------|---------------------------------------------------------------------|
+  | `ConnectionPool`                                 | `array $connectionConfig`, `$databaseOptions`, `$connectionReplicas`, `$connections` |
+  | `MetadataRepository`                             | `array $metadataList`, `array $entityToRepository`                  |
+  | `Driver\Mysqli\Driver`                           | `mysqli_driver $driver`, `object $connection` (never `null`)        |
+  | `Driver\Mysqli\Result`, `Driver\Pgsql\Result`    | `?object $result`, `?array $iteratorCurrent`                        |
+  | `Driver\Mysqli\Statement`                        | `object $driverStatement`                                           |
+  | `Driver\Pgsql\Driver`                            | `?object $connection`, `?object $result`, `string $dsn` (`''` until `connect()`) |
+  | `Driver\Pgsql\Statement`                         | `?object $connection`, `string $statementName`                      |
+  | `Query\Query`                                    | `string $sql`                                                       |
+  | `Repository\Metadata`, `MetadataCacheGenerator`  | `?string $repository`, `string $cacheDir`                           |
+  | `Repository\Repository`                          | `Metadata $metadata`, `Connection $connection` (set by the constructor) |
 
 Type Hints and Strict Types
 ---------------------------
@@ -474,6 +491,7 @@ return type, the same or wider parameter types, and the optional parameters of t
   public static function initMetadata(SerializerFactoryInterface $serializerFactory, array $options = []): Metadata
   ```
 
+* **A collection factory** implementing `CollectionFactoryInterface` must declare `get(): Collection`.
 * **A repository overriding a method of `Repository`** must copy its 4.0 signature, e.g.
   `public function getAll(bool $forcePrimary = false): CollectionInterface` (was `getAll($forceMaster = false)`); an
   override of `getCollection()` must return `Collection`.
@@ -497,8 +515,9 @@ Edge cases, misuses and rarely hit changes.
 
 * The `port` key is required for the primary and every replica: without it, a warning then a `TypeError` (3.x warned
   and used the default port).
-* `setCharset()` (Mysqli, Pgsql) throws a `DriverException` when the server rejects the charset (Mysqli under
-  `MYSQLI_REPORT_STRICT` threw a `mysqli_sql_exception`).
+* A charset the server rejects when `reconnect()` / `ping()` re-apply it is no longer kept as current (the session
+  keeps the server default, and the next `setCharset()` reports it); Mysqli `setCharset()` throws a `DriverException`
+  instead of a `mysqli_sql_exception` under `MYSQLI_REPORT_STRICT`.
 * Mysqli sends the `timezone` option as a single-quoted string: under the sql_mode `ANSI_QUOTES`, 3.x sent an
   identifier, which failed silently, so the configured time zone now applies.
 * `reconnect()` before `connect()` throws a `NeverConnectedException` (Mysqli, Pgsql). Two Pgsql drivers with the
@@ -540,6 +559,8 @@ Edge cases, misuses and rarely hit changes.
 * A value that does not survive a round trip (microseconds, a zero date, a JSON big integer) is not rewritten while it
   is not modified; a mutable field whose database value cannot be computed is taken as unchanged unless set through
   its setter. A mutable primary key targets its row by the value read.
+* The primary keys of the `WHERE` clause of an `UPDATE` / `DELETE` are read through their custom getter and
+  serialized (3.x ignored the getter and sent the PHP value).
 * A setter converting dates to another timezone than the one they are read in shifts them at each read and save.
 * `NotifyProperty::addPropertyListener()` no longer adds a listener already added (a clone keeps those of its
   original).
@@ -566,6 +587,8 @@ Edge cases, misuses and rarely hit changes.
   `Serializer\Ip` one that is not an integer from -2147483648 to 4294967295, with a `Serializer\RuntimeException`.
 * `Serializer\Json` errors always throw a `Serializer\RuntimeException` (with `JSON_THROW_ON_ERROR`, a `JsonException`
   escaped), and `JSON_PARTIAL_OUTPUT_ON_ERROR` returns the partial output.
+* `Serializer\DateTime` / `DateTimeImmutable` with a format without time (`Y-m-d` for a `DATE`) read midnight (3.x:
+  the current time of day).
 * With `unSerializeUseFormat => false`, an empty string is rejected (3.x read the current time).
 
 ### Cache and debugging
