@@ -299,6 +299,10 @@ How Ting deals with hooks:
   validate database values. A virtual property (hooks without a value of its own) has nothing to store a value in: Ting
   writes it through its `set` hook. Used as the `autoincrement` primary key, it holds no id of its own: an entity not
   managed is always inserted (see [Saving an entity not managed](unit-of-work.md#saving-an-entity-not-managed)).
+* **a public property only the class can write** (`readonly`, `private(set)`, `protected(set)`) is written by Ting
+  too, unless a conventional setter (`setName()`) writes it: its own value is stored as is (without its `set` hook), a
+  virtual one is written through its `set` hook. A `readonly` property is only initialized: hydrating an entity whose
+  property is already initialized (by its constructor, say) fails.
 * **`get` hooks are applied when Ting reads a property**: the value returned by the hook is the one written to the
   database.
 

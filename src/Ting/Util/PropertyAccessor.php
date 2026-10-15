@@ -14,11 +14,23 @@ use Symfony\Component\PropertyAccess\PropertyPathInterface;
 
 class PropertyAccessor
 {
-    /** @var array<string, array{public: bool, supportsHook: bool, hasSetHook: bool}> by class and property name */
-    private array $reflectionData = [];
+    /** Written by the Symfony property accessor (a setter, a public property, a virtual one through its set hook) */
+    private const WRITE_ACCESSOR = 'accessor';
+    /** Its own value written by reflection, without its set hook (PHP 8.4+) */
+    private const WRITE_RAW = 'raw';
+    /** Written by reflection, through its set hook if any: the Symfony property accessor is not allowed to */
+    private const WRITE_REFLECTION = 'reflection';
+    /**
+     * The format of the items cached changed since Ting 3.x (whose prefix was write_property_), and what they hold
+     * depends on the PHP version (property hooks, asymmetric visibility): a persistent pool filled by another version
+     * is not read
+     */
+    private const CACHE_PREFIX_WRITE = 'write_property_v2_' . \PHP_MAJOR_VERSION . '.' . \PHP_MINOR_VERSION . '_';
+
+    /** @var array<string, self::WRITE_*> by class and property name, how to write the property */
+    private array $writeModes = [];
     /** @var array<string, ReflectionProperty> by class and property name */
     private array $reflectionProperties = [];
-    private const CACHE_PREFIX_WRITE = 'write_property_';
     private readonly PropertyAccessorInterface $propertyAccessor;
     private ?CacheItemPoolInterface $cacheItemPool = null;
 
@@ -38,17 +50,15 @@ class PropertyAccessor
             return;
         }
 
-        $reflectionData = $this->getReflectionData($object, $propertyPath);
-
-        if ($reflectionData['public'] && $reflectionData['supportsHook'] && $reflectionData['hasSetHook']) {
-            // SetRawValue is 8.4+ only.
-            // We use it only if there is a hook we want to bypass (a virtual property has no value of its own: it is
-            // written through its set hook, by the property accessor)
-            // In any other case we let the property accessor
-            $reflectionProperty = $this->getReflectionProperty($object, $propertyPath);
-            $reflectionProperty->setRawValue($object, $value); // @phpstan-ignore method.notFound
-            return;
+        switch ($this->getWriteMode($object, (string) $propertyPath)) {
+            case self::WRITE_RAW:
+                $this->getReflectionProperty($object, (string) $propertyPath)->setRawValue($object, $value); // @phpstan-ignore method.notFound
+                return;
+            case self::WRITE_REFLECTION:
+                $this->getReflectionProperty($object, (string) $propertyPath)->setValue($object, $value);
+                return;
         }
+
         $this->propertyAccessor->setValue($object, $propertyPath, $value);
     }
 
@@ -158,49 +168,62 @@ class PropertyAccessor
     }
 
     /**
-     * @param object $object
-     * @param string $propertyPath
-     * @return array{'public': bool, 'supportsHook': bool, 'hasSetHook': bool}
+     * How to write the property, without setter option:
+     * - a public property with a set hook and a value of its own (PHP 8.4+): its value is written without the hook;
+     * - a public property only the class can write (readonly, private(set) or protected(set)) without a conventional
+     *   setter: by reflection, its own value without its set hook (PHP 8.4+), a virtual one through its set hook;
+     * - any other (a setter, a public property, a virtual one through its set hook): by the Symfony property accessor
+     *
+     * @return self::WRITE_*
      * @throws InvalidArgumentException
      */
-    private function getReflectionData(object $object, string $propertyPath): array
+    private function getWriteMode(object $object, string $propertyPath): string
     {
         $key = $object::class.'..'.$propertyPath;
-        if (isset($this->reflectionData[$key])) {
-            return $this->reflectionData[$key];
+        if (isset($this->writeModes[$key])) {
+            return $this->writeModes[$key];
         }
 
         $cacheItemPool = $this->cacheItemPool;
         $item = null;
         if ($cacheItemPool instanceof CacheItemPoolInterface) {
             $item = $cacheItemPool->getItem(self::CACHE_PREFIX_WRITE.rawurlencode($key));
-            if ($item->isHit()) {
-                return $this->reflectionData[$key] = $item->get();
+            $mode = $item->get();
+            if ($item->isHit() && \in_array($mode, [self::WRITE_ACCESSOR, self::WRITE_RAW, self::WRITE_REFLECTION], true)) {
+                return $this->writeModes[$key] = $mode;
             }
         }
 
+        $mode = self::WRITE_ACCESSOR;
         try {
             $reflection = new ReflectionProperty($object, $propertyPath);
-            $data = [
-                'public' => $reflection->isPublic(),
-                'supportsHook' => \PHP_VERSION_ID >= 80400,
-                // A set hook to bypass: not that of a virtual property, which has no value of its own
-                'hasSetHook' => \PHP_VERSION_ID >= 80400
+            if ($reflection->isPublic()) {
+                $supportsHooks = \PHP_VERSION_ID >= 80400;
+                $virtual = $supportsHooks && $reflection->isVirtual(); // @phpstan-ignore method.notFound
+                if ($supportsHooks && $virtual === false
                     && $reflection->getHook(PropertyHookType::Set) !== null // @phpstan-ignore method.notFound, class.notFound
-                    && $reflection->isVirtual() === false, // @phpstan-ignore method.notFound
-            ];
+                ) {
+                    // A set hook to bypass: not that of a virtual property, which has no value of its own
+                    $mode = self::WRITE_RAW;
+                } elseif (($reflection->isReadOnly()
+                        || ($supportsHooks && ($reflection->isPrivateSet() || $reflection->isProtectedSet()))) // @phpstan-ignore method.notFound, method.notFound
+                    && $this->propertyAccessor->isWritable($object, $propertyPath) === false
+                ) {
+                    // Only the class can write it, and it has no conventional setter
+                    $mode = $supportsHooks && $virtual === false ? self::WRITE_RAW : self::WRITE_REFLECTION;
+                }
+            }
         } catch (ReflectionException) {
             // Private in a parent class, or only reachable through a setter: no hook to bypass, Symfony writes it
-            $data = ['public' => false, 'supportsHook' => \PHP_VERSION_ID >= 80400, 'hasSetHook' => false];
         }
 
         if ($cacheItemPool instanceof CacheItemPoolInterface && $item !== null) {
-            $cacheItemPool->save($item->set($data));
+            $cacheItemPool->save($item->set($mode));
         }
-        
-        return $this->reflectionData[$key] = $data;
+
+        return $this->writeModes[$key] = $mode;
     }
-    
+
     private function getReflectionProperty(object $object, string $propertyPath): ReflectionProperty
     {
         $key = $object::class.'..'.$propertyPath;

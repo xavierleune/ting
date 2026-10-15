@@ -31,9 +31,11 @@ use PHPUnit\Framework\Attributes\RequiresPhp;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
+use tests\fixtures\model\AsymmetricVisibilityEntity;
 use tests\fixtures\model\CustomGetterEntity;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
+use tests\fixtures\model\ReadonlyPropertiesEntity;
 use tests\fixtures\model\TrackedChild;
 
 class PropertyAccessorTest extends TestCase
@@ -55,6 +57,93 @@ class PropertyAccessorTest extends TestCase
     public function testSetPropertyShouldWriteAVirtualPropertyThroughItsSetHook()
     {
         $accessor = new PropertyAccessor();
+        $entity = new HookedPropertiesEntity();
+        $accessor->setValue($entity, 'virtualSetOnly', 'value', null);
+
+        $this->assertSame('value (hooked on set)', $entity->hookSetOnly);
+    }
+
+    /**
+     * A public property only the class can write (private(set), protected(set)): its own value is written, without
+     * its set hook, as for a public property
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteAPropertyWithAsymmetricVisibility()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new AsymmetricVisibilityEntity();
+        $accessor->setValue($entity, 'privateSet', 'private', null);
+        $accessor->setValue($entity, 'protectedSet', 'protected', null);
+        $accessor->setValue($entity, 'hookedProtectedSet', 'hooked', null);
+
+        $this->assertSame('private', $entity->privateSet);
+        $this->assertSame('protected', $entity->protectedSet);
+        $this->assertSame('hooked', $entity->hookedProtectedSet);
+    }
+
+    /**
+     * Virtual, a property with asymmetric visibility has no value of its own: it is written through its set hook
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteAVirtualPropertyWithAsymmetricVisibilityThroughItsSetHook()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new AsymmetricVisibilityEntity();
+        $accessor->setValue($entity, 'virtualPrivateSet', 'virtual', null);
+
+        $this->assertSame('virtual (hooked on set)', $entity->virtualPrivateSet);
+    }
+
+    /**
+     * Its conventional setter writes it, as before
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteAPropertyWithAsymmetricVisibilityThroughItsSetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new AsymmetricVisibilityEntity();
+        $accessor->setValue($entity, 'withSetter', 'value', null);
+
+        $this->assertSame('value (setter)', $entity->withSetter);
+    }
+
+    public function testSetPropertyShouldInitializeAPublicReadonlyProperty()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new ReadonlyPropertiesEntity();
+        $accessor->setValue($entity, 'id', 3, null);
+        $accessor->setValue($entity, 'name', null, null);
+
+        $this->assertSame(3, $entity->id);
+        $this->assertNull($entity->name);
+    }
+
+    /**
+     * Once initialized, a readonly property cannot be modified, even by Ting
+     */
+    public function testSetPropertyShouldNotModifyAnInitializedReadonlyProperty()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new ReadonlyPropertiesEntity();
+
+        $this->assertThrows(\Error::class, function () use ($accessor, $entity): void {
+            $accessor->setValue($entity, 'promoted', 'value', null);
+        }, 'Cannot modify readonly property ' . ReadonlyPropertiesEntity::class . '::$promoted');
+        $this->assertSame('constructor', $entity->promoted);
+    }
+
+    /**
+     * Ting 3.13 cached what to do under another format (a virtual property taken for one with a set hook to bypass):
+     * a persistent pool it filled is not read
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldNotReadWhatTing3CachedInAPersistentPool()
+    {
+        $cache = new ArrayAdapter();
+        $item = $cache->getItem('write_property_' . rawurlencode(HookedPropertiesEntity::class . '..virtualSetOnly'));
+        $cache->save($item->set(['public' => true, 'supportsHook' => true, 'hasSetHook' => true]));
+        $accessor = new PropertyAccessor();
+        $accessor->setCacheItemPool($cache);
         $entity = new HookedPropertiesEntity();
         $accessor->setValue($entity, 'virtualSetOnly', 'value', null);
 
