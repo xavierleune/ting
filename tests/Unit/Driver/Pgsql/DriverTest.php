@@ -885,6 +885,50 @@ class DriverTest extends TestCase
         $this->assertSame(['0', '1'], $outerValues);
     }
 
+    /**
+     * pg_query_params() converts a float with `precision` (14 by default) significant digits: the value sent must read
+     * back as the same float, whatever the ini settings and the locale
+     */
+    public function testExecuteShouldSendFloatsWithAllTheirDigits()
+    {
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override('pg_query_params', function ($connection, $sql, $values) use (&$outerValues): void {
+            $outerValues = $values;
+        });
+        NativeFunctionMock::override('pg_result_status', \PGSQL_COMMAND_OK);
+        $previousPrecision = ini_set('precision', '14');
+        $previousLocale    = setlocale(\LC_NUMERIC, '0');
+        setlocale(\LC_NUMERIC, 'fr_FR.UTF-8', 'fr_FR', 'de_DE.UTF-8', 'de_DE');
+
+        try {
+            $driver = new Driver();
+            $driver->setDatabase('myDatabase');
+            $driver->execute(
+                'UPDATE t SET a = :a, b = :b, c = :c, d = :d, e = :e, f = :f, g = :g, h = :h, i = :i',
+                [
+                    'a' => 1234567.123456789,
+                    'b' => 1760000000.123456,
+                    'c' => 0.30000000000000004,
+                    'd' => 1e25,
+                    'e' => -0.0,
+                    'f' => 3.0,
+                    'g' => \INF,
+                    'h' => -\INF,
+                    'i' => \NAN,
+                ]
+            );
+        } finally {
+            ini_set('precision', (string) $previousPrecision);
+            setlocale(\LC_NUMERIC, (string) $previousLocale);
+        }
+
+        // PostgreSQL reads Infinity, -Infinity and NaN for a real, a double precision and (since 14) a numeric
+        $this->assertSame(
+            ['1234567.123456789', '1760000000.123456', '0.30000000000000004', '1.0E+25', '-0', '3', 'Infinity', '-Infinity', 'NaN'],
+            $outerValues
+        );
+    }
+
     public function testExecuteShouldRaiseExceptionIfValueNotDefined()
     {
         NativeFunctionMock::override('pg_connect', new Pgsql());

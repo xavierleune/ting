@@ -31,6 +31,7 @@ use CCMBenchmark\Ting\Driver\DefaultValuesInsertDriverInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\Exception;
+use CCMBenchmark\Ting\Driver\FloatLiteral;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface;
@@ -396,13 +397,27 @@ class Driver implements
     /**
      * Value of a query parameter as sent to PostgreSQL: pg_query_params() and pg_execute() send false as '', which
      * PostgreSQL rejects for a boolean (or a number); a boolean is sent as '0' or '1', as Mysqli sends 0 or 1, which a
-     * boolean, an integer or a text column accepts
+     * boolean, an integer or a text column accepts; they convert a float with `precision` (14 by default) significant
+     * digits: it is sent with all its digits, and an infinite or NaN value as PostgreSQL spells it
      *
      * @internal
      */
     public static function parameterValue(mixed $value): mixed
     {
-        return \is_bool($value) ? ($value ? '1' : '0') : $value;
+        if (\is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+        if (!\is_float($value)) {
+            return $value;
+        }
+        if (is_nan($value)) {
+            return 'NaN';
+        }
+        if (is_infinite($value)) {
+            return $value > 0 ? 'Infinity' : '-Infinity';
+        }
+
+        return FloatLiteral::format($value);
     }
 
     /**
