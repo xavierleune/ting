@@ -76,7 +76,7 @@ Use `pushSave()` both to insert and to update: the unit of work knows which one 
 queue, including entities pushed earlier. Called while `process()` runs (by a setter, a getter or a serializer), they
 write the entities still queued too: the running `process()` then skips the ones written. Saving the entity being
 inserted from the setter of its generated id is not supported: that save runs before the unit of work records the id,
-writes nothing and the change is lost.
+sends an UPDATE matching no row (`WHERE id IS NULL`) and the change is lost.
 
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
