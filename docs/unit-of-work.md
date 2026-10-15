@@ -72,13 +72,14 @@ $unitOfWork->pushSave($city)->pushDelete($oldCity)->process();
 Use `pushSave()` both to insert and to update: the unit of work knows which one applies.
 
 `Repository::save($entity)` and `Repository::delete($entity)` are shortcuts for `pushSave($entity)->process()` and
-`pushDelete($entity)->process()`, writing with the metadata of the repository. Note that they process the **whole**
-queue, including entities pushed earlier. Called while `process()` runs (by a setter, a getter or a serializer), they
-write the entities still queued too: the running `process()` then skips the ones written. They leave the entity the
-running `process()` is writing to it (its getters and serializers are read while it is still queued), and the prepared
-statements are closed when the outermost `process()` ends. Saving the entity being
-inserted from the setter of its generated id is not supported: that save runs before the unit of work records the id,
-sends an UPDATE matching no row (`WHERE id IS NULL`) and the change is lost.
+`pushDelete($entity)->process()`, writing with the metadata of the repository when they map the class of the entity
+(not a subclass: see [Writing](repositories.md#writing)). Note that they process the **whole** queue, including
+entities pushed earlier. Called while `process()` runs (by a setter, a getter or a serializer), they write the entities
+still queued too: the running `process()` then skips the ones written. They leave the entity the running `process()` is
+writing to it (its getters and serializers are read while it is still queued), and the prepared statements are closed
+when the outermost `process()` ends. Saving the entity being inserted from the setter of its generated id is not
+supported: that save runs before the unit of work records the id, sends an UPDATE matching no row (`WHERE id IS NULL`)
+and the change is lost.
 
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
@@ -154,8 +155,9 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
 
 The `autoincrement` property is read directly, not through its getter, which may refuse an id not generated yet. It is
 read again by `process()`: set to `null` between `pushSave()` and `process()`, the entity is inserted. If the `UPDATE`
-fails, the entity stays not managed and can be saved again. The metadata given to `Repository::save()` are the ones
-used: the row updated or inserted is the one of the table of that repository.
+fails, the entity stays not managed and can be saved again. `Repository::save()` writes with the metadata of its
+repository when they map the class of the entity (see [Writing](repositories.md#writing)): the row updated or inserted
+is the one of the table of that repository.
 
 ```php
 $city = new City();

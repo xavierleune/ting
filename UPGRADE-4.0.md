@@ -973,10 +973,13 @@ Hydrators and Transactions
   - A plain column aliased without `AS` (`SELECT u.name n FROM users u`, `u.name "N"`) is now hydrated into the
     entity of its table, as with `AS` (and as with MySQL), not into the `0` object: `$row[0]->n` no longer exists, the
     value is in `$row['u']`, mapped by the metadata of `users` by its column name (`name`). Its name in the result is
-    unchanged. `mapAliasTo()` and `unserializeAliasWith()` on such an alias (`mapAliasTo('n', 'u', 'setNickname')`)
-    no longer receive the value, which goes to the entity: the setter of `mapAliasTo()` gets `null`, with "Undefined
-    array key" warnings, and `unserializeAliasWith()` unserializes nothing. To keep it in `0` or for these methods, make it an expression, with `AS` or not
-    (`u.name || '' AS n`, `CAST(u.name AS text) n`), or map the column to a property of the entity.
+    unchanged. `mapAliasTo()` and `unserializeAliasWith()` on such an alias of a column the metadata map
+    (`mapAliasTo('n', 'u', 'setNickname')`) no longer receive the value, which goes to the entity: the setter of
+    `mapAliasTo()` gets `null`, with "Undefined array key" warnings, and `unserializeAliasWith()` unserializes nothing.
+    To keep it in `0` or for these methods, make it an expression, with `AS` or not (`u.name || '' AS n`,
+    `CAST(u.name AS text) n`), or map the column to a property of the entity. A column the metadata do not map
+    (`u.nickname n`, `nickname` not declared) has no property to go to: it stays in `0`, as before, and still reaches
+    these methods.
 * **PostgreSQL: a query read into another number of columns than its result throws.** The Pgsql driver matches the
   values of a row to the columns read from the query by position. When the columns it reads from the query are not as
   many as the columns of the result (a query the parser misreads, `INSERT ... SELECT a, b ... RETURNING id`,
@@ -1043,8 +1046,10 @@ Queries, Entities and the Unit of Work
   row: its `autoincrement` id was left out of the `INSERT`, then replaced by the generated one. When its metadata have
   an `autoincrement` field and that property holds a value other than `null` (read from the property itself, not
   through its getter), it is now updated by its primary key with every readable mapped property, then managed;
-  `isNew()` is `false` for it. With that property `null` or not initialized, or without `autoincrement` field (as for a
-  natural key), it is inserted as before. Check:
+  `isNew()` is `false` for it. With that property `null` or not initialized, without `autoincrement` field (as for a
+  natural key), or with an `autoincrement` id that has no value of its own (no property named after the field, reached
+  through `getter` / `setter` options only, a virtual property, or an untyped property unset to be served by
+  `__get()`), it is inserted as before, whatever id its getter returns. Check:
   - an id defaulting to `0` (`private int $id = 0;`, or a setter casting `null` to `0`) is an id: declare it nullable,
     `null` by default (`?int $id = null`, `setId(?int $id)`);
   - to duplicate a row, set the `autoincrement` property of the clone to `null` before saving it (or reset it in
