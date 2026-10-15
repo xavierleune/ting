@@ -42,7 +42,8 @@ class PropertyAccessor
 
         if ($reflectionData['public'] && $reflectionData['supportsHook'] && $reflectionData['hasSetHook']) {
             // SetRawValue is 8.4+ only.
-            // We use it only if there is a hook we want to bypass
+            // We use it only if there is a hook we want to bypass (a virtual property has no value of its own: it is
+            // written through its set hook, by the property accessor)
             // In any other case we let the property accessor
             $reflectionProperty = $this->getReflectionProperty($object, $propertyPath);
             $reflectionProperty->setRawValue($object, $value); // @phpstan-ignore method.notFound
@@ -183,7 +184,10 @@ class PropertyAccessor
             $data = [
                 'public' => $reflection->isPublic(),
                 'supportsHook' => \PHP_VERSION_ID >= 80400,
-                'hasSetHook' => \PHP_VERSION_ID >= 80400 && $reflection->getHook(PropertyHookType::Set) !== null, // @phpstan-ignore method.notFound, class.notFound
+                // A set hook to bypass: not that of a virtual property, which has no value of its own
+                'hasSetHook' => \PHP_VERSION_ID >= 80400
+                    && $reflection->getHook(PropertyHookType::Set) !== null // @phpstan-ignore method.notFound, class.notFound
+                    && $reflection->isVirtual() === false, // @phpstan-ignore method.notFound
             ];
         } catch (ReflectionException) {
             // Private in a parent class, or only reachable through a setter: no hook to bypass, Symfony writes it

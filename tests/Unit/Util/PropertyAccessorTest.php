@@ -48,6 +48,19 @@ class PropertyAccessorTest extends TestCase
         $this->assertSame('value (hooked on get)', $entity->hookBoth);
     }
 
+    /**
+     * A virtual property has no value of its own to write: it is written through its set hook
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteAVirtualPropertyThroughItsSetHook()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new HookedPropertiesEntity();
+        $accessor->setValue($entity, 'virtualSetOnly', 'value', null);
+
+        $this->assertSame('value (hooked on set)', $entity->hookSetOnly);
+    }
+
     public function testSetPropertyShouldRespectSetter()
     {
         $accessor = new PropertyAccessor();

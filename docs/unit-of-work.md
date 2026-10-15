@@ -121,13 +121,15 @@ its fields changed. `pushSave()` decides by its `autoincrement` primary key:
   already stored. It is updated by its primary key with **every** readable mapped field (the primary key is in the
   `WHERE` clause, uninitialized typed properties are left out), then managed: its next saves write its changes only.
   `isNew()` is `false`;
-* otherwise (no `autoincrement` field, as for a natural key, the property `null` or not initialized, or no
-  property named after the `autoincrement` field, reached through `getter` / `setter` options only): the entity is
-  new. Every mapped property is inserted, except the `autoincrement` primary key and uninitialized typed
-  properties. The generated key is then set on the entity (through its setter, see
-  [field options](repositories.md#field-options)) and the entity becomes managed. It becomes managed as soon as the
-  `INSERT` has run: if reading or setting the generated key fails (a setter that throws, say), the error is rethrown
-  but the entity is not inserted again by its next save. `isNew()` is `true`. Setting the generated key is not a
+* otherwise (no `autoincrement` field, as for a natural key, the property `null` or not initialized, or an
+  `autoincrement` id with no value of its own: no property named after the field, reached through `getter` / `setter`
+  options only, a virtual property (PHP 8.4 hooks), or an untyped property unset to be served by `__get()`): the
+  entity is new, whatever id its getter returns. Every mapped property is inserted, except the `autoincrement`
+  primary key and uninitialized typed properties. The generated key is then set on the entity (through its setter,
+  see [field options](repositories.md#field-options), or the `set` hook of a virtual property), replacing the id it
+  held, and the entity becomes managed. It becomes managed as soon as the `INSERT` has run: if reading or setting the
+  generated key fails (a setter that throws, say), the error is rethrown but the entity is not inserted again by its
+  next save. `isNew()` is `true`. Setting the generated key is not a
   change, but a change its setter makes to another mapped field (a slug named after the id, say) was not inserted: it
   is written by the next save of the entity, as any change (`isPropertyChanged()` reports it). A change made by a
   setter that throws is kept too once the setter has set the id; when it throws before setting the id, its changes
