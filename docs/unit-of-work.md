@@ -104,9 +104,16 @@ batch in its order:
    * outside a transaction, the writes done before the failure are kept: push the failing entity and the ones after
      it, and leave out the entities written before the failure. A failing entity found managed at step 1 has its row
      inserted:
-     * if changes of its setter were kept (the setter set the generated id, then threw), push it again: detached, it
-       holds its id and is saved by an `UPDATE` of every field, which writes those changes (see
-       [Saving an entity not managed](#saving-an-entity-not-managed)). Left out, they are lost;
+     * if changes of its setter were kept (the setter set the generated id, then threw) and its id is held in a
+       property of its own (a property named after the `autoincrement` field, neither virtual nor unset to be
+       served by `__get()`), push it again: detached, it holds its id and is saved by an `UPDATE` of every field,
+       which writes those changes (see [Saving an entity not managed](#saving-an-entity-not-managed)). Left out,
+       they are lost;
+     * if changes of its setter were kept but its id has no value of its own (reached through `getter` / `setter`
+       options only, a virtual property, or an untyped property served by `__get()`), do not push it again: detached,
+       it is taken as new and would be inserted a second time. Note at step 1 its id (read through its getter) and
+       the values of the fields `isPropertyChanged()` reports, then, after `detachAll()`, read its row again by that
+       id, set those values on the fresh object and push it: its changes are written by an `UPDATE`;
      * otherwise, leave it out: its row holds every value the `INSERT` wrote. When the unit of work dropped the
        changes of its setter, the entity may hold no id (`null`, or a typed property not initialized, whatever its
        getter returns) or an id that is not the one of its row (kept from an `INSERT` rolled back): pushed again, it
