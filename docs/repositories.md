@@ -553,7 +553,8 @@ public function archiveOlderThan(\DateTimeImmutable $date): int
     $query = $this->getPreparedQuery(
         'UPDATE t_city_cit SET cit_status = :status WHERE cit_created_at < :date'
     );
-    $query->setParams(['status' => CityStatus::Archived->value, 'date' => $date->format('Y-m-d H:i:s')]);
+    // The enum and the date are converted: see "Dates, enums and IN lists" in queries.md
+    $query->setParams(['status' => CityStatus::Archived, 'date' => $date]);
     $query->execute();
 
     return (int) $query->getAffectedRows();
