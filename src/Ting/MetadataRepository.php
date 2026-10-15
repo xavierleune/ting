@@ -105,6 +105,8 @@ class MetadataRepository
      * @param Closure $callbackNotFound called if unknown table - no parameter
      * @param list<list<string>> $preferredRepositories groups of classes the metadata to use are registered under,
      *                                                  by priority
+     * @param-immediately-invoked-callable $callbackFound
+     * @param-immediately-invoked-callable $callbackNotFound
      *
      * @throws HydratorException when several metadata could be the one of the table
      *
