@@ -1194,6 +1194,152 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * A process() that never ended (suspended in a Fiber left behind, in a worker): reset() leaves the unit of work
+     * with no process() running, the next one closes its statements
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testResetShouldForgetAProcessThatNeverEnded()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = $this->createDocumentCallingBackOnGetTitle();
+        $entity->setTitle('entity');
+        $entity->onGetTitle = static function (): void {
+            \Fiber::suspend();
+        };
+        $fiber = new \Fiber(function () use ($unitOfWork, $entity, $metadata): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        });
+        $fiber->start();
+
+        $unitOfWork->reset();
+        $next = new Document();
+        $next->setTitle('next');
+        $unitOfWork->pushSave($next, $metadata)->process();
+
+        $this->assertSame(['next'], array_column($params, 'v1_doc_title'));
+        $this->assertCount(1, $closed);
+        unset($fiber);
+    }
+
+    /**
+     * Deleted by a getter read while its UPDATE is built: the deletion pushed during the step is not dropped by the
+     * end of the step, it stays queued for the next process()
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityDeletedWhileItIsUpdatedShouldStayQueuedForItsDeletion()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = $this->createDocumentCallingBackOnGetTitle();
+        $entity->setTitle('entity');
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $entity->setTitle('changed');
+        $entity->onGetTitle = function () use ($unitOfWork, $metadata, $entity): void {
+            $unitOfWork->pushDelete($entity, $metadata)->process();
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT', 'UPDATE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertTrue($unitOfWork->shouldBeRemoved($entity));
+
+        $unitOfWork->process();
+        $this->assertSame('DELETE', strtok(end($queries), ' '));
+        $this->assertFalse($unitOfWork->isManaged($entity));
+    }
+
+    /**
+     * Same while its INSERT is built: its row is deleted by the next process()
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntityDeletedWhileItIsInsertedShouldStayQueuedForItsDeletion()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = $this->createDocumentCallingBackOnGetTitle();
+        $entity->setTitle('entity');
+        $entity->onGetTitle = function () use ($unitOfWork, $metadata, $entity): void {
+            $unitOfWork->pushDelete($entity, $metadata)->process();
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertTrue($unitOfWork->isManaged($entity));
+        $this->assertTrue($unitOfWork->shouldBeRemoved($entity));
+
+        $unitOfWork->process();
+        $this->assertSame(['INSERT', 'DELETE'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+    }
+
+    /**
+     * Saved again by a getter read while its INSERT is built: it stays queued, as a managed entity, not for a second
+     * INSERT
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAnEntitySavedAgainWhileItIsInsertedShouldNotBeInsertedTwice()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = $this->createDocumentCallingBackOnGetTitle();
+        $entity->setTitle('entity');
+        $entity->onGetTitle = function () use ($unitOfWork, $metadata, $entity): void {
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $this->assertTrue($unitOfWork->shouldBePersisted($entity));
+        $this->assertFalse($unitOfWork->isNew($entity));
+        $unitOfWork->process();
+
+        $this->assertSame(['INSERT'], array_map(fn (string $sql): string => strtok($sql, ' '), $queries));
+        $this->assertFalse($unitOfWork->shouldBePersisted($entity));
+    }
+
+    /**
+     * Changed and saved again by a getter read while its UPDATE is built, once the changed field is read: the change
+     * is not written by this UPDATE, it stays tracked and queued for the next process()
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeWhileTheEntityIsUpdatedShouldStayTracked()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $entity = new class extends Document {
+            public ?\Closure $onGetPublishedAt = null;
+
+            public function getPublishedAt(): ?\DateTime
+            {
+                $onGetPublishedAt = $this->onGetPublishedAt;
+                $this->onGetPublishedAt = null;
+                if ($onGetPublishedAt !== null) {
+                    $onGetPublishedAt();
+                }
+
+                return parent::getPublishedAt();
+            }
+        };
+        $entity->setTitle('entity');
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $entity->setTitle('changed');
+        $entity->onGetPublishedAt = function () use ($unitOfWork, $metadata, $entity): void {
+            $entity->setTitle('changed again');
+            $unitOfWork->pushSave($entity, $metadata)->process();
+        };
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame(['entity', 'changed'], array_column($params, 'v1_doc_title'));
+        $this->assertTrue($unitOfWork->shouldBePersisted($entity));
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'title'));
+
+        $unitOfWork->process();
+        $this->assertSame(['entity', 'changed', 'changed again'], array_column($params, 'v1_doc_title'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'title'));
+    }
+
+    /**
      * @return Document&object{onId: ?\Closure}
      */
     private function createDocumentCallingBackOnId(): Document

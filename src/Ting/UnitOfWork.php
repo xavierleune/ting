@@ -102,8 +102,10 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
     /**
-     * @var array<string, true> by object hash, the queued entities a running process() is writing, until they are
-     *      unqueued: a process() nested in it leaves them to it
+     * @var array<string, array{replaced: bool, done: bool, changed: array<string, true>}> by object hash, the queued
+     *      entities a running process() is writing, until they are unqueued: a process() nested in it leaves them to it.
+     *      replaced: pushed again (pushSave(), pushDelete()) during its step, it stays queued after it; done: its step
+     *      wrote it; changed: the properties whose change was notified during its step, before it was written
      */
     private array $entitiesInProgress = [];
     /** Number of process() running, nested in one another: the outermost closes the statements */
@@ -332,6 +334,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
         $hash = spl_object_hash($entity);
         $this->entitiesShouldBePersisted[$hash] = ['state' => $state, 'entity' => $entity, 'metadata' => $metadata];
+        $this->markReplaced($hash);
 
         return $this;
     }
@@ -355,6 +358,12 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     {
         if ($oldValue === $newValue || isset($this->entities[$entity]) === false) {
             return;
+        }
+
+        $hash = spl_object_hash($entity);
+        if (isset($this->entitiesInProgress[$hash]) && $this->entitiesInProgress[$hash]['done'] === false) {
+            // Made while process() writes it: maybe after the property was read, it is not forgotten once written
+            $this->entitiesInProgress[$hash]['changed'][$propertyName] = true;
         }
 
         if (isset($this->propertiesNotRead[$entity][$propertyName])) {
@@ -470,6 +479,9 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         // connection pool and the unit of work are reset
         $this->detachAll();
         $this->statements = [];
+        // A process() that never ended (suspended in a Fiber left behind) would otherwise keep the next ones from
+        // closing their statements, for the life of the worker
+        $this->processDepth = 0;
     }
 
     /**
@@ -487,9 +499,11 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     public function pushDelete(NotifyPropertyInterface $entity, ?Metadata $metadata = null): static
     {
         $hash = spl_object_hash($entity);
-        if ($this->isNew($entity)
-            || (isset($this->entities[$entity]) === false
-                && (isset($this->insertsRolledBack[$entity]) || $this->hasPrimaryKey($entity, $metadata) === false))
+        // Being written by process() (its INSERT included): the deletion is queued, for once its step is done
+        if (isset($this->entitiesInProgress[$hash]) === false
+            && ($this->isNew($entity)
+                || (isset($this->entities[$entity]) === false
+                    && (isset($this->insertsRolledBack[$entity]) || $this->hasPrimaryKey($entity, $metadata) === false)))
         ) {
             $this->unqueue($entity);
 
@@ -497,6 +511,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         }
 
         $this->entitiesShouldBePersisted[$hash] = ['state' => self::STATE_DELETE, 'entity' => $entity, 'metadata' => $metadata];
+        $this->markReplaced($hash);
 
         return $this;
     }
@@ -615,7 +630,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      *
      * A process() nested in this one (called by a setter, a getter or a serializer) writes the entities still queued,
      * those this one has not reached yet included: they are not written a second time. It leaves the entity this one
-     * is writing to it, until it is unqueued. The statements prepared are closed when the outermost process() ends.
+     * is writing to it, until it is unqueued; pushed again during its step, that entity stays queued for the next
+     * process(). The statements prepared are closed when the outermost process() ends.
      *
      * @throws Exception
      * @throws QueryException
@@ -635,7 +651,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 }
 
                 $details = $this->entitiesShouldBePersisted[$hash];
-                $this->entitiesInProgress[$hash] = true;
+                $this->entitiesInProgress[$hash] = ['replaced' => false, 'done' => false, 'changed' => []];
                 try {
                     switch ($details['state']) {
                         case self::STATE_MANAGED:
@@ -664,7 +680,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 }
             }
         } finally {
-            --$this->processDepth;
+            // Not below 0: a process() forgotten by reset() may end afterwards (its Fiber destroyed)
+            $this->processDepth = max(0, $this->processDepth - 1);
             if ($this->processDepth === 0) {
                 $this->closeStatements();
             }
@@ -679,6 +696,36 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     {
         $hash = spl_object_hash($entity);
         unset($this->entitiesShouldBePersisted[$hash], $this->entitiesInProgress[$hash]);
+    }
+
+    private function markReplaced(string $hash): void
+    {
+        if (isset($this->entitiesInProgress[$hash])) {
+            $this->entitiesInProgress[$hash]['replaced'] = true;
+        }
+    }
+
+    /**
+     * The step of process() writing the entity is done: it is unqueued, unless pushed again during the step (by a
+     * getter, a serializer...), when it stays queued for what was pushed (a save of the entity now managed, a
+     * deletion), handled by the next process()
+     */
+    private function completeStep(NotifyPropertyInterface $entity): void
+    {
+        $hash = spl_object_hash($entity);
+        if (($this->entitiesInProgress[$hash]['replaced'] ?? false) === false
+            || isset($this->entitiesShouldBePersisted[$hash]) === false
+        ) {
+            $this->unqueue($entity);
+
+            return;
+        }
+
+        $this->entitiesInProgress[$hash]['done'] = true;
+        if ($this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_NEW && isset($this->entities[$entity])) {
+            // Inserted by the step
+            $this->entitiesShouldBePersisted[$hash]['state'] = self::STATE_MANAGED;
+        }
     }
 
     private function closeStatements(): void
@@ -785,13 +832,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                     $query->execute();
                 }
 
-                $this->unqueue($entity);
                 // Every value is known: written, or the primary key targeting the row
                 $this->propertiesNotRead->offsetUnset($entity);
                 $this->entitiesChanged->offsetUnset($entity);
                 $this->mutableValues->offsetUnset($entity);
                 $this->listen($entity);
                 $this->setEntityMetadata($entity, $metadata);
+                $this->completeStep($entity);
                 $this->keepMutableValues($entity, $metadata);
             },
             function () use ($entity): void {
@@ -812,12 +859,15 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     private function markSaved(NotifyPropertyInterface $entity, ?Metadata $metadata, array $written): void
     {
-        $this->unqueue($entity);
+        $inProgress = $this->entitiesInProgress[spl_object_hash($entity)] ?? null;
+        // Changed during the step that wrote it: perhaps once read, the value written may not be the current one
+        $changedDuringStep = $inProgress !== null && $inProgress['done'] === false ? $inProgress['changed'] : [];
+        $this->completeStep($entity);
 
         $read = $this->entitiesMetadata[$entity] ?? null;
         $changes = $this->entitiesChanged[$entity] ?? [];
         foreach ($changes as $property => [$oldValue, $newValue]) {
-            if (isset($written[$property]) || $oldValue === $newValue
+            if ((isset($written[$property]) && isset($changedDuringStep[$property]) === false) || $oldValue === $newValue
                 || ($metadata?->hasProperty($property) !== true
                     && $read?->hasProperty($property) !== true
                     && $this->metadataRepository->isPropertyMapped($entity::class, $property) === false)
@@ -1019,11 +1069,11 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
                 // The row exists: the entity is managed before its generated id is written back, so that it is not
                 // inserted a second time if that fails (the error is rethrown, the entity stays managed)
-                $this->unqueue($entity);
                 // Every value written is known
                 $this->propertiesNotRead->offsetUnset($entity);
                 $this->listen($entity);
                 $this->setEntityMetadata($entity, $metadata);
+                $this->completeStep($entity);
                 $this->insertsRolledBack->offsetUnset($entity);
                 // Within a transaction: told if it is rolled back
                 $driver = $connection->primary();
@@ -1121,7 +1171,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 // Only a prepared statement can be closed
                 $this->addStatementToClose($query->getStatementName(), $connection->primary());
                 $query->execute();
-                $this->detach($entity);
+                $this->forget($entity);
+                $this->completeStep($entity);
             },
             function () use ($entity): void {
                 throw new QueryException('Could not find repository matching entity "' . $entity::class . '"');
