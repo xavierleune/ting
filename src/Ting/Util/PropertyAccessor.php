@@ -207,7 +207,7 @@ class PropertyAccessor
                     $mode = self::WRITE_RAW;
                 } elseif (($reflection->isReadOnly()
                         || ($supportsHooks && ($reflection->isPrivateSet() || $reflection->isProtectedSet()))) // @phpstan-ignore method.notFound, method.notFound
-                    && $this->propertyAccessor->isWritable($object, $propertyPath) === false
+                    && $this->hasConventionalSetter($object, $propertyPath) === false
                 ) {
                     // Only the class can write it, and it has no conventional setter
                     $mode = $supportsHooks && $virtual === false ? self::WRITE_RAW : self::WRITE_REFLECTION;
@@ -222,6 +222,23 @@ class PropertyAccessor
         }
 
         return $this->writeModes[$key] = $mode;
+    }
+
+    /**
+     * A setter the Symfony property accessor writes the property through: a public method set<Property>, or __set().
+     * The accessor itself is not asked: some versions (7.0) report writable a public property only its class can
+     * write, then fails to write it
+     */
+    private function hasConventionalSetter(object $object, string $propertyPath): bool
+    {
+        $setter = 'set'.str_replace('_', '', ucwords($propertyPath, '_'));
+        foreach ([$setter, '__set'] as $method) {
+            if (method_exists($object, $method) && (new \ReflectionMethod($object, $method))->isPublic()) {
+                return $this->propertyAccessor->isWritable($object, $propertyPath);
+            }
+        }
+
+        return false;
     }
 
     /**
