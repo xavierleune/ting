@@ -38,6 +38,9 @@ class AsymmetricVisibilityMutators
 
     public private(set) ?string $name = null;
 
+    /** @var list<string>|null */
+    public private(set) ?array $tags = null;
+
     public function __set(string $property, mixed $value): void
     {
         throw new \LogicException('__set() should not be called');
@@ -51,6 +54,16 @@ class AsymmetricVisibilityMutators
     public function removeItem(string $item): void
     {
         $this->items = array_values(array_diff($this->items, [$item]));
+    }
+
+    public function addTag(string $tag): void
+    {
+        $this->tags[] = $tag . ' (adder)';
+    }
+
+    public function removeTag(string $tag): void
+    {
+        $this->tags = array_values(array_diff($this->tags ?? [], [$tag]));
     }
 
     /** A getter-setter */

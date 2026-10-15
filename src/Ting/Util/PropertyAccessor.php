@@ -22,6 +22,17 @@ class PropertyAccessor
     private const WRITE_RAW = 'raw';
     /** Written by reflection, through its set hook if any: the Symfony property accessor is not allowed to */
     private const WRITE_REFLECTION = 'reflection';
+    /** An iterable value written by the Symfony property accessor (its adder and remover), any other as WRITE_RAW */
+    private const WRITE_ITERABLE_ACCESSOR_ELSE_RAW = 'iterable_accessor_else_raw';
+    /** An iterable value written by the Symfony property accessor (its adder and remover), any other as WRITE_REFLECTION */
+    private const WRITE_ITERABLE_ACCESSOR_ELSE_REFLECTION = 'iterable_accessor_else_reflection';
+    private const ALL_WRITE_MODES = [
+        self::WRITE_ACCESSOR,
+        self::WRITE_RAW,
+        self::WRITE_REFLECTION,
+        self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW,
+        self::WRITE_ITERABLE_ACCESSOR_ELSE_REFLECTION,
+    ];
     /**
      * The format of the items cached changed since Ting 3.x (whose prefix was write_property_), and what they hold
      * depends on the PHP version (property hooks, asymmetric visibility): a persistent pool filled by another version
@@ -53,7 +64,17 @@ class PropertyAccessor
             return;
         }
 
-        switch ($this->getWriteMode($object, (string) $propertyPath)) {
+        $mode = $this->getWriteMode($object, (string) $propertyPath);
+        if ($mode === self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW || $mode === self::WRITE_ITERABLE_ACCESSOR_ELSE_REFLECTION) {
+            // The Symfony property accessor only uses an adder and a remover for an iterable value
+            if (is_iterable($value)) {
+                $mode = self::WRITE_ACCESSOR;
+            } else {
+                $mode = $mode === self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW ? self::WRITE_RAW : self::WRITE_REFLECTION;
+            }
+        }
+
+        switch ($mode) {
             case self::WRITE_RAW:
                 $this->getReflectionProperty($object, (string) $propertyPath)->setRawValue($object, $value); // @phpstan-ignore method.notFound
                 return;
@@ -173,8 +194,9 @@ class PropertyAccessor
     /**
      * How to write the property, without setter option:
      * - a public property with a set hook and a value of its own (PHP 8.4+): its value is written without the hook;
-     * - a public property only the class can write (readonly, private(set) or protected(set)) without a conventional
-     *   setter: by reflection, its own value without its set hook (PHP 8.4+), a virtual one through its set hook;
+     * - a public property only the class can write (readonly, private(set) or protected(set)): by the Symfony property
+     *   accessor through its setter or getter-setter, through its adder and remover for an iterable value; otherwise by
+     *   reflection, its own value without its set hook (PHP 8.4+), a virtual one through its set hook;
      * - any other (a setter, a public property, a virtual one through its set hook): by the Symfony property accessor
      *
      * @return self::WRITE_*
@@ -192,7 +214,7 @@ class PropertyAccessor
         if ($cacheItemPool instanceof CacheItemPoolInterface) {
             $item = $cacheItemPool->getItem(self::CACHE_PREFIX_WRITE.rawurlencode($key));
             $mode = $item->get();
-            if ($item->isHit() && \in_array($mode, [self::WRITE_ACCESSOR, self::WRITE_RAW, self::WRITE_REFLECTION], true)) {
+            if ($item->isHit() && \in_array($mode, self::ALL_WRITE_MODES, true)) {
                 return $this->writeModes[$key] = $mode;
             }
         }
@@ -210,10 +232,16 @@ class PropertyAccessor
                     $mode = self::WRITE_RAW;
                 } elseif (($reflection->isReadOnly()
                         || ($supportsHooks && ($reflection->isPrivateSet() || $reflection->isProtectedSet()))) // @phpstan-ignore method.notFound, method.notFound
-                    && $this->hasConventionalSetter($object, $propertyPath) === false
                 ) {
-                    // Only the class can write it, and it has no conventional setter
-                    $mode = $supportsHooks && $virtual === false ? self::WRITE_RAW : self::WRITE_REFLECTION;
+                    // Only the class can write it: by reflection, unless the Symfony property accessor has a method to
+                    $byReflection = $supportsHooks && $virtual === false ? self::WRITE_RAW : self::WRITE_REFLECTION;
+                    $mode = match ($this->getSymfonyMutator($object, $propertyPath)) {
+                        PropertyWriteInfo::TYPE_METHOD => self::WRITE_ACCESSOR,
+                        PropertyWriteInfo::TYPE_ADDER_AND_REMOVER => $byReflection === self::WRITE_RAW
+                            ? self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW
+                            : self::WRITE_ITERABLE_ACCESSOR_ELSE_REFLECTION,
+                        default => $byReflection,
+                    };
                 }
             }
         } catch (ReflectionException) {
@@ -228,27 +256,35 @@ class PropertyAccessor
     }
 
     /**
-     * Whether the Symfony property accessor writes the property through a method (a setter, a getter-setter, an adder
-     * and a remover), found as it finds them. The accessor itself is not asked: some versions (7.0) report writable a
-     * public property only its class can write, then fail to write it
+     * The method the Symfony property accessor writes the property through, found as it finds them: a setter or a
+     * getter-setter (PropertyWriteInfo::TYPE_METHOD), else an adder and a remover, used for an iterable value only
+     * (PropertyWriteInfo::TYPE_ADDER_AND_REMOVER); null without such public method. The accessor itself is not asked:
+     * some versions (7.0) report writable a public property only its class can write, then fail to write it
      */
-    private function hasConventionalSetter(object $object, string $propertyPath): bool
+    private function getSymfonyMutator(object $object, string $propertyPath): ?string
     {
         $this->writeInfoExtractor ??= new ReflectionExtractor(['set'], null, null, false);
-        $writeInfo = $this->writeInfoExtractor->getWriteInfo($object::class, $propertyPath, [
-            'enable_getter_setter_extraction' => true,
-            'enable_magic_methods_extraction' => 0,
-            'enable_constructor_extraction' => false,
-        ]);
+        foreach ([false, true] as $adderAndRemover) {
+            $writeInfo = $this->writeInfoExtractor->getWriteInfo($object::class, $propertyPath, [
+                'enable_getter_setter_extraction' => true,
+                'enable_magic_methods_extraction' => 0,
+                'enable_constructor_extraction' => false,
+                'enable_adder_remover_extraction' => $adderAndRemover,
+            ]);
+            $public = match ($writeInfo?->getType()) {
+                PropertyWriteInfo::TYPE_METHOD => $writeInfo->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC
+                    && $writeInfo->isStatic() === false,
+                PropertyWriteInfo::TYPE_ADDER_AND_REMOVER =>
+                    $writeInfo->getAdderInfo()->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC
+                    && $writeInfo->getRemoverInfo()->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC,
+                default => false,
+            };
+            if ($public && $writeInfo !== null) {
+                return $writeInfo->getType();
+            }
+        }
 
-        return match ($writeInfo?->getType()) {
-            PropertyWriteInfo::TYPE_METHOD => $writeInfo->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC
-                && $writeInfo->isStatic() === false,
-            PropertyWriteInfo::TYPE_ADDER_AND_REMOVER =>
-                $writeInfo->getAdderInfo()->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC
-                && $writeInfo->getRemoverInfo()->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC,
-            default => false,
-        };
+        return null;
     }
 
     /**
