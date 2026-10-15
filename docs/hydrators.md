@@ -272,6 +272,10 @@ When the entity of `$to` is `null` in a row (an alias of a `LEFT JOIN` without m
 `stdClass` all the same: its value is lost for that row. Map a column to an alias that is always present (the root
 entity of the query), or leave it unmapped and read it from the `stdClass`.
 
+Only a column of the `stdClass` reaches `$column`: a plain column of a mapped table, aliased with `AS` or without
+(`u.name AS label`, `u.name label`), goes to the entity of its table by its column name, and `$column` gets `null`.
+Make it an expression (`u.name || '' AS label`) to pass it to `$column`.
+
 ### Unserializing a column without metadata
 
 Mapped columns are converted by the serializer of their field. For unmapped columns, `unserializeAliasWith(string
