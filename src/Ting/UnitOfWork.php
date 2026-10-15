@@ -865,9 +865,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     private function markSaved(NotifyPropertyInterface $entity, ?Metadata $metadata, array $written): void
     {
         $hash = spl_object_hash($entity);
-        $inProgress = $this->entitiesInProgress[$hash] ?? null;
         // Changed during the step that wrote it: perhaps once read, the value written may not be the current one
-        $changedDuringStep = $inProgress !== null && $inProgress['done'] === false ? $inProgress['changed'] : [];
+        $changedDuringStep = $this->takeChangedDuringStep($hash);
         // Compared while the entity is still in progress: reading it (a getter, a serializer) may change it again
         $valuesWritten = [];
         foreach ($changedDuringStep as $property => $true) {
@@ -875,11 +874,9 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                 $valuesWritten[$property] = $this->isValueWritten($entity, $metadata, $property, $written[$property]);
             }
         }
-        // A property those reads changed is not known to be written: its change is kept
-        foreach ($this->entitiesInProgress[$hash]['changed'] ?? [] as $property => $true) {
-            if (isset($changedDuringStep[$property]) === false) {
-                $valuesWritten[$property] = false;
-            }
+        // A property those reads changed, compared already or not, is not known to be written: its change is kept
+        foreach ($this->takeChangedDuringStep($hash) as $property => $true) {
+            $valuesWritten[$property] = false;
         }
         $this->completeStep($entity);
 
@@ -901,6 +898,22 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         } else {
             $this->entitiesChanged[$entity] = $changes;
         }
+    }
+
+    /**
+     * @return array<string, true> the properties whose change was notified during the step writing the entity, while
+     *                             it is not done, since the last call; forgotten, the next changes are recorded anew
+     */
+    private function takeChangedDuringStep(string $hash): array
+    {
+        if (isset($this->entitiesInProgress[$hash]) === false || $this->entitiesInProgress[$hash]['done']) {
+            return [];
+        }
+
+        $changed = $this->entitiesInProgress[$hash]['changed'];
+        $this->entitiesInProgress[$hash]['changed'] = [];
+
+        return $changed;
     }
 
     /**
