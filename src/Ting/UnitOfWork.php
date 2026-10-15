@@ -605,13 +605,23 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      * When a query fails, the entities already processed are done, the failing one is unqueued (its tracked
      * changes are kept, so it can be saved again) and the following ones stay queued; the exception is rethrown.
      *
+     * A process() nested in this one (called by a setter or an event handler) writes the entities still queued,
+     * those this one has not reached yet included: they are not written a second time.
+     *
      * @throws Exception
      * @throws QueryException
      */
     public function process(): void
     {
         try {
-            foreach ($this->entitiesShouldBePersisted as $hash => $details) {
+            foreach (array_keys($this->entitiesShouldBePersisted) as $hash) {
+                // A process() nested in this one (a save from a setter, an event handler) may have written it already,
+                // or changed what to do with it
+                if (isset($this->entitiesShouldBePersisted[$hash]) === false) {
+                    continue;
+                }
+
+                $details = $this->entitiesShouldBePersisted[$hash];
                 try {
                     switch ($details['state']) {
                         case self::STATE_MANAGED:

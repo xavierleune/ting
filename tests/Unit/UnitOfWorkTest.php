@@ -1010,6 +1010,44 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * A process() nested in another one (a save from the setter of the generated id, an event handler) writes the
+     * entities still queued: the outer process() does not write them a second time
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testANestedProcessShouldNotLetTheOuterOneWriteTheEntitiesItWrote()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = DocumentRepository::initMetadata($this->services->serializerFactory());
+        $audit = new Document();
+        $audit->setTitle('audit');
+        $first = new class extends Document {
+            public ?\Closure $onId = null;
+
+            public function setId(?int $id): void
+            {
+                parent::setId($id);
+                $onId = $this->onId;
+                $this->onId = null;
+                if ($onId !== null) {
+                    $onId();
+                }
+            }
+        };
+        $first->setTitle('first');
+        $first->onId = function () use ($unitOfWork, $audit, $metadata): void {
+            $unitOfWork->pushSave($audit, $metadata)->process();
+        };
+        $second = new Document();
+        $second->setTitle('second');
+
+        $unitOfWork->pushSave($first, $metadata)->pushSave($second, $metadata)->process();
+
+        $this->assertSame(['first', 'second', 'audit'], array_column($params, 'v1_doc_title'));
+        $this->assertFalse($unitOfWork->shouldBePersisted($second));
+        $this->assertTrue($unitOfWork->isManaged($second));
+    }
+
+    /**
      * The autoincrement property is typed and left uninitialized, its getter returning 0 instead: the setter throws
      * before setting the id, so the id is not set (the getter is not read: the property exists), and the changes are
      * dropped instead of being written by an UPDATE WHERE id = 0
