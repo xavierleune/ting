@@ -29,6 +29,8 @@ namespace CCMBenchmark\Ting\Tests\Unit\Query;
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Driver\Pgsql\Driver as PgsqlDriver;
+use CCMBenchmark\Ting\Driver\SphinxQL\Driver as SphinxQLDriver;
 use CCMBenchmark\Ting\Query\Cached\PreparedQuery as CachedPreparedQuery;
 use CCMBenchmark\Ting\Query\Cached\Query as CachedQuery;
 use CCMBenchmark\Ting\Query\PreparedQuery;
@@ -36,11 +38,17 @@ use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionFactory;
+use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use tests\fixtures\FakeDriver\MysqliResult;
+use tests\fixtures\ColorsEnum;
+use tests\fixtures\Fake\Mysqli;
+use tests\fixtures\Fake\Pgsql;
+use tests\fixtures\Fake\PgsqlResult;
+use tests\fixtures\PriorityEnum;
 
 class QueryTest extends TestCase
 {
@@ -202,5 +210,108 @@ class QueryTest extends TestCase
             fn () => $query->query(),
             'Cannot build the collection of the query: it has no collection factory, give a collection to query()'
         );
+    }
+
+    public function testScalarParametersShouldReachTheDriverUnchanged()
+    {
+        $params = ['id' => 3, 'name' => 'a', 'rate' => 1.5, 'enabled' => true, 'parent' => null];
+        $driver = $this->createMock(Driver::class);
+        $driver->expects($this->once())->method('execute')
+            ->with($this->identicalTo('UPDATE t SET name = :name WHERE id = :id'), $this->identicalTo($params))
+            ->willReturn(true);
+        $connection = $this->createStub(Connection::class);
+        $connection->method('primary')->willReturn($driver);
+
+        (new Query('UPDATE t SET name = :name WHERE id = :id', $connection))->setParams($params)->execute();
+    }
+
+    /**
+     * @return array<string, array{0: class-string<Driver>}>
+     */
+    public static function mysqliDriversProvider(): array
+    {
+        return [
+            'Mysqli' => [Driver::class],
+            'SphinxQL' => [SphinxQLDriver::class],
+        ];
+    }
+
+    /**
+     * @param class-string<Driver> $driverClass
+     */
+    #[DataProvider('mysqliDriversProvider')]
+    public function testTypedParametersShouldBeQuotedInTheSqlByMysqli(string $driverClass)
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->method('real_escape_string')->willReturnCallback(fn (string $value) => addslashes($value));
+        $mysqli->method('query')->willReturnCallback(function (string $sql) use (&$sent): bool {
+            $sent = $sql;
+
+            return true;
+        });
+        $connection = $this->createStub(Connection::class);
+        $connection->method('primary')->willReturn(new $driverClass($mysqli));
+
+        (new Query('UPDATE t SET d = :d, c = :c WHERE id IN (:ids) OR parent_id IN (:ids)', $connection))
+            ->setParams([
+                'd' => new \DateTimeImmutable('2026-01-02 03:04:05'),
+                'c' => ColorsEnum::RED,
+                'ids' => [PriorityEnum::LOW, 7, "o'k"],
+            ])
+            ->execute();
+
+        $this->assertSame(
+            "UPDATE t SET d = '2026-01-02 03:04:05', c = 'red' WHERE id IN (1, 7, 'o\\'k') OR parent_id IN (1, 7, 'o\\'k')",
+            $sent
+        );
+    }
+
+    public function testTypedParametersShouldBeBoundByPgsql()
+    {
+        NativeFunctionMock::override('pg_connect', new Pgsql());
+        NativeFunctionMock::override(
+            'pg_query_params',
+            function ($connection, string $sql, array $values) use (&$sent, &$sentValues): PgsqlResult {
+                $sent = $sql;
+                $sentValues = $values;
+
+                return new PgsqlResult();
+            }
+        );
+        NativeFunctionMock::override('pg_result_status', \PGSQL_COMMAND_OK);
+        $driver = new PgsqlDriver();
+        $driver->setDatabase('db');
+        $connection = $this->createStub(Connection::class);
+        $connection->method('primary')->willReturn($driver);
+
+        (new Query('UPDATE t SET d = :d WHERE id IN (:ids) OR parent_id IN (:ids::int)', $connection))
+            ->setParams(['d' => new \DateTime('2026-01-02 03:04:05'), 'ids' => [ColorsEnum::BLUE, 'x']])
+            ->execute();
+
+        $this->assertSame('UPDATE t SET d = $1 WHERE id IN ($2, $3) OR parent_id IN ($2, $3::int)', $sent);
+        $this->assertSame(['2026-01-02 03:04:05', 'blue', 'x'], $sentValues);
+    }
+
+    /**
+     * @param class-string<Query> $class
+     */
+    #[DataProvider('queriesWithoutCollectionFactoryProvider')]
+    public function testAParameterThatCannotBeSentShouldFailBeforeReachingTheDatabase(string $class)
+    {
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->never())->method('primary');
+        $connection->expects($this->never())->method('replica');
+        $query = new $class('SELECT * FROM t WHERE id IN (:ids)', $connection);
+        if ($query instanceof CachedQuery) {
+            $cache = new ArrayAdapter();
+            // A result is cached under the key: the parameters are still checked
+            $cache->get('myCacheKey', fn () => []);
+            $query->setCache($cache);
+            $query->setTtl(10)->setCacheKey('myCacheKey');
+        }
+        $query->setParams(['ids' => []]);
+
+        $this->assertThrows(QueryException::class, fn () => $query->query(new Collection()));
+        $this->assertThrows(QueryException::class, fn () => $query->execute());
     }
 }

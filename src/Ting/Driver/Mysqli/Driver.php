@@ -38,6 +38,7 @@ use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\FloatLiteral;
 use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
+use CCMBenchmark\Ting\Driver\Placeholder;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface;
 use CCMBenchmark\Ting\Exceptions\StatementException;
@@ -107,16 +108,6 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
      * @var array<string,array<string,StatementInterface>> Old list of prepared queries, filled after a reconnect
      */
     protected array $oldPreparedQueries = [];
-
-    /**
-     * Match parameter in SQL
-     *
-     * Match : values (:name)
-     * Don't match : values (\:name)
-     * Don't match : HH:MI:SS
-     * Don't match : ::string
-     */
-    private string $parameterMatching = '(?<!\b)(?<![:\\\]):(#?[a-zA-Z0-9_-]+)';
 
     /**
      * Data used to open a connection.
@@ -307,9 +298,10 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
 
         // One pass: unescaping \: after the substitution would alter the values
         $sql = $this->parseParameters(preg_replace_callback(
-            '/\\\\:|' . $this->parameterMatching . '/',
+            '/\\\\:|' . Placeholder::PATTERN . '/',
             function (array $match) use ($params) {
-                if ($match[0] === '\\:') {
+                if (!isset($match[1])) {
+                    // An escaped colon (\:): the only alternative without a parameter name
                     return ':';
                 }
                 if (!\array_key_exists($match[1], $params)) {
@@ -413,7 +405,7 @@ class Driver implements DriverInterface, RollbackListenerAwareDriverInterface
         }
         $paramsOrder = [];
         $sql = $this->parseParameters(preg_replace_callback(
-            '/' . $this->parameterMatching . '/',
+            '/' . Placeholder::PATTERN . '/',
             function (array $match) use (&$paramsOrder): string {
                 $paramsOrder[] = $match[1];
                 return '?';

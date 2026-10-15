@@ -263,4 +263,33 @@ class PreparedQueryTest extends TestCase
         $query->execute();
         $this->assertSame(1, $mockStatement->executeCalls);
     }
+
+    public function testTheStatementShouldBePreparedWithTheListsExpanded()
+    {
+        $mysqliStatement = $this->createStub(MysqliStatement::class);
+        $statement = new class ($mysqliStatement, [], 'main', 'db') extends Statement {
+            /** @var list<array<string, mixed>> */
+            public array $executions = [];
+
+            public function execute(array $params, ?CollectionInterface $collection = null): bool|CollectionInterface
+            {
+                $this->executions[] = $params;
+
+                return $collection ?? true;
+            }
+        };
+        $driver = $this->createMock(Driver::class);
+        $driver->expects($this->once())->method('prepare')
+            ->with($this->identicalTo('SELECT * FROM t WHERE id IN (:ids__1, :ids__2)'))
+            ->willReturn($statement);
+        $connection = $this->createStub(Connection::class);
+        $connection->method('replica')->willReturn($driver);
+
+        $query = new PreparedQuery('SELECT * FROM t WHERE id IN (:ids)', $connection);
+        $query->setCache(new ArrayAdapter());
+        $query->setTtl(10)->setCacheKey('t-3-4')->setForce(true);
+        $query->setParams(['ids' => [3, 4]])->query(new Collection());
+
+        $this->assertSame([['ids__1' => 3, 'ids__2' => 4]], $statement->executions);
+    }
 }

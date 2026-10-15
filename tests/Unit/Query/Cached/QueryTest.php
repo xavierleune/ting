@@ -265,4 +265,32 @@ class QueryTest extends TestCase
             'You must call setCache to use query method'
         );
     }
+
+    /**
+     * The cache key is the one given: the query sent on a miss has its parameters converted
+     */
+    public function testTypedParametersShouldBeConvertedOnACacheMiss()
+    {
+        $driver = $this->createMock(Driver::class);
+        $driver->expects($this->once())->method('execute')
+            ->with(
+                $this->identicalTo('SELECT * FROM t WHERE id IN (:ids__1, :ids__2) AND d > :d'),
+                $this->identicalTo(['ids__1' => 1, 'ids__2' => 2, 'd' => '2026-01-02 03:04:05'])
+            )
+            ->willReturnArgument(2);
+        $connection = $this->createStub(Connection::class);
+        $connection->method('replica')->willReturn($driver);
+        $cache = new ArrayAdapter();
+
+        $query = new Query('SELECT * FROM t WHERE id IN (:ids) AND d > :d', $connection);
+        $query->setCache($cache);
+        $query->setTtl(10)->setCacheKey('users-1-2');
+        $query->setParams(['ids' => [1, 2], 'd' => new \DateTimeImmutable('2026-01-02 03:04:05')]);
+
+        $query->query(new Collection());
+        $collection = $query->query(new Collection());
+
+        $this->assertTrue($collection->isFromCache());
+        $this->assertTrue($cache->hasItem('users-1-2'));
+    }
 }

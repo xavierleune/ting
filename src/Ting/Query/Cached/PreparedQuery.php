@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Query\Cached;
 
 use CCMBenchmark\Ting\Repository\CollectionInterface;
+use CCMBenchmark\Ting\Query\ParameterConverter;
 use CCMBenchmark\Ting\Query\PreparedStatementTrait;
 use CCMBenchmark\Ting\Query\QueryException;
 
@@ -50,10 +51,12 @@ class PreparedQuery extends Query
     {
         $this->checkTtl();
 
+        // Converted before the cache is read: a parameter that cannot be sent fails, whether the result is cached or not
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
         $collection ??= $this->newCollection();
 
-        $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
-            $this->statementForQuery()->execute($this->params, $collection);
+        $this->queryThroughCache($collection, function (CollectionInterface $collection) use ($sql, $params): void {
+            $this->statementForQuery($sql)->execute($params, $collection);
         });
 
         return $collection;
@@ -66,6 +69,8 @@ class PreparedQuery extends Query
      */
     public function execute(): mixed
     {
-        return $this->statementForExecute()->execute($this->params);
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
+
+        return $this->statementForExecute($sql)->execute($params);
     }
 }

@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Query;
 
 use CCMBenchmark\Ting\Connection;
+use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Exception;
 use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
@@ -70,6 +71,10 @@ class Query implements QueryInterface
     }
 
     /**
+     * Values are sent as they are, except a \DateTimeInterface (sent as Y-m-d H:i:s), a \BackedEnum (sent as its
+     * value) and an array, an IN list: each placeholder of the parameter becomes one placeholder per element
+     * (see ParameterConverter)
+     *
      * @param array<string, mixed> $params parameter name => value
      * @return $this
      */
@@ -90,11 +95,11 @@ class Query implements QueryInterface
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface
     {
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
         $collection ??= $this->newCollection();
 
-        $driver = $this->selectPrimary === true ? $this->connection->primary() : $this->connection->replica();
         // The driver fills the collection: for a statement without result set, Mysqli returns true instead of it
-        $driver->execute($this->sql, $this->params, $collection);
+        $this->readingDriver()->execute($sql, $params, $collection);
 
         return $collection;
     }
@@ -130,6 +135,15 @@ class Query implements QueryInterface
     }
 
     /**
+     * The driver a reading query runs on: the primary when selectPrimary(true) is set, a replica otherwise
+     * @throws Exception
+     */
+    protected function readingDriver(): DriverInterface
+    {
+        return $this->selectPrimary === true ? $this->connection->primary() : $this->connection->replica();
+    }
+
+    /**
      * @return CollectionInterface<T>
      * @throws QueryException when the query has no collection factory
      */
@@ -152,7 +166,9 @@ class Query implements QueryInterface
      */
     public function execute(): mixed
     {
-        return $this->connection->primary()->execute($this->sql, $this->params);
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
+
+        return $this->connection->primary()->execute($sql, $params);
     }
 
     /**

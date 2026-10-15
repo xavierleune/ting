@@ -91,6 +91,37 @@ placeholders; to write a literal `:name` in the SQL, escape the colon (`'\:name'
 A PHP `null` is sent as `NULL`, and a PHP boolean as `1` / `0` (`'1'` / `'0'` with PostgreSQL, which a boolean, numeric
 or text column accepts).
 
+### Dates, enums and IN lists
+
+Some values are converted before they reach the driver, with every query type and driver:
+
+* a `\DateTimeInterface` is sent as `Y-m-d H:i:s` (the default format of the `datetime` serializer), in its own
+  timezone: no conversion;
+* a `\BackedEnum` is sent as its value; a pure enum has no value and throws a `CCMBenchmark\Ting\Query\QueryException`;
+* an array is an `IN` list: each `:name` placeholder of the parameter becomes one placeholder per element
+  (`:ids__1, :ids__2, ...`), each element converted as above.
+
+With `enum Status: string { case Active = 'active'; ... }`:
+
+```php
+public function findRecent(array $ids, Status $status, \DateTimeImmutable $since): CollectionInterface
+{
+    $query = $this->getQuery(
+        'SELECT id, name FROM user WHERE id IN (:ids) AND status = :status AND created_at >= :since'
+    );
+    // id IN (:ids__1, :ids__2, :ids__3) AND status = 'active' AND created_at >= '2026-01-01 00:00:00'
+    $query->setParams(['ids' => [3, 5, 8], 'status' => Status::Active, 'since' => $since]);
+
+    return $query->query();
+}
+```
+
+An empty list, a `null` element (an `IN` list never matches `NULL`: test `IS NULL` in its own condition) or a nested
+array throw a `CCMBenchmark\Ting\Query\QueryException`, as does an element name that is already the name of another
+parameter or placeholder (`ids__1` next to a list `ids`). Other values are sent as they are: a `\Stringable` object,
+such as a Symfony `Uuid`, is cast by the driver. A prepared query prepares one statement per list length. A cached
+query is stored under the key you give: make it depend on the values of the list.
+
 ### Executing and reading the results
 
 `query()` runs a reading query (`SELECT`, `SHOW`...) and returns a `CCMBenchmark\Ting\Repository\CollectionInterface`.
