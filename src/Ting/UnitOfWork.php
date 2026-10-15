@@ -851,7 +851,8 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      * The save of a managed entity is done: forget the changes written (and those set back to their old value) and
      * unqueue it (unless pushed again during its step, see completeStep()). A change notified during the step (by a
      * getter or a serializer read to build the query) is forgotten only when the database value of the property is
-     * still the one written: otherwise it was made after the property was read, and is kept for the next save. The
+     * still the one written: otherwise it was made after the property was read, and is kept for the next save. That
+     * comparison reads the property again while the entity is still in progress: a change those reads make is kept. The
      * changes of the properties some metadata of its class map are kept: not mapped by the metadata written with (a
      * lighter projection), they are written by a save through metadata mapping them. Those no metadata maps (a
      * relation whose setter notifies its changes, say) can never be written: they are forgotten.
@@ -863,17 +864,29 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     private function markSaved(NotifyPropertyInterface $entity, ?Metadata $metadata, array $written): void
     {
-        $inProgress = $this->entitiesInProgress[spl_object_hash($entity)] ?? null;
+        $hash = spl_object_hash($entity);
+        $inProgress = $this->entitiesInProgress[$hash] ?? null;
         // Changed during the step that wrote it: perhaps once read, the value written may not be the current one
         $changedDuringStep = $inProgress !== null && $inProgress['done'] === false ? $inProgress['changed'] : [];
+        // Compared while the entity is still in progress: reading it (a getter, a serializer) may change it again
+        $valuesWritten = [];
+        foreach ($changedDuringStep as $property => $true) {
+            if (isset($written[$property])) {
+                $valuesWritten[$property] = $this->isValueWritten($entity, $metadata, $property, $written[$property]);
+            }
+        }
+        // A property those reads changed is not known to be written: its change is kept
+        foreach ($this->entitiesInProgress[$hash]['changed'] ?? [] as $property => $true) {
+            if (isset($changedDuringStep[$property]) === false) {
+                $valuesWritten[$property] = false;
+            }
+        }
         $this->completeStep($entity);
 
         $read = $this->entitiesMetadata[$entity] ?? null;
         $changes = $this->entitiesChanged[$entity] ?? [];
         foreach ($changes as $property => [$oldValue, $newValue]) {
-            if ((isset($written[$property])
-                    && (isset($changedDuringStep[$property]) === false
-                        || $this->isValueWritten($entity, $metadata, $property, $written[$property])))
+            if ((isset($written[$property]) && ($valuesWritten[$property] ?? true))
                 || $oldValue === $newValue
                 || ($metadata?->hasProperty($property) !== true
                     && $read?->hasProperty($property) !== true
