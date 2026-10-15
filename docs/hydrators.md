@@ -634,7 +634,12 @@ Things to know:
 * the identity map is always on (`identityMap(false)` throws a `CCMBenchmark\Ting\Exceptions\HydratorException`):
   both books above share the same `Author` instance;
 * every entity involved in a relation needs a primary key in its metadata (otherwise a `HydratorException` is thrown),
-  and its primary key columns must be selected;
+  and its primary key columns must be selected: the entities are told apart by these columns. An alias of a relation
+  (source or target, root included) whose entity is in a row without a value for every primary key column (a column
+  not selected, or null while other columns of the alias are not) throws a `HydratorException` naming the alias and
+  the columns; a composite key with only some columns null throws as well, since part of a key cannot identify an
+  entity. An entity `null` in the row (a `LEFT JOIN` without match, all its columns null) is not concerned. The
+  aliases out of the relations don't need their primary key;
 * every alias of a relation must be in the result: an alias absent from the columns (a typo in `AggregateFrom` or
   `AggregateTo`) throws a `HydratorException` when the collection is iterated;
 * a row without root entity (all the roots `null`, for instance a `LEFT JOIN` on the root side) is skipped: there is
