@@ -45,6 +45,7 @@
     * Security: Mysqli Driver::execute() quotes string values with single quotes; double quotes allowed SQL injection under the sql_mode NO_BACKSLASH_ESCAPES (real_escape_string() then only doubles single quotes) and made values identifiers under ANSI_QUOTES
 
     Developer experience:
+    * Typed query parameters: setParams() of every query sends a DateTimeInterface as Y-m-d H:i:s, a BackedEnum as its value, and expands an array into an IN list (:ids becomes :ids__1, :ids__2...); an empty list, a null or nested element, a pure enum or an object neither Stringable nor convertible throw a QueryException (see docs/queries.md)
     * Repository::getBySql() / getOneBySql() read the entities of the repository with a query of your own (prepared), without building a HydratorSingleObject collection
     * Repository::transactional(callable) commits when the callback returns, rolls back and throws again when it throws
     * Repository::countBy(), existsBy() and deleteBy() count, test and delete by criteria, with the rules of getBy()

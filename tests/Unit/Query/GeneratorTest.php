@@ -31,6 +31,7 @@ use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\ConnectionPoolInterface;
 use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
+use CCMBenchmark\Ting\Driver\Placeholder;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver as PgsqlDriver;
 use CCMBenchmark\Ting\Driver\SphinxQL\Driver as SphinxQLDriver;
 use CCMBenchmark\Ting\Query\Generator;
@@ -354,8 +355,7 @@ class GeneratorTest extends TestCase
      */
     private function assertPlaceholdersMatchParams(string $sql, array $params): void
     {
-        $mysqliPattern = (fn () => $this->parameterMatching)->call(new Driver());
-        preg_match_all('/' . $mysqliPattern . '/', $sql, $matches);
+        preg_match_all('/' . Placeholder::PATTERN . '/', $sql, $matches);
         $mysqliNames = array_values(array_unique($matches[1]));
 
         [, $pgsqlOrder] = (fn (string $sql) => $this->convertParameters($sql))->call(new PgsqlDriver(), $sql);

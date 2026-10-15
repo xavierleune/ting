@@ -46,9 +46,10 @@ class PreparedQuery extends Query
      */
     public function query(?CollectionInterface $collection = null): CollectionInterface
     {
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
         $collection ??= $this->newCollection();
 
-        $this->statementForQuery()->execute($this->params, $collection);
+        $this->statementForQuery($sql)->execute($params, $collection);
 
         return $collection;
     }
@@ -60,11 +61,17 @@ class PreparedQuery extends Query
      */
     public function execute(): mixed
     {
-        return $this->statementForExecute()->execute($this->params);
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
+
+        return $this->statementForExecute($sql)->execute($params);
     }
 
+    /**
+     * Name of the statement the query runs with its current parameters (a list parameter changes the SQL)
+     * @throws QueryException when a parameter cannot be sent
+     */
     public function getStatementName(): string
     {
-        return sha1($this->sql);
+        return sha1(ParameterConverter::convert($this->sql, $this->params)[0]);
     }
 }

@@ -33,6 +33,7 @@ use CCMBenchmark\Ting\Driver\LostTransactionTrait;
 use CCMBenchmark\Ting\Driver\Exception;
 use CCMBenchmark\Ting\Driver\FloatLiteral;
 use CCMBenchmark\Ting\Driver\NeverConnectedException;
+use CCMBenchmark\Ting\Driver\Placeholder;
 use CCMBenchmark\Ting\Driver\QueryException;
 use CCMBenchmark\Ting\Driver\RollbackListenerAwareDriverInterface;
 use CCMBenchmark\Ting\Driver\SequenceAwareDriverInterface;
@@ -430,14 +431,8 @@ class Driver implements
         $i           = 1;
         $paramsOrder = [];
 
-        /**
-         * Match : values (:name)
-         * Don't match : values (\:name)
-         * Don't match : HH:MI:SS
-         * Don't match : ::string
-         */
         $sql = preg_replace_callback(
-            '/(?<!\b)(?<![:\\\]):(#?[a-zA-Z0-9_-]+)/',
+            '/' . Placeholder::PATTERN . '/',
             function (array $match) use (&$i, &$paramsOrder): string {
                 if (isset($paramsOrder[$match[1]]) === false) {
                     $paramsOrder[$match[1]] = $i++;

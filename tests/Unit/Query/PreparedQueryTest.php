@@ -37,6 +37,8 @@ use CCMBenchmark\Ting\Repository\CollectionFactory;
 use CCMBenchmark\Ting\Tests\Support\NativeFunctionMock;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\Tests\Support\TingServices;
+use tests\fixtures\ColorsEnum;
+use tests\fixtures\Fake\Mysqli;
 use tests\fixtures\Fake\MysqliStatement;
 use tests\fixtures\Fake\Pgsql;
 use tests\fixtures\Fake\PgsqlResult;
@@ -270,5 +272,99 @@ class PreparedQueryTest extends TestCase
         $query = new PreparedQuery('SELECT', $mockConnection, $mockCollectionFactory);
         $this->assertIsString($query->getStatementName());
         $this->assertNotEmpty($query->getStatementName());
+    }
+
+    public function testTheStatementNameOfScalarParametersShouldBeTheHashOfTheSql()
+    {
+        $query = new PreparedQuery('SELECT * FROM t WHERE id = :id', $this->createStub(Connection::class));
+        $query->setParams(['id' => 3]);
+
+        $this->assertSame(sha1('SELECT * FROM t WHERE id = :id'), $query->getStatementName());
+    }
+
+    public function testTypedParametersShouldBeBoundByAMysqliStatement()
+    {
+        $mysqli = $this->createStub(Mysqli::class);
+        $mysqli->error = '';
+        $statement = $this->createMock(MysqliStatement::class);
+        $statement->method('get_result')->willReturn(false);
+        $statement->errno = 0;
+        $mysqli->method('prepare')->willReturnCallback(function (string $sql) use (&$prepared, $statement) {
+            $prepared = $sql;
+
+            return $statement;
+        });
+        $statement->expects($this->once())
+            ->method('bind_param')
+            ->with(
+                $this->identicalTo('ssiis'),
+                $this->identicalTo('2026-01-02 03:04:05'),
+                $this->identicalTo('green'),
+                $this->identicalTo(4),
+                $this->identicalTo(5),
+                $this->identicalTo('green')
+            );
+        $connection = $this->createStub(Connection::class);
+        $connection->method('primary')->willReturn(new Driver($mysqli));
+
+        (new PreparedQuery('UPDATE t SET d = :d, c = :c WHERE id IN (:ids)', $connection))
+            ->setParams([
+                'd' => new \DateTimeImmutable('2026-01-02 03:04:05'),
+                'c' => ColorsEnum::GREEN,
+                'ids' => [4, 5, ColorsEnum::GREEN],
+            ])
+            ->execute();
+
+        $this->assertSame('UPDATE t SET d = ?, c = ? WHERE id IN (?, ?, ?)', $prepared);
+    }
+
+    /**
+     * The statement is named after the SQL of the lists: one per list length, prepared once on the driver
+     */
+    public function testAListOfAnotherLengthShouldUseAnotherPgsqlStatement()
+    {
+        $prepared = [];
+        $executed = [];
+        NativeFunctionMock::override('pg_connect', fn () => new Pgsql());
+        NativeFunctionMock::override('pg_prepare', function ($connection, string $name, string $sql) use (&$prepared): bool {
+            $prepared[$name] = $sql;
+
+            return true;
+        });
+        NativeFunctionMock::override('pg_execute', function ($connection, string $name, array $values) use (&$executed): PgsqlResult {
+            $executed[] = [$name, $values];
+
+            return new PgsqlResult();
+        });
+        $driver = new PgsqlDriver();
+        $driver->setDatabase('db');
+        $pool = $this->createStub(ConnectionPoolInterface::class);
+        $pool->method('primary')->willReturn($driver);
+        $query = new PreparedQuery('DELETE FROM t WHERE id IN (:ids) OR parent_id IN (:ids)', new Connection($pool, 'main', 'db'));
+
+        $query->setParams(['ids' => [1, 2]])->execute();
+        $twoName = $query->getStatementName();
+        $query->setParams(['ids' => [3, 4]])->execute();
+        $query->setParams(['ids' => [5, 6, 7]])->execute();
+        $threeName = $query->getStatementName();
+        $query->setParams(['ids' => [8, 9]])->execute();
+
+        $this->assertSame(
+            [
+                $twoName => 'DELETE FROM t WHERE id IN ($1, $2) OR parent_id IN ($1, $2)',
+                $threeName => 'DELETE FROM t WHERE id IN ($1, $2, $3) OR parent_id IN ($1, $2, $3)',
+            ],
+            $prepared
+        );
+        $this->assertSame(sha1('DELETE FROM t WHERE id IN (:ids__1, :ids__2) OR parent_id IN (:ids__1, :ids__2)'), $twoName);
+        $this->assertSame(
+            [
+                [$twoName, [1, 2]],
+                [$twoName, [3, 4]],
+                [$threeName, [5, 6, 7]],
+                [$twoName, [8, 9]],
+            ],
+            $executed
+        );
     }
 }

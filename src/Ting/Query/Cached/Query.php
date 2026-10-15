@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Query\Cached;
 
 use CCMBenchmark\Ting\Exception;
+use CCMBenchmark\Ting\Query\ParameterConverter;
 use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use Symfony\Contracts\Cache\CacheInterface;
@@ -112,10 +113,13 @@ class Query extends \CCMBenchmark\Ting\Query\Query
     {
         $this->checkTtl();
 
+        // Converted before the cache is read: a parameter that cannot be sent fails, whether the result is cached or not
+        [$sql, $params] = ParameterConverter::convert($this->sql, $this->params);
         $collection ??= $this->newCollection();
 
-        $this->queryThroughCache($collection, function (CollectionInterface $collection): void {
-            parent::query($collection);
+        $this->queryThroughCache($collection, function (CollectionInterface $collection) use ($sql, $params): void {
+            // The driver fills the collection: for a statement without result set, Mysqli returns true instead of it
+            $this->readingDriver()->execute($sql, $params, $collection);
         });
 
         return $collection;
