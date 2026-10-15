@@ -16,7 +16,10 @@ use Symfony\Component\PropertyInfo\PropertyWriteInfo;
 
 class PropertyAccessor
 {
-    /** Written by the Symfony property accessor (a setter, a public property, a virtual one through its set hook) */
+    /**
+     * Written by the Symfony property accessor (a setter, a getter-setter, an adder for an iterable value, a public
+     * property, a virtual one through its set hook)
+     */
     private const WRITE_ACCESSOR = 'accessor';
     /** Its own value written by reflection, without its set hook (PHP 8.4+) */
     private const WRITE_RAW = 'raw';
