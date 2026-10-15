@@ -497,8 +497,9 @@ return type, the same or wider parameter types, and the optional parameters of t
 * **A repository overriding a method of `Repository`** must copy its 4.0 signature, e.g.
   `public function getAll(bool $forcePrimary = false): CollectionInterface` (was `getAll($forceMaster = false)`); an
   override of `getCollection()` must return `Collection`. `getBy()` gained an `int $offset = 0` parameter and
-  `getOneBy()` an `array $order = []` parameter after 4.0.0-rc.1, and `Repository` has new methods (`transactional()`, `countBy()`, `existsBy()`, `deleteBy()`):
-  a repository declaring a method of the same name must rename it or match its signature.
+  `getOneBy()` an `array $order = []` parameter after 4.0.0-rc.1, and `Repository` has new methods (`transactional()`,
+  `countBy()`, `existsBy()`, `deleteBy()`), as `Query` (`queryValue()`): a subclass declaring a method of the same name
+  must rename it or match its signature.
 * **Serializers** implementing `SerializeInterface` / `UnserializeInterface` must declare a return type (`mixed` or
   narrower); a class extending a built-in serializer must copy the return type of the method it overrides
   (`serialize($toSerialize, array $options = []): ?string` for `DateTime`).
