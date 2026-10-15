@@ -426,6 +426,22 @@ The `$order` argument of `getBy()` and `getOneBy()` is indexed by property name,
 (case-insensitive) as values; any other direction throws a `ValueException`. So does an `$offset` without `$limit`, or a
 negative one.
 
+### Counting
+
+```php
+public function countBy(array $criteria = [], bool $forcePrimary = false): int;
+public function existsBy(array $criteria, bool $forcePrimary = false): bool;
+```
+
+`countBy()` counts the rows matching the criteria (`SELECT COUNT(*)`), every row without criteria; `existsBy()` tells
+whether one row matches (`SELECT 1 ... LIMIT 1`), whether the table has a row without criteria. Their criteria follow
+the same rules as those of `getBy()`:
+
+```php
+$activeCities = $cityRepository->countBy(['status' => CityStatus::Active]);
+$hasParis = $cityRepository->existsBy(['name' => 'Paris']);
+```
+
 For anything else (joins, `OR`, aggregates...), write the query: see below.
 
 ## Writing
@@ -460,6 +476,17 @@ $cityRepository->save($city); // UPDATE t_city_cit SET cit_name = ... WHERE cit_
 
 $cityRepository->delete($city); // DELETE FROM t_city_cit WHERE cit_id = ...
 ```
+
+`deleteBy(array $criteria): int` deletes every row matching the criteria (same rules as `getBy()`) with one `DELETE`
+query, and returns the number of rows deleted:
+
+```php
+$deleted = $cityRepository->deleteBy(['status' => CityStatus::Archived]);
+```
+
+Empty criteria throw a `ValueException`: write the query to empty a table. `deleteBy()` does not go through the unit of
+work: an entity of a deleted row read before stays managed, and saving it again updates no row (call
+`$unitOfWork->detach($entity)` to forget it).
 
 ## Writing your own queries
 

@@ -28,8 +28,10 @@ namespace CCMBenchmark\Ting\Query;
 
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Exception;
+use CCMBenchmark\Ting\Repository\Collection;
 use CCMBenchmark\Ting\Repository\CollectionInterface;
 use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
+use CCMBenchmark\Ting\Repository\HydratorArray;
 
 /**
  * @template T type of the items of the collections built by the collection factory of the query
@@ -95,6 +97,23 @@ class Query implements QueryInterface
         $driver->execute($this->sql, $this->params, $collection);
 
         return $collection;
+    }
+
+    /**
+     * Execute a reading query and return the first column of its first row (a COUNT(*), a MAX()...), as the driver
+     * returns it (a string with PostgreSQL and Mysqli non-prepared queries), or null without row
+     *
+     * @throws Exception
+     * @throws QueryException
+     */
+    public function queryValue(): mixed
+    {
+        $row = $this->query(new Collection(new HydratorArray()))->first();
+        if ($row === null) {
+            return null;
+        }
+
+        return $row === [] ? null : $row[array_key_first($row)];
     }
 
     /**

@@ -193,6 +193,92 @@ class Generator
     }
 
     /**
+     * Returns a Query counting the rows matching the criteria (every row without criteria)
+     *
+     * @param array<string, mixed> $criteria column name => value
+     * @return QueryInterface<mixed>
+     *
+     * @internal
+     */
+    public function countByCriteria(array $criteria, bool $forcePrimary = false): QueryInterface
+    {
+        $driver = $this->getDriver($forcePrimary);
+        [$where, $params] = $this->getWhereAndParams($criteria, $driver);
+
+        return $this->readQuery('SELECT COUNT(*) FROM ' . $this->getTarget($driver) . $where, $params, $forcePrimary);
+    }
+
+    /**
+     * Returns a Query reading 1 when a row matches the criteria, no row otherwise
+     *
+     * @param array<string, mixed> $criteria column name => value
+     * @return QueryInterface<mixed>
+     *
+     * @internal
+     */
+    public function existsByCriteria(array $criteria, bool $forcePrimary = false): QueryInterface
+    {
+        $driver = $this->getDriver($forcePrimary);
+        [$where, $params] = $this->getWhereAndParams($criteria, $driver);
+
+        return $this->readQuery(
+            'SELECT 1 FROM ' . $this->getTarget($driver) . $where . $this->generateLimit(1),
+            $params,
+            $forcePrimary
+        );
+    }
+
+    /**
+     * Returns a Query deleting the rows matching the criteria
+     *
+     * @param array<string, mixed> $criteria column name => value, not empty
+     * @return QueryInterface<mixed> a writing query: no collection factory
+     *
+     * @internal
+     */
+    public function deleteByCriteria(array $criteria): QueryInterface
+    {
+        $driver = $this->getDriver(true);
+        [$where, $params] = $this->getWhereAndParams($criteria, $driver);
+
+        $query = $this->queryFactory->get('DELETE FROM ' . $this->getTarget($driver) . $where, $this->connection);
+        $query->setParams($params);
+
+        return $query;
+    }
+
+    /**
+     * @param array<string, mixed> $criteria column name => value
+     * @return array{0: string, 1: array<string, mixed>} the WHERE clause (empty without criteria) and its parameters
+     */
+    private function getWhereAndParams(array $criteria, DriverInterface $driver): array
+    {
+        if ($criteria === []) {
+            return ['', []];
+        }
+
+        $criteriaFields = $this->escapeFields(array_keys($criteria), $driver);
+        [$conditions, $params] = $this->generateConditionAndParams($criteriaFields, $criteria);
+
+        return [' WHERE ' . implode(' AND ', $conditions), $params];
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @return QueryInterface<mixed>
+     */
+    private function readQuery(string $sql, array $params, bool $forcePrimary): QueryInterface
+    {
+        $query = $this->queryFactory->get($sql, $this->connection);
+        $query->setParams($params);
+        if ($forcePrimary === true) {
+            $query->selectPrimary(true);
+        }
+
+        return $query;
+    }
+
+    /**
      * Returns a PreparedQuery to insert an object in database.
      *
      * @param array<string, mixed> $values associative array : columnName => value

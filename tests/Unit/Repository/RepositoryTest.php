@@ -51,6 +51,7 @@ use CCMBenchmark\Ting\Tests\Support\TestCase;
 use CCMBenchmark\Ting\UnitOfWork;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use tests\fixtures\Fake\Mysqli;
+use tests\fixtures\FakeDriver\Driver as FakeDriver;
 use tests\fixtures\FakeDriver\MysqliResult;
 use tests\fixtures\model\Bouh;
 use tests\fixtures\model\BouhRepository;
@@ -310,6 +311,69 @@ class RepositoryTest extends TestCase
             'commit refused'
         );
         $this->assertSame(['start', 'commit'], $driver->log);
+    }
+
+    public function testCountByShouldCountTheMatchingRowsAsAnInteger()
+    {
+        [$repository, $queries] = $this->createRecordingRepository([['3']]);
+
+        $this->assertSame(3, $repository->countBy(['name' => ['Bouh', 'Xavier'], 'firstname' => null]));
+        $this->assertSame(
+            'SELECT COUNT(*) FROM T_BOUH_BOO WHERE boo_name IN (:w1_boo_name__1,:w1_boo_name__2)'
+            . ' AND boo_firstname IS NULL',
+            $queries[0][0]
+        );
+        $this->assertSame(['w1_boo_name__1' => 'Bouh', 'w1_boo_name__2' => 'Xavier'], $queries[0][1]);
+
+        $this->assertSame(3, $repository->countBy());
+        $this->assertSame('SELECT COUNT(*) FROM T_BOUH_BOO', $queries[1][0]);
+    }
+
+    public function testCountByShouldRejectAColumnName()
+    {
+        [$repository] = $this->createRecordingRepository([['3']]);
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $repository->countBy(['boo_name' => 'Bouh']),
+            '"boo_name" is a column name: use the property name "name" in the criteria of Repository::countBy()'
+        );
+    }
+
+    public function testExistsByShouldTellWhetherARowMatches()
+    {
+        [$repository, $queries] = $this->createRecordingRepository([['1']]);
+        $this->assertTrue($repository->existsBy(['name' => 'Bouh']));
+        $this->assertSame('SELECT 1 FROM T_BOUH_BOO WHERE boo_name = :w1_boo_name LIMIT 1', $queries[0][0]);
+        $this->assertTrue($repository->existsBy([]));
+        $this->assertSame('SELECT 1 FROM T_BOUH_BOO LIMIT 1', $queries[1][0]);
+
+        [$repository] = $this->createRecordingRepository([]);
+        $this->assertFalse($repository->existsBy(['name' => 'Bouh']));
+    }
+
+    public function testDeleteByShouldDeleteTheMatchingRowsOnThePrimary()
+    {
+        [$repository, $queries] = $this->createRecordingRepository([], affectedRows: 2);
+
+        $this->assertSame(2, $repository->deleteBy(['name' => 'Bouh', 'id' => [1, 2]]));
+        $this->assertSame(
+            'DELETE FROM T_BOUH_BOO WHERE boo_name = :w1_boo_name AND boo_id IN (:w2_boo_id__1,:w2_boo_id__2)',
+            $queries[0][0]
+        );
+        $this->assertSame('primary', $queries[0][2]);
+    }
+
+    public function testDeleteByShouldRejectEmptyCriteria()
+    {
+        [$repository, $queries] = $this->createRecordingRepository([]);
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $repository->deleteBy([]),
+            'No criteria in Repository::deleteBy(): use a query of your own'
+        );
+        $this->assertSame([], $queries->getArrayCopy());
     }
 
     public function testSaveShouldCallUnitOfWorkSaveThenProcess()
@@ -1104,5 +1168,81 @@ class RepositoryTest extends TestCase
         );
 
         return [$repository, $driver];
+    }
+
+    /**
+     * A repository whose replica and primary record the queries and return the rows given (values of one column)
+     *
+     * @param list<list<string>> $rows
+     * @return array{0: BouhRepository, 1: \ArrayObject<int, array{0: string, 1: array<string, mixed>, 2: string}>}
+     *         the repository, and the queries run: SQL, parameters, "replica" or "primary"
+     */
+    private function createRecordingRepository(array $rows, int $affectedRows = 0): array
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../../fixtures/model/BouhRepository.php'
+        );
+        $log = new \ArrayObject();
+        $driverFor = fn (string $role) => new class ($role, $rows, $affectedRows, $log) extends FakeDriver {
+            /**
+             * @param list<list<string>> $rows
+             * @param \ArrayObject<int, array{0: string, 1: array<string, mixed>, 2: string}> $log
+             */
+            public function __construct(
+                private readonly string $role,
+                private readonly array $rows,
+                private readonly int $affectedRows,
+                public readonly \ArrayObject $log
+            ) {
+            }
+
+            public function execute(string $sql, array $params = [], ?CollectionInterface $collection = null): mixed
+            {
+                $this->log[] = [$sql, $params, $this->role];
+                if ($collection === null) {
+                    return true;
+                }
+                $mysqliResult = new MysqliResult($this->rows);
+                $mysqliResult->setFieldsCallback(function () {
+                    $field = new \stdClass();
+                    $field->name = 'value';
+                    $field->orgname = '';
+                    $field->table = '';
+                    $field->orgtable = '';
+                    $field->type = MYSQLI_TYPE_VAR_STRING;
+
+                    return [$field];
+                });
+                $result = new Result();
+                $result->setConnectionName('main');
+                $result->setDatabase('bouh_world');
+                $result->setResult($mysqliResult);
+                $collection->set($result);
+
+                return $collection;
+            }
+
+            public function getAffectedRows(): int
+            {
+                return $this->affectedRows;
+            }
+        };
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('replica')->willReturn($driverFor('replica'));
+        $connectionPool->method('primary')->willReturn($driverFor('primary'));
+
+        $repository = new BouhRepository(
+            $connectionPool,
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
+        );
+
+        return [$repository, $log];
     }
 }
