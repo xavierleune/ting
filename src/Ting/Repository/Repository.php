@@ -456,6 +456,7 @@ abstract class Repository implements ResetInterface
      *
      * @template R
      * @param callable(): R $callback
+     * @param-immediately-invoked-callable $callback
      * @return R the value returned by the callback
      * @throws TransactionException when a transaction is already open on the connection, when the callback ended the
      *                              transaction itself, or when the database refuses the START TRANSACTION or the
