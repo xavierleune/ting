@@ -31,10 +31,12 @@ use PHPUnit\Framework\Attributes\RequiresPhp;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
+use tests\fixtures\model\AsymmetricVisibilityChild;
 use tests\fixtures\model\AsymmetricVisibilityEntity;
 use tests\fixtures\model\CustomGetterEntity;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
+use tests\fixtures\model\ReadonlyPropertiesChild;
 use tests\fixtures\model\ReadonlyPropertiesEntity;
 use tests\fixtures\model\TrackedChild;
 
@@ -105,6 +107,32 @@ class PropertyAccessorTest extends TestCase
         $accessor->setValue($entity, 'withSetter', 'value', null);
 
         $this->assertSame('value (setter)', $entity->withSetter);
+    }
+
+    /**
+     * Declared by the parent class: written in the scope of that class, not of the class of the object
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteAPropertyWithAsymmetricVisibilityDeclaredByTheParentClass()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new AsymmetricVisibilityChild();
+        $accessor->setValue($entity, 'privateSet', 'private', null);
+        $accessor->setValue($entity, 'protectedSet', 'protected', null);
+        $accessor->setValue($entity, 'virtualPrivateSet', 'virtual', null);
+
+        $this->assertSame('private', $entity->privateSet);
+        $this->assertSame('protected', $entity->protectedSet);
+        $this->assertSame('virtual (hooked on set)', $entity->virtualPrivateSet);
+    }
+
+    public function testSetPropertyShouldInitializeAPublicReadonlyPropertyDeclaredByTheParentClass()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new ReadonlyPropertiesChild();
+        $accessor->setValue($entity, 'id', 3, null);
+
+        $this->assertSame(3, $entity->id);
     }
 
     public function testSetPropertyShouldInitializeAPublicReadonlyProperty()
