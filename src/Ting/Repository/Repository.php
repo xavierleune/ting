@@ -304,6 +304,46 @@ abstract class Repository implements ResetInterface
     }
 
     /**
+     * @param array<string, mixed> $criteria property name => value, as in getBy(); none to count every row
+     * @throws ValueException on an unknown property (or a column name) or an invalid value
+     */
+    public function countBy(array $criteria = [], bool $forcePrimary = false): int
+    {
+        $query = $this->metadata->countByCriteria($criteria, $this->connection, $this->queryFactory, $forcePrimary);
+        $row = $query->query(new Collection(new HydratorArray()))->first();
+
+        // COUNT(*) is a string with PostgreSQL and Mysqli non-prepared queries
+        return $row === null ? 0 : (int) reset($row);
+    }
+
+    /**
+     * @param array<string, mixed> $criteria property name => value, as in getBy(); none to know if the table has a row
+     * @throws ValueException on an unknown property (or a column name) or an invalid value
+     */
+    public function existsBy(array $criteria, bool $forcePrimary = false): bool
+    {
+        $query = $this->metadata->existsByCriteria($criteria, $this->connection, $this->queryFactory, $forcePrimary);
+
+        return $query->query(new Collection(new HydratorArray()))->first() !== null;
+    }
+
+    /**
+     * Delete the rows matching the criteria with one DELETE query, without the unit of work: an entity of a deleted
+     * row already read stays managed (saved again, it updates no row)
+     *
+     * @param array<string, mixed> $criteria property name => value, as in getBy(); required
+     * @return int the number of rows deleted
+     * @throws ValueException on empty criteria, an unknown property (or a column name) or an invalid value
+     */
+    public function deleteBy(array $criteria): int
+    {
+        $query = $this->metadata->deleteByCriteria($criteria, $this->connection, $this->queryFactory);
+        $query->execute();
+
+        return (int) $this->connection->primary()->getAffectedRows();
+    }
+
+    /**
      * Save an entity in database (update or insert), with the metadata of this repository when they map its class
      * (another repository can map it too: another table, or a lighter projection)
      */

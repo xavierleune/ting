@@ -28,6 +28,7 @@ namespace CCMBenchmark\Ting\Tests\Unit\Query;
 
 use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
+use CCMBenchmark\Ting\Driver\Mysqli\Result;
 use CCMBenchmark\Ting\Query\Cached\PreparedQuery as CachedPreparedQuery;
 use CCMBenchmark\Ting\Query\Cached\Query as CachedQuery;
 use CCMBenchmark\Ting\Query\PreparedQuery;
@@ -39,6 +40,7 @@ use CCMBenchmark\Ting\Tests\Support\TingServices;
 use CCMBenchmark\Ting\Tests\Support\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use tests\fixtures\FakeDriver\MysqliResult;
 
 class QueryTest extends TestCase
 {
@@ -48,6 +50,41 @@ class QueryTest extends TestCase
 
         $query = new Query('SELECT', $mockConnection);
         $this->assertSame($query, $query->setParams([]));
+    }
+
+    public function testQueryValueShouldReturnTheFirstColumnOfTheFirstRowOrNull()
+    {
+        $driver = $this->createStub(Driver::class);
+        $rows = [['42', 'other'], ['7', 'next']];
+        $fill = function (string $sql, array $params, Collection $collection) use (&$rows) {
+            $mysqliResult = new MysqliResult($rows);
+            $mysqliResult->setFieldsCallback(fn () => array_map(function (string $name) {
+                $field = new \stdClass();
+                $field->name = $name;
+                $field->orgname = '';
+                $field->table = '';
+                $field->orgtable = '';
+                $field->type = MYSQLI_TYPE_VAR_STRING;
+
+                return $field;
+            }, ['total', 'label']));
+            $result = new Result();
+            $result->setConnectionName('main');
+            $result->setDatabase('db');
+            $result->setResult($mysqliResult);
+            $collection->set($result);
+
+            return $collection;
+        };
+        $driver->method('execute')->willReturnCallback($fill);
+        $connection = $this->createStub(Connection::class);
+        $connection->method('replica')->willReturn($driver);
+
+        $query = new Query('SELECT COUNT(*) AS total, MAX(label) AS label FROM t', $connection);
+        $this->assertSame('42', $query->queryValue());
+
+        $rows = [];
+        $this->assertNull($query->queryValue());
     }
 
     public function testExecuteShouldCallExecuteOnPrimaryDriver()

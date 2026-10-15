@@ -980,10 +980,13 @@ class Metadata
      * @param array<string, mixed> $criteria
      * @throws ValueException
      */
-    private function assertCriteriaNotEmpty(array $criteria, string $method): void
-    {
+    private function assertCriteriaNotEmpty(
+        array $criteria,
+        string $method,
+        string $alternative = 'Repository::getAll() to read every row'
+    ): void {
         if ($criteria === []) {
-            throw new ValueException(sprintf('No criteria in %s: use Repository::getAll() to read every row', $method));
+            throw new ValueException(sprintf('No criteria in %s: use %s', $method, $alternative));
         }
     }
 
@@ -1249,6 +1252,66 @@ class Metadata
             $limit,
             $offset
         );
+    }
+
+    /**
+     * Return a Query counting the rows matching the criteria (every row without criteria)
+     *
+     * @param array<string, mixed> $criteria property name => value
+     * @return QueryInterface<mixed>
+     * @throws ValueException
+     *
+     * @internal
+     */
+    public function countByCriteria(
+        array $criteria,
+        Connection $connection,
+        QueryFactoryInterface $queryFactory,
+        bool $forcePrimary = false
+    ): QueryInterface {
+        $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::countBy()');
+
+        return $this->queryGenerator($connection, $queryFactory, array_keys($this->fields))
+            ->countByCriteria($criteriaColumn, $forcePrimary);
+    }
+
+    /**
+     * Return a Query reading 1 when a row matches the criteria (any row without criteria)
+     *
+     * @param array<string, mixed> $criteria property name => value
+     * @return QueryInterface<mixed>
+     * @throws ValueException
+     *
+     * @internal
+     */
+    public function existsByCriteria(
+        array $criteria,
+        Connection $connection,
+        QueryFactoryInterface $queryFactory,
+        bool $forcePrimary = false
+    ): QueryInterface {
+        $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::existsBy()');
+
+        return $this->queryGenerator($connection, $queryFactory, array_keys($this->fields))
+            ->existsByCriteria($criteriaColumn, $forcePrimary);
+    }
+
+    /**
+     * Return a Query deleting the rows matching the criteria
+     *
+     * @param array<string, mixed> $criteria property name => value
+     * @return QueryInterface<mixed>
+     * @throws ValueException
+     *
+     * @internal
+     */
+    public function deleteByCriteria(array $criteria, Connection $connection, QueryFactoryInterface $queryFactory): QueryInterface
+    {
+        $this->assertCriteriaNotEmpty($criteria, 'Repository::deleteBy()', 'a query of your own');
+        $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::deleteBy()');
+
+        return $this->queryGenerator($connection, $queryFactory, array_keys($this->fields))
+            ->deleteByCriteria($criteriaColumn);
     }
 
     /**

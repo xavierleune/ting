@@ -108,7 +108,18 @@ public function printUsersNamed(string $name): void
 }
 ```
 
-`$collection->first()` returns the first row, or `null` when the collection is empty.
+`$collection->first()` returns the first row, or `null` when the collection is empty, and `$collection->toArray()` all
+the rows in a list.
+
+`queryValue()` runs a reading query and returns the first column of its first row, or `null` without row: a
+`COUNT(*)`, a `MAX()`... The value is the one of the driver, not converted: a string with PostgreSQL and with the Mysqli
+non-prepared queries.
+
+```php
+$total = (int) $this->getQuery('SELECT COUNT(*) FROM user WHERE name LIKE :prefix')
+    ->setParams(['prefix' => 'A%'])
+    ->queryValue();
+```
 
 With the default hydrator, each row is an array indexed by table name (or alias), holding the hydrated entities, so
 that a query with joins returns all the objects involved. The shape of the rows depends on the hydrator: see
