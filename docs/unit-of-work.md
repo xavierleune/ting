@@ -73,7 +73,8 @@ Use `pushSave()` both to insert and to update: the unit of work knows which one 
 
 `Repository::save($entity)` and `Repository::delete($entity)` are shortcuts for `pushSave($entity)->process()` and
 `pushDelete($entity)->process()`, writing with the metadata of the repository. Note that they process the **whole**
-queue, including entities pushed earlier.
+queue, including entities pushed earlier. Called while `process()` runs (by a setter, an event handler), they write
+the entities still queued too: the running `process()` then skips the ones written.
 
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
