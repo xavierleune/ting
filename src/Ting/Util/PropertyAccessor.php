@@ -224,10 +224,18 @@ class PropertyAccessor
         return $this->writeModes[$key] = $mode;
     }
 
+    /**
+     * The property of the class declaring it: written in the scope of that class (a property private(set), or readonly
+     * before PHP 8.4, declared by a parent class cannot be written from the scope of the class of the object)
+     */
     private function getReflectionProperty(object $object, string $propertyPath): ReflectionProperty
     {
         $key = $object::class.'..'.$propertyPath;
-        
-        return $this->reflectionProperties[$key] ?? $this->reflectionProperties[$key] = new ReflectionProperty($object, $propertyPath);
+        if (isset($this->reflectionProperties[$key]) === false) {
+            $declaringClass = (new ReflectionProperty($object, $propertyPath))->getDeclaringClass()->getName();
+            $this->reflectionProperties[$key] = new ReflectionProperty($declaringClass, $propertyPath);
+        }
+
+        return $this->reflectionProperties[$key];
     }
 }
