@@ -912,13 +912,13 @@ Hydrators and Transactions
 
 * `HydratorRelational` throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when its relations form a cycle (a
   bidirectional relation, or an alias given to itself); 3.x partially ignored them. Declare one direction and set the
-  back reference in the setter, see [HydratorRelational](docs/hydrators.md#hydratorrelational).
-* `HydratorRelational` throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when the entity of an alias of a
-  relation (source or target, root included) has no value for one of its primary key columns in a row (not selected,
-  or null): 3.x identified it by the values of its primary properties, so the entities of such an alias were merged
-  under one key (the books of every author given to the first author, the others lost), and a typed primary property
-  (`public int $id`) threw Symfony's `UninitializedPropertyException`. Select every primary key column of the aliases
-  of the relations; a `LEFT JOIN` without match (an entity `null` in the row) is still accepted.
+  back reference in the setter, see [HydratorRelational](docs/hydrators.md#hydratorrelational). * `HydratorRelational`
+  throws a `CCMBenchmark\Ting\Exceptions\HydratorException` when the entity of an alias of a relation (source or
+  target, root included) has no value for one of its primary key columns in a row (not selected, or null): 3.x
+  identified it by the values of its primary properties, so the entities of such an alias were merged under one key
+  (the books of every author given to the first author, or the first book given to every author), and a typed primary
+  property (`public int $id`) threw Symfony's `UninitializedPropertyException`. Select every primary key column of the
+  aliases of the relations; a `LEFT JOIN` without match (an entity `null` in the row) is still accepted.
 * When several metadata share a table on a connection (one per database or schema, e.g. `City` in `world` and
   `CityArchive` in `world_archive`, both on `T_CITY_CIT`) and none matches the database and schema of the result, the
   hydrator no longer takes the first metadata registered (an order that depends on the files found or on the service
