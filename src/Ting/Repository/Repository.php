@@ -44,6 +44,7 @@ use CCMBenchmark\Ting\Exceptions\RepositoryException;
 use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
+use CCMBenchmark\Ting\Query\QueryException;
 use CCMBenchmark\Ting\Query\QueryFactory;
 use CCMBenchmark\Ting\Query\Query;
 use CCMBenchmark\Ting\Query\PreparedQuery;
@@ -301,6 +302,38 @@ abstract class Repository implements ResetInterface
         $entity = $collection->first();
 
         return reset($entity);
+    }
+
+    /**
+     * Run a SELECT of your own as a prepared query and hydrate the entity of the first table of each row: the entities
+     * of the repository when the query reads its table first
+     *
+     * @param array<string, mixed> $params parameter name => value
+     * @return CollectionInterface<T>
+     * @throws QueryException
+     */
+    public function getBySql(string $sql, array $params = [], bool $forcePrimary = false): CollectionInterface
+    {
+        $query = $this->getPreparedQuery($sql)->setParams($params);
+        if ($forcePrimary === true) {
+            $query->selectPrimary(true);
+        }
+
+        return $query->query($this->getCollection(new HydratorSingleObject()));
+    }
+
+    /**
+     * Run a SELECT of your own as getBySql() and return the entity of its first row
+     *
+     * @param array<string, mixed> $params parameter name => value
+     * @return T|null null without row
+     * @throws QueryException
+     */
+    public function getOneBySql(string $sql, array $params = [], bool $forcePrimary = false): ?object
+    {
+        $entity = $this->getBySql($sql, $params, $forcePrimary)->first();
+
+        return \is_object($entity) ? $entity : null;
     }
 
     /**
