@@ -145,6 +145,12 @@ class Result implements ResultInterface
      */
     private const AFTER_SUB_QUERY = [')', 'union', 'intersect', 'except', 'order', 'limit', 'offset', 'fetch', 'for'];
 
+    /**
+     * The distance to the main SELECT of a table read before it (in a CTE), plus its depth: further than any table of
+     * the main statement, closer than a table outside of its parentheses (the next SELECT of a UNION)
+     */
+    private const BEFORE_MAIN_SELECT = \PHP_INT_MAX >> 1;
+
     protected ?string $connectionName = null;
     protected ?string $database = null;
     /**
@@ -216,7 +222,8 @@ class Result implements ResultInterface
             $tokensWithCase,
             $tokens,
             $comparisonFroms,
-            $selectDepth
+            $selectDepth,
+            $mainSelect
         );
 
         $startCapture = false;
@@ -505,22 +512,30 @@ class Result implements ResultInterface
      * parentheses (not to extract(year FROM x), nor to IS [NOT] DISTINCT FROM); a FROM clause lists its items
      * separated by commas. Neither a sub-query nor a function names a table.
      * A table or an alias read at several depths (a sub-query, a LATERAL join, IN (SELECT ...), EXISTS, a CTE) is
-     * the one of the main SELECT: a table read deeper never replaces one read closer to the main SELECT
+     * the one of the main SELECT: a table read deeper never replaces one read closer to the main SELECT, and a table
+     * read before it (in a CTE) never replaces one of the main statement, however deep
      *
      * @param list<string> $tokensWithCase
      * @param list<string> $tokens lowercase tokens
      * @param array<int, true> $comparisonFroms
      * @param int $selectDepth depth of the parentheses around the main SELECT
+     * @param int $mainSelect position of the main SELECT
      * @return array{array<string, string>, array<string, string>, array<string, true>} table => alias,
      *         alias => schema, table read only in a derived table (keyed by its name) => true
      */
-    private function findTables(array $tokensWithCase, array $tokens, array $comparisonFroms, int $selectDepth): array
-    {
+    private function findTables(
+        array $tokensWithCase,
+        array $tokens,
+        array $comparisonFroms,
+        int $selectDepth,
+        int $mainSelect
+    ): array {
         $tableToAlias = [];
         $aliasToSchema = [];
         $derivedTables = [];
-        // How far from the main SELECT each table and each alias was read: 0 at its depth, deeper further, and
-        // outside of its parentheses (the next SELECT of a UNION) the furthest
+        // How far from the main SELECT each table and each alias was read: 0 at its depth, deeper further, before it
+        // (in a CTE) further than any depth of the main statement, and outside of its parentheses (the next SELECT of
+        // a UNION) the furthest
         $tableDistance = [];
         $aliasDistance = [];
         // At each depth of parentheses: no SELECT, its select list, or its FROM clause (until the clause after it)
@@ -602,7 +617,11 @@ class Result implements ResultInterface
             }
 
             $depth = $depths[$top];
-            $distance = $depth >= $selectDepth ? $depth - $selectDepth : \PHP_INT_MAX - $depth;
+            $distance = match (true) {
+                $index < $mainSelect => self::BEFORE_MAIN_SELECT + $depth,
+                $depth >= $selectDepth => $depth - $selectDepth,
+                default => \PHP_INT_MAX - $depth,
+            };
             $item = self::readFromItem($tokensWithCase, $tokens, $closing, $subQueries, $index);
             if ($item['derived'] !== null) {
                 $derivedUntil = max($derivedUntil, $item['derived']);
