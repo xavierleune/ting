@@ -11,6 +11,8 @@ use Symfony\Component\PropertyAccess\Exception\AccessException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
 use Symfony\Component\PropertyAccess\PropertyPathInterface;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\PropertyInfo\PropertyWriteInfo;
 
 class PropertyAccessor
 {
@@ -33,6 +35,7 @@ class PropertyAccessor
     private array $reflectionProperties = [];
     private readonly PropertyAccessorInterface $propertyAccessor;
     private ?CacheItemPoolInterface $cacheItemPool = null;
+    private ?ReflectionExtractor $writeInfoExtractor = null;
 
     public function __construct() {
         $this->propertyAccessor = PropertyAccess::createPropertyAccessor();
@@ -225,20 +228,27 @@ class PropertyAccessor
     }
 
     /**
-     * A setter the Symfony property accessor writes the property through: a public method set<Property>, or __set().
-     * The accessor itself is not asked: some versions (7.0) report writable a public property only its class can
-     * write, then fails to write it
+     * Whether the Symfony property accessor writes the property through a method (a setter, a getter-setter, an adder
+     * and a remover), found as it finds them. The accessor itself is not asked: some versions (7.0) report writable a
+     * public property only its class can write, then fail to write it
      */
     private function hasConventionalSetter(object $object, string $propertyPath): bool
     {
-        $setter = 'set'.str_replace('_', '', ucwords($propertyPath, '_'));
-        foreach ([$setter, '__set'] as $method) {
-            if (method_exists($object, $method) && (new \ReflectionMethod($object, $method))->isPublic()) {
-                return $this->propertyAccessor->isWritable($object, $propertyPath);
-            }
-        }
+        $this->writeInfoExtractor ??= new ReflectionExtractor(['set'], null, null, false);
+        $writeInfo = $this->writeInfoExtractor->getWriteInfo($object::class, $propertyPath, [
+            'enable_getter_setter_extraction' => true,
+            'enable_magic_methods_extraction' => 0,
+            'enable_constructor_extraction' => false,
+        ]);
 
-        return false;
+        return match ($writeInfo?->getType()) {
+            PropertyWriteInfo::TYPE_METHOD => $writeInfo->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC
+                && $writeInfo->isStatic() === false,
+            PropertyWriteInfo::TYPE_ADDER_AND_REMOVER =>
+                $writeInfo->getAdderInfo()->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC
+                && $writeInfo->getRemoverInfo()->getVisibility() === PropertyWriteInfo::VISIBILITY_PUBLIC,
+            default => false,
+        };
     }
 
     /**
