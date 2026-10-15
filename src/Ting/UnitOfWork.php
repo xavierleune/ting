@@ -101,6 +101,13 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
     protected array $entitiesShouldBePersisted = [];
     /** @var array<string, array<string, DriverInterface>>  */
     protected array $statements = [];
+    /**
+     * @var array<string, true> by object hash, the queued entities a running process() is writing, until they are
+     *      unqueued: a process() nested in it leaves them to it
+     */
+    private array $entitiesInProgress = [];
+    /** Number of process() running, nested in one another: the outermost closes the statements */
+    private int $processDepth = 0;
 
     /**
      * @param ConnectionPool        $connectionPool
@@ -424,7 +431,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     public function detach(NotifyPropertyInterface $entity): void
     {
-        unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+        $this->unqueue($entity);
         $this->forget($entity);
     }
 
@@ -450,6 +457,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $this->propertiesNotRead = new WeakMap();
         $this->entitiesMetadata = new WeakMap();
         $this->entitiesShouldBePersisted = [];
+        $this->entitiesInProgress = [];
         $this->entities = new WeakMap();
     }
 
@@ -483,7 +491,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
             || (isset($this->entities[$entity]) === false
                 && (isset($this->insertsRolledBack[$entity]) || $this->hasPrimaryKey($entity, $metadata) === false))
         ) {
-            unset($this->entitiesShouldBePersisted[$hash]);
+            $this->unqueue($entity);
 
             return $this;
         }
@@ -576,7 +584,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
         $hash = spl_object_hash($subject);
         if (isset($this->entitiesShouldBePersisted[$hash])) {
             if ($this->entitiesShouldBePersisted[$hash]['state'] === self::STATE_DELETE) {
-                unset($this->entitiesShouldBePersisted[$hash]);
+                $this->unqueue($subject);
             } else {
                 $this->entitiesShouldBePersisted[$hash]['state'] = self::STATE_NEW;
             }
@@ -606,22 +614,28 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      * changes are kept, so it can be saved again) and the following ones stay queued; the exception is rethrown.
      *
      * A process() nested in this one (called by a setter, a getter or a serializer) writes the entities still queued,
-     * those this one has not reached yet included: they are not written a second time.
+     * those this one has not reached yet included: they are not written a second time. It leaves the entity this one
+     * is writing to it, until it is unqueued. The statements prepared are closed when the outermost process() ends.
      *
      * @throws Exception
      * @throws QueryException
      */
     public function process(): void
     {
+        ++$this->processDepth;
         try {
             foreach (array_keys($this->entitiesShouldBePersisted) as $hash) {
                 // A process() nested in this one (a save from a setter, a getter or a serializer) may have written it
-                // already, or changed what to do with it
-                if (isset($this->entitiesShouldBePersisted[$hash]) === false) {
+                // already, or changed what to do with it; an entity a process() this one is nested in is writing is
+                // left to it
+                if (isset($this->entitiesShouldBePersisted[$hash]) === false
+                    || isset($this->entitiesInProgress[$hash])
+                ) {
                     continue;
                 }
 
                 $details = $this->entitiesShouldBePersisted[$hash];
+                $this->entitiesInProgress[$hash] = true;
                 try {
                     switch ($details['state']) {
                         case self::STATE_MANAGED:
@@ -645,15 +659,35 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                     unset($this->entitiesShouldBePersisted[$hash]);
 
                     throw $exception;
+                } finally {
+                    unset($this->entitiesInProgress[$hash]);
                 }
             }
         } finally {
-            $statements = $this->statements;
-            $this->statements = [];
-            foreach ($statements as $statementName => $connections) {
-                foreach ($connections as $connection) {
-                    $connection->closeStatement($statementName);
-                }
+            --$this->processDepth;
+            if ($this->processDepth === 0) {
+                $this->closeStatements();
+            }
+        }
+    }
+
+    /**
+     * Unqueue the entity: no longer in progress either, a process() nested in the one that wrote it writes it again
+     * if it is pushed again
+     */
+    private function unqueue(NotifyPropertyInterface $entity): void
+    {
+        $hash = spl_object_hash($entity);
+        unset($this->entitiesShouldBePersisted[$hash], $this->entitiesInProgress[$hash]);
+    }
+
+    private function closeStatements(): void
+    {
+        $statements = $this->statements;
+        $this->statements = [];
+        foreach ($statements as $statementName => $connections) {
+            foreach ($connections as $connection) {
+                $connection->closeStatement($statementName);
             }
         }
     }
@@ -751,7 +785,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
                     $query->execute();
                 }
 
-                unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+                $this->unqueue($entity);
                 // Every value is known: written, or the primary key targeting the row
                 $this->propertiesNotRead->offsetUnset($entity);
                 $this->entitiesChanged->offsetUnset($entity);
@@ -778,7 +812,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
      */
     private function markSaved(NotifyPropertyInterface $entity, ?Metadata $metadata, array $written): void
     {
-        unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+        $this->unqueue($entity);
 
         $read = $this->entitiesMetadata[$entity] ?? null;
         $changes = $this->entitiesChanged[$entity] ?? [];
@@ -985,7 +1019,7 @@ class UnitOfWork implements PropertyListenerInterface, ResetInterface, RollbackL
 
                 // The row exists: the entity is managed before its generated id is written back, so that it is not
                 // inserted a second time if that fails (the error is rethrown, the entity stays managed)
-                unset($this->entitiesShouldBePersisted[spl_object_hash($entity)]);
+                $this->unqueue($entity);
                 // Every value written is known
                 $this->propertiesNotRead->offsetUnset($entity);
                 $this->listen($entity);
