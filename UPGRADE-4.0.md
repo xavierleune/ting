@@ -966,8 +966,11 @@ Hydrators and Transactions
     `objectDatabaseIs()`, `objectSchemaIs()` and when reading the row.
   - A plain column aliased without `AS` (`SELECT u.name n FROM users u`, `u.name "N"`) is now hydrated into the
     entity of its table, as with `AS` (and as with MySQL), not into the `0` object: `$row[0]->n` no longer exists, the
-    value is in `$row['u']`, mapped by the metadata of `users`. Its name is unchanged. To keep it in `0`, make it an
-    expression (`u.name || '' n`, `CAST(u.name AS text) n`).
+    value is in `$row['u']`, mapped by the metadata of `users` by its column name (`name`). Its name in the result is
+    unchanged. `mapAliasTo()` and `unserializeAliasWith()` on such an alias (`mapAliasTo('n', 'u', 'setNickname')`)
+    no longer receive the value, which goes to the entity: the setter of `mapAliasTo()` gets `null`, with "Undefined
+    array key" warnings, and `unserializeAliasWith()` unserializes nothing. To keep it in `0` or for these methods, make it an expression, with `AS` or not
+    (`u.name || '' AS n`, `CAST(u.name AS text) n`), or map the column to a property of the entity.
 * **PostgreSQL: a query read into another number of columns than its result throws.** The Pgsql driver matches the
   values of a row to the columns read from the query by position. When the columns it reads from the query are not as
   many as the columns of the result (a query the parser misreads, `INSERT ... SELECT a, b ... RETURNING id`,
