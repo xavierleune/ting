@@ -998,6 +998,89 @@ class MetadataTest extends TestCase
         );
     }
 
+    public function testGetByCriteriaWithOffsetShouldSkipRowsAfterTheLimit()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getByCriteriaWithOrderAndLimit(
+            ['name' => 'Xavier'],
+            ['id' => 'ASC'],
+            10,
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            false,
+            20
+        );
+
+        $this->assertStringEndsWith(' ORDER BY boo_id ASC LIMIT 10 OFFSET 20', $this->readQuery($query)[0]);
+    }
+
+    public function testGetByCriteriaShouldRejectAnOffsetWithoutLimitOrNegative()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteriaWithOrderAndLimit(
+                ['name' => 'Xavier'],
+                [],
+                0,
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                false,
+                20
+            ),
+            'An offset needs a limit in Repository::getBy()'
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getByCriteriaWithOrderAndLimit(
+                ['name' => 'Xavier'],
+                [],
+                10,
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                false,
+                -1
+            ),
+            'Negative offset in Repository::getBy()'
+        );
+    }
+
+    public function testGetOneByCriteriaWithOrderShouldOrderBeforeTheLimit()
+    {
+        [$metadata, $connection, $services] = $this->createReadMetadata();
+
+        $query = $metadata->getOneByCriteria(
+            $connection,
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            ['name' => 'Xavier'],
+            false,
+            ['id' => 'desc']
+        );
+
+        $this->assertStringEndsWith(
+            ' WHERE boo_name = :w1_boo_name ORDER BY boo_id DESC LIMIT 1',
+            $this->readQuery($query)[0]
+        );
+        $this->assertThrows(
+            ValueException::class,
+            fn () => $metadata->getOneByCriteria(
+                $connection,
+                $services->queryFactory(),
+                $services->collectionFactory(),
+                ['name' => 'Xavier'],
+                false,
+                ['boo_id' => 'ASC']
+            ),
+            '"boo_id" is a column name: use the property name "id" in the order of Repository::getOneBy()'
+        );
+    }
+
     public function testGetByCriteriaWithOrderShouldRejectAColumnNameAndNameTheProperty()
     {
         [$metadata, $connection, $services] = $this->createReadMetadata();

@@ -939,6 +939,7 @@ class Metadata
      * @template U
      * @param CollectionFactoryInterface<U> $collectionFactory
      * @param array<string, mixed> $criteria property name => value
+     * @param array<string, string> $order property name => "ASC" or "DESC"
      * @return QueryInterface<U>
      *
      * @internal
@@ -948,15 +949,17 @@ class Metadata
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
         array $criteria,
-        bool $forcePrimary = false
+        bool $forcePrimary = false,
+        array $order = []
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
 
         $this->assertCriteriaNotEmpty($criteria, 'Repository::getOneBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getOneBy()');
+        $orderColumn = $this->getColumnsFromOrder($order, 'the order of Repository::getOneBy()');
 
-        return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forcePrimary);
+        return $queryGenerator->getOneByCriteria($criteriaColumn, $collectionFactory, $forcePrimary, $orderColumn);
     }
 
     /**
@@ -1008,9 +1011,8 @@ class Metadata
      * @return array<string, string> column name => "ASC" or "DESC"
      * @throws ValueException
      */
-    private function getColumnsFromOrder(array $order): array
+    private function getColumnsFromOrder(array $order, string $context = 'the order of Repository::getBy()'): array
     {
-        $context = 'the order of Repository::getBy()';
         $orderColumn = [];
         foreach ($order as $property => $direction) {
             $field = $this->getFieldByProperty((string) $property, $context);
@@ -1211,7 +1213,9 @@ class Metadata
      * @param array<string, mixed> $criteria property name => value
      * @param array<string, string> $orderBy property name => "ASC" or "DESC"
      * @param CollectionFactoryInterface<U> $collectionFactory
+     * @param int $offset rows skipped, only with a limit
      * @return QueryInterface<U>
+     * @throws ValueException
      *
      * @internal
      */
@@ -1222,15 +1226,29 @@ class Metadata
         Connection $connection,
         QueryFactoryInterface $queryFactory,
         CollectionFactoryInterface $collectionFactory,
-        bool $forcePrimary = false
+        bool $forcePrimary = false,
+        int $offset = 0
     ): QueryInterface {
         $fields = array_keys($this->fields);
         $queryGenerator = $this->queryGenerator($connection, $queryFactory, $fields);
         $this->assertCriteriaNotEmpty($criteria, 'Repository::getBy()');
         $criteriaColumn = $this->convertCriteria($criteria, 'the criteria of Repository::getBy()');
         $orderColumn = $this->getColumnsFromOrder($orderBy);
+        if ($offset < 0) {
+            throw new ValueException('Negative offset in Repository::getBy()');
+        }
+        if ($offset > 0 && $limit <= 0) {
+            throw new ValueException('An offset needs a limit in Repository::getBy()');
+        }
 
-        return $queryGenerator->getByCriteria($criteriaColumn, $collectionFactory, $forcePrimary, $orderColumn, $limit);
+        return $queryGenerator->getByCriteria(
+            $criteriaColumn,
+            $collectionFactory,
+            $forcePrimary,
+            $orderColumn,
+            $limit,
+            $offset
+        );
     }
 
     /**

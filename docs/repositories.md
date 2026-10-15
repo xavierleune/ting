@@ -297,8 +297,14 @@ Two choices in this example depend on the PHP value of the serializer:
 
 ```php
 public function get(mixed $primariesKeyValue, bool $forcePrimary = false): ?object;
-public function getOneBy(array $criteria, bool $forcePrimary = false): ?object;
-public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface;
+public function getOneBy(array $criteria, bool $forcePrimary = false, array $order = []): ?object;
+public function getBy(
+    array $criteria,
+    bool $forcePrimary = false,
+    array $order = [],
+    int $limit = 0,
+    int $offset = 0
+): CollectionInterface;
 public function getAll(bool $forcePrimary = false): CollectionInterface;
 ```
 
@@ -322,6 +328,9 @@ $language = $countryLanguageRepository->get(['countryCode' => 'FRA', 'language' 
 // First entity matching the criteria
 $paris = $cityRepository->getOneBy(['name' => 'Paris']);
 
+// First entity in an order: the most recent one
+$latest = $cityRepository->getOneBy(['status' => CityStatus::Active], order: ['createdAt' => 'DESC']);
+
 // Every entity matching the criteria, ordered and limited
 $cities = $cityRepository->getBy(
     ['status' => CityStatus::Active, 'id' => [1, 2, 3]],
@@ -331,6 +340,12 @@ $cities = $cityRepository->getBy(
 foreach ($cities as $city) {
     echo $city->getName();
 }
+
+// The third page of 10 entities: an offset needs a limit
+$page = $cityRepository->getBy(['status' => CityStatus::Active], order: ['name' => 'ASC'], limit: 10, offset: 20);
+
+// The entities in an array (a list)
+$cities = $cityRepository->getBy(['id' => [1, 2, 3]])->toArray();
 
 // The whole table
 $all = $cityRepository->getAll();
@@ -391,7 +406,7 @@ public function getByIds(array $ids): array
         return [];
     }
 
-    return iterator_to_array($this->getBy(['id' => $ids]), false);
+    return $this->getBy(['id' => $ids])->toArray();
 }
 ```
 
@@ -407,8 +422,9 @@ text, not JSON documents:
 A custom serializer whose PHP value is an array implements the marker interface
 `CCMBenchmark\Ting\Serializer\ArrayValueInterface` to be serialized as a whole as well.
 
-The `$order` argument of `getBy()` is indexed by property name, with `ASC` or `DESC` (case-insensitive) as values; any
-other direction throws a `ValueException`.
+The `$order` argument of `getBy()` and `getOneBy()` is indexed by property name, with `ASC` or `DESC`
+(case-insensitive) as values; any other direction throws a `ValueException`. So does an `$offset` without `$limit`, or a
+negative one.
 
 For anything else (joins, `OR`, aggregates...), write the query: see below.
 
@@ -528,6 +544,22 @@ whatever the name of their connection in the configuration (with PostgreSQL, the
 Parameters that differ open distinct connections, with distinct transactions, even when they reach the same server
 (a host name and its IP address, two users).
 
+`transactional()` runs a callback in a transaction: it commits when the callback returns, and rolls back then throws
+the exception again when it throws. It returns what the callback returns:
+
+```php
+$city = $cityRepository->transactional(function () use ($cityRepository, $countryRepository, $country): City {
+    $city = new City();
+    $city->setName('Lyon');
+    $cityRepository->save($city);
+    $countryRepository->save($country);
+
+    return $city;
+});
+```
+
+The same, written by hand:
+
 ```php
 $cityRepository->startTransaction();
 try {
@@ -539,6 +571,9 @@ try {
 }
 $cityRepository->commit();
 ```
+
+When the rollback itself fails (a lost connection), `transactional()` throws the exception of the callback, which
+explains the failure.
 
 To retry after a rollback (a deadlock, say), push the new entities again as they are: inserted in the rolled back
 transaction, they are no longer managed and are inserted again, their id replaced by the new one. A copy of the old id

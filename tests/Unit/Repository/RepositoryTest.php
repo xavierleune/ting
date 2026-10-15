@@ -34,6 +34,7 @@ use CCMBenchmark\Ting\Connection;
 use CCMBenchmark\Ting\ConnectionPool;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver;
 use CCMBenchmark\Ting\Driver\Mysqli\Result;
+use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\Cached\PreparedQuery as CachedPreparedQuery;
@@ -261,6 +262,54 @@ class RepositoryTest extends TestCase
         $bouhRepository->startTransaction();
         $bouhRepository->rollback();
         $this->assertSame(1, $mockDriver->calls['rollback']);
+    }
+
+    public function testTransactionalShouldCommitAndReturnTheResultOfTheCallback()
+    {
+        [$repository, $driver] = $this->createTransactionalRepository();
+
+        $this->assertSame('done', $repository->transactional(function () use ($driver) {
+            $driver->log[] = 'callback';
+            return 'done';
+        }));
+        $this->assertSame(['start', 'callback', 'commit'], $driver->log);
+    }
+
+    public function testTransactionalShouldRollbackAndThrowTheExceptionOfTheCallback()
+    {
+        [$repository, $driver] = $this->createTransactionalRepository();
+        $exception = new \RuntimeException('callback failed');
+
+        $this->assertThrows(
+            \RuntimeException::class,
+            fn () => $repository->transactional(fn () => throw $exception),
+            'callback failed'
+        );
+        $this->assertSame(['start', 'rollback'], $driver->log);
+    }
+
+    public function testTransactionalShouldThrowTheExceptionOfTheCallbackWhenTheRollbackFails()
+    {
+        [$repository, $driver] = $this->createTransactionalRepository(failRollback: true);
+
+        $this->assertThrows(
+            \RuntimeException::class,
+            fn () => $repository->transactional(fn () => throw new \RuntimeException('callback failed')),
+            'callback failed'
+        );
+        $this->assertSame(['start', 'rollback'], $driver->log);
+    }
+
+    public function testTransactionalShouldNotRollbackAFailedCommit()
+    {
+        [$repository, $driver] = $this->createTransactionalRepository(failCommit: true);
+
+        $this->assertThrows(
+            TransactionException::class,
+            fn () => $repository->transactional(fn () => null),
+            'commit refused'
+        );
+        $this->assertSame(['start', 'commit'], $driver->log);
     }
 
     public function testSaveShouldCallUnitOfWorkSaveThenProcess()
@@ -999,5 +1048,61 @@ class RepositoryTest extends TestCase
                 parent::rollback();
             }
         };
+    }
+
+    /**
+     * @return array{0: BouhRepository, 1: Driver&object{log: list<string>}}
+     */
+    private function createTransactionalRepository(bool $failCommit = false, bool $failRollback = false): array
+    {
+        $services = new TingServices();
+        $services->metadataRepository()->batchLoadMetadata(
+            'tests\fixtures\model',
+            __DIR__ . '/../../fixtures/model/BouhRepository.php'
+        );
+        $driver = new class ($failCommit, $failRollback) extends Driver {
+            /** @var list<string> */
+            public array $log = [];
+
+            public function __construct(private readonly bool $failCommit, private readonly bool $failRollback)
+            {
+                parent::__construct();
+            }
+
+            public function startTransaction(): void
+            {
+                $this->log[] = 'start';
+            }
+
+            public function commit(): void
+            {
+                $this->log[] = 'commit';
+                if ($this->failCommit) {
+                    throw new TransactionException('commit refused');
+                }
+            }
+
+            public function rollback(): void
+            {
+                $this->log[] = 'rollback';
+                if ($this->failRollback) {
+                    throw new TransactionException('rollback refused');
+                }
+            }
+        };
+        $connectionPool = $this->createStub(ConnectionPool::class);
+        $connectionPool->method('primary')->willReturn($driver);
+
+        $repository = new BouhRepository(
+            $connectionPool,
+            $services->metadataRepository(),
+            $services->queryFactory(),
+            $services->collectionFactory(),
+            $services->cache(),
+            $services->unitOfWork(),
+            $services->serializerFactory()
+        );
+
+        return [$repository, $driver];
     }
 }

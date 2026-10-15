@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -73,6 +74,13 @@ interface CollectionInterface extends IteratorAggregate, Countable
      * @return \Generator<int, T>
      */
     public function getIterator(): \Generator;
+
+    /**
+     * Hydrate every row in a list
+     *
+     * @return list<T>
+     */
+    public function toArray(): array;
 
     public function count(): int;
 }

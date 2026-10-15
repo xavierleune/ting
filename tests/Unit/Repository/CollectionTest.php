@@ -59,6 +59,22 @@ class CollectionTest extends TestCase
         $this->assertSame(['prenom' => 'Sylvain', 'nom' => 'Robez-Masson'], $collection->first());
     }
 
+    public function testToArrayShouldReturnAListOfTheItems()
+    {
+        $mockMysqliResult = $this->createMysqliResult([['Sylvain'], ['Xavier']], ['prenom' => 'firstname']);
+
+        $result = new Result();
+        $result->setConnectionName('connectionName');
+        $result->setDatabase('database');
+        $result->setResult($mockMysqliResult);
+
+        $collection = new Collection();
+        $collection->set($result);
+
+        $this->assertSame([['prenom' => 'Sylvain'], ['prenom' => 'Xavier']], $collection->toArray());
+        $this->assertSame([], (new Collection())->toArray());
+    }
+
     public function testFirstShouldReturnNull()
     {
         $collection = new Collection();

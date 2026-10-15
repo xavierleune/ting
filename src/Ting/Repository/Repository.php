@@ -27,6 +27,10 @@
 namespace CCMBenchmark\Ting\Repository;
 
 use Aura\SqlQuery\QueryFactory as AuraQueryFactory;
+use Aura\SqlQuery\Common\DeleteInterface;
+use Aura\SqlQuery\Common\InsertInterface;
+use Aura\SqlQuery\Common\SelectInterface;
+use Aura\SqlQuery\Common\UpdateInterface;
 use Aura\SqlQuery\QueryInterface;
 use CCMBenchmark\Ting\Driver\Pgsql\Driver;
 use CCMBenchmark\Ting\Connection;
@@ -37,6 +41,7 @@ use CCMBenchmark\Ting\Driver\Mysqli;
 use CCMBenchmark\Ting\Driver\SphinxQL;
 use CCMBenchmark\Ting\Exceptions\DriverException;
 use CCMBenchmark\Ting\Exceptions\RepositoryException;
+use CCMBenchmark\Ting\Exceptions\TransactionException;
 use CCMBenchmark\Ting\Exceptions\ValueException;
 use CCMBenchmark\Ting\MetadataRepository;
 use CCMBenchmark\Ting\Query\QueryFactory;
@@ -164,6 +169,9 @@ abstract class Repository implements ResetInterface
 
     /**
      * @param string $type One of the QUERY_ constant
+     * @return ($type is self::QUERY_UPDATE ? UpdateInterface
+     *     : ($type is self::QUERY_DELETE ? DeleteInterface
+     *     : ($type is self::QUERY_INSERT ? InsertInterface : SelectInterface)))
      * @throws DriverException
      */
     public function getQueryBuilder(string $type): QueryInterface
@@ -243,11 +251,19 @@ abstract class Repository implements ResetInterface
      *                                       the serializer of the field, or an array (IN list, or a single value
      *                                       serialized as a whole when the serializer implements ArrayValueInterface)
      * @param array<string, string> $order property name => "ASC" or "DESC"
+     * @param int $limit 0 for no limit
+     * @param int $offset rows skipped before the first one returned, only with a limit
      * @return CollectionInterface<T>
-     * @throws ValueException on an unknown property (or a column name), an invalid value or an invalid direction
+     * @throws ValueException on an unknown property (or a column name), an invalid value, an invalid direction, or
+     *                        an offset without limit
      */
-    public function getBy(array $criteria, bool $forcePrimary = false, array $order = [], int $limit = 0): CollectionInterface
-    {
+    public function getBy(
+        array $criteria,
+        bool $forcePrimary = false,
+        array $order = [],
+        int $limit = 0,
+        int $offset = 0
+    ): CollectionInterface {
         $query = $this->metadata->getByCriteriaWithOrderAndLimit(
             $criteria,
             $order,
@@ -255,7 +271,8 @@ abstract class Repository implements ResetInterface
             $this->connection,
             $this->queryFactory,
             $this->collectionFactory,
-            (bool)$forcePrimary
+            (bool)$forcePrimary,
+            $offset
         );
 
         return $query->query($this->getCollection(new HydratorSingleObject()));
@@ -263,17 +280,19 @@ abstract class Repository implements ResetInterface
 
     /**
      * @param array<string, mixed> $criteria property name => value, as in getBy()
+     * @param array<string, string> $order property name => "ASC" or "DESC": the first entity in that order
      * @return T|null
-     * @throws ValueException on an unknown property (or a column name) or an invalid value
+     * @throws ValueException on an unknown property (or a column name), an invalid value or an invalid direction
      */
-    public function getOneBy(array $criteria, bool $forcePrimary = false): ?object
+    public function getOneBy(array $criteria, bool $forcePrimary = false, array $order = []): ?object
     {
         $query = $this->metadata->getOneByCriteria(
             $this->connection,
             $this->queryFactory,
             $this->collectionFactory,
             $criteria,
-            (bool)$forcePrimary
+            (bool)$forcePrimary,
+            $order
         );
         $collection = $query->query();
         if ($collection->count() === 0) {
@@ -338,6 +357,36 @@ abstract class Repository implements ResetInterface
     public function commit(): void
     {
         $this->connection->primary()->commit();
+    }
+
+    /**
+     * Run the callback in a transaction on the primary connection: committed when the callback returns, rolled back
+     * when it throws (the exception of the callback is then thrown again, even when the rollback fails). A failed
+     * commit leaves no transaction open: it is not followed by a rollback.
+     *
+     * @template R
+     * @param callable(): R $callback
+     * @return R the value returned by the callback
+     * @throws TransactionException when a transaction is already open on the connection, or when the database
+     *                              refuses the START TRANSACTION or the COMMIT
+     */
+    public function transactional(callable $callback): mixed
+    {
+        $this->startTransaction();
+        try {
+            $result = $callback();
+        } catch (\Throwable $exception) {
+            try {
+                $this->rollback();
+            } catch (DriverException) {
+                // The exception of the callback explains the failure better (a lost connection fails both);
+                // a failed rollback leaves no transaction open either
+            }
+            throw $exception;
+        }
+        $this->commit();
+
+        return $result;
     }
 
     /**

@@ -381,6 +381,7 @@ Interfaces and Extension Points
 * `StatementInterface::isStale(): bool`: `true` once the session the statement was prepared in is gone, so that
   prepared queries prepare it again. A statement whose connection cannot be replaced can return `false`.
 * `CollectionInterface` and `HydratorInterface`: `count(): int` and `getIterator(): \Generator`.
+* `CollectionInterface::toArray(): array` (the items in a list), added after 4.0.0-rc.1.
 * `ConnectionPoolInterface`, `StatementInterface` and `QueryInterface` no longer declare a constructor.
 
 ### Optional driver interfaces
@@ -494,7 +495,9 @@ return type, the same or wider parameter types, and the optional parameters of t
 * **A collection factory** implementing `CollectionFactoryInterface` must declare `get(): Collection`.
 * **A repository overriding a method of `Repository`** must copy its 4.0 signature, e.g.
   `public function getAll(bool $forcePrimary = false): CollectionInterface` (was `getAll($forceMaster = false)`); an
-  override of `getCollection()` must return `Collection`.
+  override of `getCollection()` must return `Collection`. `getBy()` gained an `int $offset = 0` parameter and
+  `getOneBy()` an `array $order = []` parameter after 4.0.0-rc.1, and `Repository` new methods (`transactional()`):
+  a repository declaring a method of the same name must rename it or match its signature.
 * **Serializers** implementing `SerializeInterface` / `UnserializeInterface` must declare a return type (`mixed` or
   narrower); a class extending a built-in serializer must copy the return type of the method it overrides
   (`serialize($toSerialize, array $options = []): ?string` for `DateTime`).
