@@ -1372,6 +1372,48 @@ class UnitOfWorkTest extends TestCase
     }
 
     /**
+     * The getter read once the UPDATE ran, to compare the value written with the current one, changes another property:
+     * that change is kept, written by the next save
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testAChangeMadeByTheReadOfAValueWrittenShouldStayTracked()
+    {
+        $unitOfWork = $this->createRecordingUnitOfWork($queries, $failOn, $closed, $params);
+        $metadata = BouhRepository::initMetadata($this->services->serializerFactory());
+        $entity = new class extends Bouh {
+            public ?int $readsBeforeRefresh = null;
+
+            public function getName()
+            {
+                $name = parent::getName();
+                if ($name !== trim($name)) {
+                    $this->setName(trim($name));
+                }
+                if ($this->readsBeforeRefresh !== null && --$this->readsBeforeRefresh === 0) {
+                    $this->setFirstname('refreshed');
+                }
+
+                return parent::getName();
+            }
+        };
+        $entity->setName('name');
+        $entity->setFirstname('first');
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $entity->setName(' changed ');
+        // Read to know whether it is readable, read to be written, then read to compare with the value written
+        $entity->readsBeforeRefresh = 3;
+
+        $unitOfWork->pushSave($entity, $metadata)->process();
+
+        $this->assertSame('refreshed', $entity->getFirstname());
+        $this->assertTrue($unitOfWork->isPropertyChanged($entity, 'firstname'));
+        $this->assertFalse($unitOfWork->isPropertyChanged($entity, 'name'));
+        $unitOfWork->pushSave($entity, $metadata)->process();
+        $this->assertCount(3, $queries);
+        $this->assertSame('refreshed', end($params)['v1_boo_firstname'] ?? null);
+    }
+
+    /**
      * @return Document&object{onId: ?\Closure}
      */
     private function createDocumentCallingBackOnId(): Document

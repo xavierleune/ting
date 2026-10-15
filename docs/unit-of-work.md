@@ -78,11 +78,15 @@ entities pushed earlier. Called while `process()` runs (by a setter, a getter or
 still queued too: the running `process()` then skips the ones written. They leave the entity the running `process()` is
 writing to it (its getters and serializers are read while it is still queued), and the prepared statements are closed
 when the outermost `process()` ends. That entity, pushed again while it is written (`pushSave()`, `pushDelete()`),
-stays queued for the next `process()`. A change made to it while its `UPDATE` is built (by a getter or a serializer)
-stays tracked when the value written is not its current one (the property was read before the change), and is forgotten
-otherwise (a getter normalizing its own value); an entity being inserted is not managed yet: its changes are not
-tracked. Saving the entity being inserted from the setter of its generated id is not supported: that save runs before
-the unit of work records the id, sends an UPDATE matching no row (`WHERE id IS NULL`) and the change is lost.
+stays queued for the next `process()`. Saving the entity being inserted from the setter of its generated id is not
+supported: that save runs before the unit of work records the id, sends an UPDATE matching no row (`WHERE id IS NULL`)
+and the change is lost.
+
+A getter or a serializer may change the entity while its `UPDATE` is built, pushed again or not: such a change stays
+tracked, written by its next save, when the value written is not the current one (the property was read before the
+change), and is forgotten otherwise (a getter normalizing its own value). To compare them, the properties written and
+changed during the `UPDATE` are read again once it ran: a change those reads make is kept too. An entity being inserted
+is not managed yet: its changes are not tracked.
 
 If a query fails, `process()` closes the statements it prepared and rethrows the exception
 (`CCMBenchmark\Ting\Driver\QueryException`...). Entities written before the failure are done, the failing one is
