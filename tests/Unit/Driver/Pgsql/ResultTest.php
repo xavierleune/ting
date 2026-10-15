@@ -685,6 +685,27 @@ class ResultTest extends TestCase
                 ['users'],
                 [$column('id', 'users')],
             ],
+            // A table of a CTE ranks after every table of the main statement, however deep
+            'the same table in a CTE and in a derived table of a parenthesized main SELECT' => [
+                'WITH c AS (SELECT q.id FROM archive.book q) (SELECT id, title FROM (SELECT id, title FROM book) s)',
+                ['book', 'book'],
+                [
+                    ['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => ''],
+                    ['name' => 'title', 'orgName' => 'title', 'table' => 'book', 'schema' => ''],
+                ],
+            ],
+            'the same table in a CTE and in nested derived tables of the main SELECT' => [
+                'WITH c AS (SELECT q.id FROM archive.book q)'
+                . ' SELECT id FROM (SELECT id FROM (SELECT id FROM book) s1) s2',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => '']],
+            ],
+            'tables of nested CTEs: the closest to the main SELECT' => [
+                'WITH c AS (SELECT x.id FROM (SELECT y.id FROM archive.book y) x), d AS (SELECT z.id FROM book z)'
+                . ' (SELECT id FROM c UNION SELECT id FROM d)',
+                ['book'],
+                [['name' => 'id', 'orgName' => 'id', 'table' => 'book', 'schema' => '']],
+            ],
             'non-ASCII letters in unquoted names' => [
                 'SELECT ü.id, ü.prénom, prénom, ü.id AS clé, count(*) AS total_é, ü.name nöm FROM app.usérs AS ü',
                 ['usérs', 'usérs', 'usérs', 'usérs', false, false],
