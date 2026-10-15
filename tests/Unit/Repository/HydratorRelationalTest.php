@@ -45,10 +45,14 @@ use tests\fixtures\model\CityRepository;
 use tests\fixtures\model\CityWithPublicPropertiesRepository;
 use tests\fixtures\model\CountryWithPublicPropertiesRepository;
 
+use function array_diff_key;
+use function array_flip;
 use function array_keys;
 use function array_map;
 use function array_values;
+use function count;
 use function in_array;
+use function sprintf;
 
 use const MYSQLI_TYPE_VAR_STRING;
 
@@ -1093,12 +1097,85 @@ class HydratorRelationalTest extends TestCase
 
     public function testHydrateShouldIdentifyRootsByTheirWholeCompositeKey(): void
     {
+        // With "-" between the values, both keys of b are "Jean-Pierre-Paul-"
+        $hydrator = $this->getCompositeKeyHydrator([
+            ['Jean', 'Pierre-Paul', '7', '1', 'Paris'],
+            ['Jean-Pierre', 'Paul', '8', '2', 'Lyon'],
+        ]);
+
+        $rows = iterator_to_array($hydrator->getIterator(), false);
+
+        $this->assertSame(
+            [['Jean', 'Pierre-Paul', ['Paris']], ['Jean-Pierre', 'Paul', ['Lyon']]],
+            array_map(static fn (array $row) => [
+                $row['b']->getName(),
+                $row['b']->getFirstname(),
+                array_map(static fn ($city) => $city->getName(), array_values($row['b']->getCities())),
+            ], $rows)
+        );
+    }
+
+    /**
+     * @return array<string, array{list<list<string|null>>, list<string>, string}>
+     */
+    public static function compositeKeyWithoutValueProvider(): array
+    {
+        $message = 'The entity of the alias "b" (tests\fixtures\model\Bouh) has no value for its primary key %s: an '
+            . 'entity of a relation is identified by its primary key, every primary key column of the alias must be '
+            . 'selected and not null';
+
+        return [
+            // ("Jean", null) would identify every Jean, whatever its first name
+            'one column null' => [
+                [['Jean', null, '7', '1', 'Paris'], ['Jean', 'Paul', '8', '2', 'Lyon']],
+                [],
+                sprintf($message, 'column boo_firstname'),
+            ],
+            'one column not selected' => [
+                [['Jean', 'Pierre', '7', '1', 'Paris']],
+                ['b.firstname'],
+                sprintf($message, 'column boo_firstname'),
+            ],
+            'every column null' => [[[null, null, '7', '1', 'Paris']], [], sprintf($message, 'columns boo_name, boo_firstname')],
+            'no column selected' => [
+                [['Jean', 'Pierre', '7', '1', 'Paris']],
+                ['b.name', 'b.firstname'],
+                sprintf($message, 'columns boo_name, boo_firstname'),
+            ],
+        ];
+    }
+
+    /**
+     * @param list<list<string|null>> $rows
+     * @param list<string> $notSelected
+     */
+    #[DataProvider('compositeKeyWithoutValueProvider')]
+    public function testHydrateRejectsAnEntityOfARelationWithoutItsWholeCompositeKey(
+        array $rows,
+        array $notSelected,
+        string $message
+    ): void {
+        $hydrator = $this->getCompositeKeyHydrator($rows, $notSelected);
+
+        $this->assertThrows(HydratorException::class, fn () => iterator_to_array($hydrator->getIterator()), $message);
+    }
+
+    /**
+     * A hydrator giving c to b, over rows (b.name, b.firstname, b.id, c.id, c.name): the primary key of b is (name,
+     * firstname)
+     *
+     * @param list<list<string|null>> $rows
+     * @param list<string> $notSelected columns ("alias.field") left out of the result, their values ignored
+     */
+    private function getCompositeKeyHydrator(array $rows, array $notSelected = []): HydratorRelational
+    {
         $services = new TingServices();
         $tables = [
-            ['tests\fixtures\model\Bouh', 'T_BOUH_BOO', 'b', ['name' => 'boo_name', 'firstname' => 'boo_firstname'], ['name', 'firstname']],
+            ['tests\fixtures\model\Bouh', 'T_BOUH_BOO', 'b', ['name' => 'boo_name', 'firstname' => 'boo_firstname', 'id' => 'boo_id'], ['name', 'firstname']],
             ['tests\fixtures\model\City', 'T_CITY_CIT', 'c', ['id' => 'cit_id', 'name' => 'cit_name'], ['id']],
         ];
         $fields = [];
+        $fieldsLeftOut = [];
         foreach ($tables as [$entity, $table, $alias, $columns, $primaries]) {
             $metadata = new Metadata($services->serializerFactory());
             $metadata->setConnectionName('connectionName');
@@ -1113,6 +1190,11 @@ class HydratorRelationalTest extends TestCase
                     'type'       => 'string',
                 ]);
 
+                if (in_array($alias . '.' . $fieldName, $notSelected, true)) {
+                    $fieldsLeftOut[] = count($fields) + count($fieldsLeftOut);
+                    continue;
+                }
+
                 $field = new \stdClass();
                 $field->name     = $columnName;
                 $field->orgname  = $columnName;
@@ -1124,8 +1206,10 @@ class HydratorRelationalTest extends TestCase
             $services->metadataRepository()->addMetadata($entity . 'Repository', $metadata);
         }
 
-        // With "-" between the values, both keys of b are "Jean-Pierre-Paul-"
-        $mockMysqliResult = new MysqliResult([['Jean', 'Pierre-Paul', '1', 'Paris'], ['Jean-Pierre', 'Paul', '2', 'Lyon']]);
+        $mockMysqliResult = new MysqliResult(array_map(
+            static fn (array $row): array => array_values(array_diff_key($row, array_flip($fieldsLeftOut))),
+            $rows
+        ));
         $mockMysqliResult->setFields($fields);
         $result = new Result();
         $result->setResult($mockMysqliResult);
@@ -1136,17 +1220,9 @@ class HydratorRelationalTest extends TestCase
         $hydrator->setMetadataRepository($services->metadataRepository());
         $hydrator->setUnitOfWork($services->unitOfWork());
         $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('b'), 'citiesAre'));
+        $hydrator->setResult($result);
 
-        $rows = iterator_to_array($hydrator->setResult($result)->getIterator(), false);
-
-        $this->assertSame(
-            [['Jean', 'Pierre-Paul', ['Paris']], ['Jean-Pierre', 'Paul', ['Lyon']]],
-            array_map(static fn (array $row) => [
-                $row['b']->getName(),
-                $row['b']->getFirstname(),
-                array_map(static fn ($city) => $city->getName(), array_values($row['b']->getCities())),
-            ], $rows)
-        );
+        return $hydrator;
     }
 
     public function testHydrateRejectsABidirectionalRelation(): void
@@ -1245,9 +1321,127 @@ class HydratorRelationalTest extends TestCase
     }
 
     /**
-     * A hydrator over rows (bouh.id, bouh.name, c.id, c.name, dep.id, auth.id).
+     * @return array<string, array{list<list<int|string|null>>, list<string>, string}>
      */
-    private function getTreeHydrator(TingServices $services, array $rows): HydratorRelational
+    public static function rowWithoutPrimaryKeyProvider(): array
+    {
+        $message = static fn (string $alias, string $entity, string $column): string => sprintf(
+            'The entity of the alias "%s" (%s) has no value for its primary key column %s: an entity of a relation is '
+            . 'identified by its primary key, every primary key column of the alias must be selected and not null',
+            $alias,
+            $entity,
+            $column
+        );
+
+        return [
+            // The books of author 1 and author 2 were merged under one key: author 2 got the first city only
+            'source not selected' => [
+                [[1, 'Leune', 10, 'Paris', 100, 1000], [1, 'Leune', 11, 'Lyon', 100, 1000], [2, 'Robez', 12, 'Nancy', 100, 1000]],
+                ['c.id'],
+                $message('c', 'tests\fixtures\model\City', 'cit_id'),
+            ],
+            'source null' => [
+                [[1, 'Leune', null, 'Paris', 100, 1000], [2, 'Robez', null, 'Nancy', 100, 1000]],
+                [],
+                $message('c', 'tests\fixtures\model\City', 'cit_id'),
+            ],
+            'root not selected' => [
+                [[1, 'Leune', 10, 'Paris', 100, 1000], [2, 'Robez', 12, 'Nancy', 100, 1000]],
+                ['bouh.id'],
+                $message('bouh', 'tests\fixtures\model\Bouh', 'boo_id'),
+            ],
+            'root null' => [
+                [[null, 'Leune', 10, 'Paris', 100, 1000]],
+                [],
+                $message('bouh', 'tests\fixtures\model\Bouh', 'boo_id'),
+            ],
+        ];
+    }
+
+    /**
+     * @param list<list<int|string|null>> $rows
+     * @param list<string> $notSelected
+     */
+    #[DataProvider('rowWithoutPrimaryKeyProvider')]
+    public function testHydrateRejectsAnEntityOfARelationWithoutPrimaryKey(
+        array $rows,
+        array $notSelected,
+        string $message
+    ): void {
+        $hydrator = $this->getTreeHydrator(new TingServices(), $rows, $notSelected);
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+
+        $this->assertThrows(HydratorException::class, fn () => iterator_to_array($hydrator->getIterator()), $message);
+    }
+
+    public function testHydrateIgnoresTheMissingPrimaryKeyOfAnAliasOutOfTheRelations(): void
+    {
+        $hydrator = $this->getTreeHydrator(
+            new TingServices(),
+            [[1, 'Leune', 10, 'Paris', 100, 1000], [1, 'Leune', 11, 'Lyon', 100, 1000]],
+            ['dep.id']
+        );
+        $hydrator->addRelation(new RelationMany(new AggregateFrom('c'), new AggregateTo('bouh'), 'citiesAre'));
+
+        $rows = iterator_to_array($hydrator->getIterator(), false);
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(
+            ['Paris', 'Lyon'],
+            array_map(static fn ($city) => $city->getName(), array_values($rows[0]['bouh']->getCities()))
+        );
+    }
+
+    public function testHydrateRejectsAnEntityWithATypedPrimaryKeyNotSelected(): void
+    {
+        $services = new TingServices();
+        $metadataCity = CityWithPublicPropertiesRepository::initMetadata($services->serializerFactory());
+        $metadataCountry = CountryWithPublicPropertiesRepository::initMetadata($services->serializerFactory());
+        $services->metadataRepository()->addMetadata($metadataCity->getEntity(), $metadataCity);
+        $services->metadataRepository()->addMetadata($metadataCountry->getEntity(), $metadataCountry);
+
+        $field = static function (string $name, string $table, string $orgTable): \stdClass {
+            $field = new \stdClass();
+            $field->name     = $name;
+            $field->orgname  = $name;
+            $field->table    = $table;
+            $field->orgtable = $orgTable;
+            $field->type     = MYSQLI_TYPE_VAR_STRING;
+
+            return $field;
+        };
+        // public int $id is left uninitialized: Symfony's PropertyAccessor threw an UninitializedPropertyException
+        $mockMysqliResult = new MysqliResult([['Paris', 2, 'France'], ['Lyon', 2, 'France']]);
+        $mockMysqliResult->setFields([
+            $field('name', 'city', 'T_CITY_PUB'),
+            $field('id', 'country', 'T_COUNTRY_PUB'),
+            $field('name', 'country', 'T_COUNTRY_PUB'),
+        ]);
+        $result = new Result();
+        $result->setResult($mockMysqliResult);
+        $result->setConnectionName('main');
+        $result->setDatabase('database');
+
+        $hydrator = new HydratorRelational();
+        $hydrator->setMetadataRepository($services->metadataRepository());
+        $hydrator->setUnitOfWork($services->unitOfWork());
+        $hydrator->addRelation(new RelationOne(new AggregateFrom('country'), new AggregateTo('city'), 'setCountry'));
+
+        $this->assertThrows(
+            HydratorException::class,
+            fn () => iterator_to_array($hydrator->setResult($result)->getIterator()),
+            'The entity of the alias "city" (tests\fixtures\model\CityWithPublicProperties) has no value for its '
+            . 'primary key column id: an entity of a relation is identified by its primary key, every primary key '
+            . 'column of the alias must be selected and not null'
+        );
+    }
+
+    /**
+     * A hydrator over rows (bouh.id, bouh.name, c.id, c.name, dep.id, auth.id).
+     *
+     * @param list<string> $notSelected columns ("alias.field") left out of the result, their values ignored
+     */
+    private function getTreeHydrator(TingServices $services, array $rows, array $notSelected = []): HydratorRelational
     {
         $tables = [
             ['tests\fixtures\model\Bouh', 'T_BOUH_BOO', 'bouh', ['id' => 'boo_id', 'name' => 'boo_name']],
@@ -1256,6 +1450,7 @@ class HydratorRelationalTest extends TestCase
             ['tests\fixtures\model\Authority', 'T_AUTHORITY', 'auth', ['id' => 'authority_id']],
         ];
         $fields = [];
+        $fieldsLeftOut = [];
         foreach ($tables as [$entity, $table, $alias, $columns]) {
             $metadata = new Metadata($services->serializerFactory());
             $metadata->setConnectionName('connectionName');
@@ -1270,6 +1465,11 @@ class HydratorRelationalTest extends TestCase
                     'type'       => $fieldName === 'id' ? 'int' : 'string',
                 ]);
 
+                if (in_array($alias . '.' . $fieldName, $notSelected, true)) {
+                    $fieldsLeftOut[] = count($fields) + count($fieldsLeftOut);
+                    continue;
+                }
+
                 $field = new \stdClass();
                 $field->name     = $fieldName;
                 $field->orgname  = $columnName;
@@ -1281,6 +1481,10 @@ class HydratorRelationalTest extends TestCase
             $services->metadataRepository()->addMetadata($entity . 'Repository', $metadata);
         }
 
+        $rows = array_map(
+            static fn (array $row): array => array_values(array_diff_key($row, array_flip($fieldsLeftOut))),
+            $rows
+        );
         $mockMysqliResult = new MysqliResult($rows);
         $mockMysqliResult->setFieldsCallback(static fn () => $fields);
 
