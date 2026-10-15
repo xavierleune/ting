@@ -33,6 +33,7 @@ use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
 use tests\fixtures\model\AsymmetricVisibilityChild;
 use tests\fixtures\model\AsymmetricVisibilityEntity;
+use tests\fixtures\model\AsymmetricVisibilityMutators;
 use tests\fixtures\model\CustomGetterEntity;
 use tests\fixtures\model\HookedPropertiesEntity;
 use tests\fixtures\model\PublicPropertiesEntity;
@@ -107,6 +108,24 @@ class PropertyAccessorTest extends TestCase
         $accessor->setValue($entity, 'withSetter', 'value', null);
 
         $this->assertSame('value (setter)', $entity->withSetter);
+    }
+
+    /**
+     * Written by reflection when the Symfony property accessor has no method to write it with (__set() is not one of
+     * them), through its adder and remover or its getter-setter otherwise, whatever the Symfony version
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldWriteAPropertyWithAsymmetricVisibilityThroughTheMethodsOfTheSymfonyAccessor()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new AsymmetricVisibilityMutators();
+        $accessor->setValue($entity, 'magic', 'value', null);
+        $accessor->setValue($entity, 'items', ['a', 'b'], null);
+        $accessor->setValue($entity, 'name', 'value', null);
+
+        $this->assertSame('value', $entity->magic);
+        $this->assertSame(['a (adder)', 'b (adder)'], $entity->items);
+        $this->assertSame('value (getter-setter)', $entity->name);
     }
 
     /**
