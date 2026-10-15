@@ -211,7 +211,8 @@ builder for the dialect of the repository's connection (MySQL or PostgreSQL). `$
 `Repository::QUERY_SELECT`, `QUERY_INSERT`, `QUERY_UPDATE` or `QUERY_DELETE` constants. Turn the builder into SQL with
 `getStatement()` and run it with a Ting query: Aura's named placeholders are the same as Ting's. The return type
 follows `$type` (`SelectInterface` for `QUERY_SELECT`, `UpdateInterface`... of `Aura\SqlQuery\Common`), so static
-analysis needs no `@var`.
+analysis needs no `@var` for the methods common to every dialect; a method of one dialect (PostgreSQL `returning()`,
+MySQL `UPDATE ... LIMIT`) still needs one.
 
 ```php
 public function findWithBuilder(string $name): CollectionInterface

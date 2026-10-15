@@ -573,7 +573,8 @@ $cityRepository->commit();
 ```
 
 When the rollback itself fails (a lost connection), `transactional()` throws the exception of the callback, which
-explains the failure.
+explains the failure. The callback must not call `commit()` or `rollback()`: `transactional()` would then throw a
+`TransactionException` ("Cannot commit no transaction").
 
 To retry after a rollback (a deadlock, say), push the new entities again as they are: inserted in the rolled back
 transaction, they are no longer managed and are inserted again, their id replaced by the new one. A copy of the old id

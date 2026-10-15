@@ -381,7 +381,8 @@ Interfaces and Extension Points
 * `StatementInterface::isStale(): bool`: `true` once the session the statement was prepared in is gone, so that
   prepared queries prepare it again. A statement whose connection cannot be replaced can return `false`.
 * `CollectionInterface` and `HydratorInterface`: `count(): int` and `getIterator(): \Generator`.
-* `CollectionInterface::toArray(): array` (the items in a list), added after 4.0.0-rc.1.
+* `CollectionInterface::toArray(): array` (the items in a list), added after 4.0.0-rc.1: a subclass of `Collection`
+  declaring a `toArray()` method must declare it `toArray(): array`.
 * `ConnectionPoolInterface`, `StatementInterface` and `QueryInterface` no longer declare a constructor.
 
 ### Optional driver interfaces
