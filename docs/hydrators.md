@@ -130,6 +130,14 @@ PostgreSQL names some of these other expressions (`'x'::text` `text`, `CASE ... 
 
 Two columns of the same name overwrite each other.
 
+With PostgreSQL, the table of a column is the one the server reports, which follows a column of a derived table or a
+CTE back to its base table. A base column renamed there is hydrated into an entity of its base table under its outer
+name, as with 3.13: in `SELECT s.id, s.cnt FROM (SELECT b.author_id AS id, count(*) AS cnt FROM book b GROUP BY
+b.author_id) s`, `s.id` is read as the column `id` of `book`, so the row holds under `s` a `Book` whose id is the id
+of the author, managed by the unit of work. Keep the name of the base column (`SELECT s.author_id ... (SELECT
+b.author_id ...) s`: the column `author_id` of `book`), or make it an expression that keeps no base column
+(`b.author_id + 0 AS id`, `b.name || '' AS label`): the value then goes to the `0` object.
+
 ## HydratorSingleObject
 
 The default hydrator is designed for queries returning several objects per row. When a query reads a single entity,
