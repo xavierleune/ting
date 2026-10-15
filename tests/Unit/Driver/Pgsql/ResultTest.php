@@ -1046,6 +1046,76 @@ class ResultTest extends TestCase
                 [],
                 [['name' => 'x', 'orgName' => 'a', 'table' => 'c', 'schema' => '']],
             ],
+            'WITH query whose main SELECT is parenthesized' => [
+                'WITH x AS (SELECT 1 AS a) (SELECT x.a FROM x)',
+                [false],
+                [['name' => 'a', 'orgName' => 'a', 'table' => 'x', 'schema' => '']],
+            ],
+            'WITH query whose parenthesized main SELECT starts a UNION' => [
+                'WITH c AS (SELECT 1 q) (SELECT u.name AS label FROM app.users u LIMIT 1)'
+                . ' UNION ALL SELECT o.title FROM app.other o',
+                [],
+                [['name' => 'label', 'orgName' => 'name', 'table' => 'u', 'schema' => 'app']],
+            ],
+            'WITH query whose parenthesized main SELECT without FROM starts a UNION' => [
+                'WITH c AS (SELECT 1 q) (SELECT 1 AS x, 2 AS y) UNION SELECT 3, 4',
+                [],
+                [
+                    ['name' => 'x', 'orgName' => '1', 'table' => '', 'schema' => ''],
+                    ['name' => 'y', 'orgName' => '2', 'table' => '', 'schema' => ''],
+                ],
+            ],
+            'parenthesized WITH query whose parenthesized main SELECT starts a UNION' => [
+                '(WITH c AS (SELECT 1 q) (SELECT u.name AS label FROM app.users u)'
+                . ' UNION ALL SELECT o.title FROM app.other o)',
+                [],
+                [['name' => 'label', 'orgName' => 'name', 'table' => 'u', 'schema' => 'app']],
+            ],
+            'WITH query whose main SELECT is in nested parentheses' => [
+                'WITH c AS (SELECT 1 q) ((SELECT 1 AS x, c.q FROM c)) UNION ((SELECT 2, 3))',
+                [],
+                [
+                    ['name' => 'x', 'orgName' => '1', 'table' => '', 'schema' => ''],
+                    ['name' => 'q', 'orgName' => 'q', 'table' => 'c', 'schema' => ''],
+                ],
+            ],
+            'WITH query with comments around the parenthesis of its main SELECT' => [
+                "WITH c AS (SELECT 1 q)/* ( */( -- (\n SELECT 1 AS x) INTERSECT SELECT 1",
+                [],
+                [['name' => 'x', 'orgName' => '1', 'table' => '', 'schema' => '']],
+            ],
+            'WITH query with several CTEs before its parenthesized main SELECT' => [
+                'WITH a (x) AS MATERIALIZED (SELECT 1), b AS NOT MATERIALIZED (SELECT 2 y)'
+                . ' (SELECT a.x AS v, b.y FROM a, b) EXCEPT SELECT 1, 2',
+                [],
+                [
+                    ['name' => 'v', 'orgName' => 'x', 'table' => 'a', 'schema' => ''],
+                    ['name' => 'y', 'orgName' => 'y', 'table' => 'b', 'schema' => ''],
+                ],
+            ],
+            'WITH RECURSIVE query with SEARCH before its parenthesized main SELECT' => [
+                'WITH RECURSIVE t (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM t WHERE n < 3)'
+                . ' SEARCH DEPTH FIRST BY n SET ord (SELECT t.n AS v FROM t ORDER BY ord) UNION ALL SELECT 0',
+                [],
+                [['name' => 'v', 'orgName' => 'n', 'table' => 't', 'schema' => '']],
+            ],
+            'WITH RECURSIVE query with CYCLE before its parenthesized main SELECT' => [
+                'WITH RECURSIVE t (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM t WHERE n < 3)'
+                . ' CYCLE n SET is_cycle USING path (SELECT t.n AS v FROM t)',
+                [],
+                [['name' => 'v', 'orgName' => 'n', 'table' => 't', 'schema' => '']],
+            ],
+            'WITH query with a data-modifying CTE before its parenthesized main SELECT' => [
+                'WITH d AS (DELETE FROM app.users u WHERE u.id = 1 RETURNING u.id)'
+                . ' (SELECT d.id AS removed FROM d) EXCEPT SELECT 2',
+                [],
+                [['name' => 'removed', 'orgName' => 'id', 'table' => 'd', 'schema' => '']],
+            ],
+            'WITH query whose parenthesized main SELECT is a WITH query' => [
+                'WITH c AS (SELECT 1 q) (WITH d AS (SELECT 2 r) SELECT d.r AS z FROM d) UNION SELECT 3',
+                [],
+                [['name' => 'z', 'orgName' => 'r', 'table' => 'd', 'schema' => '']],
+            ],
             'aliases named normalized' => [
                 'SELECT u.name normalized, f(x) normalized, x || y normalized, x IS NOT NFKD NORMALIZED FROM users u',
                 ['users'],

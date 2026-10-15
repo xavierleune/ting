@@ -210,7 +210,7 @@ class Result implements ResultInterface
         [$tokensWithCase, $severalStatements] = self::lastStatement(self::tokenize($query));
         $tokens = array_map(strtolower(...), $tokensWithCase);
         $comparisonFroms = self::findComparisonFroms($tokens);
-        $selectDepth = self::findMainSelectDepth($tokens);
+        [$selectDepth, $mainSelect] = self::findMainSelect($tokens);
 
         [$tableToAlias, $aliasToSchema, $derivedTables] = $this->findTables(
             $tokensWithCase,
@@ -364,7 +364,13 @@ class Result implements ResultInterface
             }
 
             // The columns of the main SELECT: not those of a sub-query, nor of the CTEs of a WITH query
-            if ($token === 'select' && $brackets === $selectDepth && !($isAlias && $startCapture) && !$isField) {
+            if (
+                $token === 'select'
+                && $brackets === $selectDepth
+                && $index >= $mainSelect
+                && !($isAlias && $startCapture)
+                && !$isField
+            ) {
                 $startCapture = true;
                 $firstColumn = self::findFirstColumn($tokens, $index);
             }
@@ -974,25 +980,124 @@ class Result implements ResultInterface
     }
 
     /**
-     * Depth of the parentheses around the main SELECT: 0, unless the query starts with parentheses around a SELECT,
-     * as (SELECT ...) UNION ALL (SELECT ...) or (SELECT ... LIMIT 1) UNION ALL SELECT ...: the columns are those of
-     * that first SELECT, as PostgreSQL names them. A WITH query within them, (WITH c AS (...) SELECT ...), has its
-     * main SELECT at their depth, its CTEs deeper
+     * Depth of the parentheses around the main SELECT, and the position from which it is looked for: 0, unless the
+     * query starts with parentheses around a SELECT, as (SELECT ...) UNION ALL (SELECT ...) or
+     * (SELECT ... LIMIT 1) UNION ALL SELECT ...: the columns are those of that first SELECT, as PostgreSQL names them.
+     * A WITH query, in parentheses or not, has its main SELECT after its CTEs, at their depth, or deeper when it is
+     * itself in parentheses: WITH c AS (...) (SELECT ...) UNION SELECT ...
+     *
+     * @param list<string> $tokens lowercase tokens
+     * @return array{int, int} depth, position
+     */
+    private static function findMainSelect(array $tokens): array
+    {
+        return self::findMainSelectFrom($tokens, 0, 0) ?? [0, 0];
+    }
+
+    /**
+     * The main SELECT of the query starting at $index, at $depth: null when it starts with no SELECT nor WITH
+     *
+     * @param list<string> $tokens lowercase tokens
+     * @return array{int, int}|null depth, position
+     */
+    private static function findMainSelectFrom(array $tokens, int $index, int $depth): ?array
+    {
+        for (; isset($tokens[$index]); $index++) {
+            if ($tokens[$index] === '(') {
+                $depth++;
+            } elseif (!self::isBlank($tokens[$index])) {
+                break;
+            }
+        }
+        $token = $tokens[$index] ?? '';
+        if ($token === 'select') {
+            return [$depth, $index];
+        }
+        if ($token !== 'with') {
+            return null;
+        }
+
+        // The main statement after the CTEs: one starting with parentheses is looked for in them
+        $body = self::skipCtes($tokens, $index);
+        if ($body === null) {
+            return [$depth, $index];
+        }
+
+        return ($tokens[$body] === '(' ? self::findMainSelectFrom($tokens, $body, $depth) : null) ?? [$depth, $body];
+    }
+
+    /**
+     * Position of the statement following the CTEs of the WITH at $with: after each
+     * name [(columns)] AS [NOT] [MATERIALIZED] (...) [SEARCH ... SET column] [CYCLE ... USING column], separated by
+     * commas; null when they are not read as such
      *
      * @param list<string> $tokens lowercase tokens
      */
-    private static function findMainSelectDepth(array $tokens): int
+    private static function skipCtes(array $tokens, int $with): ?int
     {
-        $leading = 0;
-        foreach ($tokens as $token) {
-            if ($token === '(') {
-                $leading++;
-            } elseif (!self::isBlank($token)) {
-                return $token === 'select' || $token === 'with' ? $leading : 0;
+        $index = self::nextSignificant($tokens, $with);
+        if (($tokens[$index] ?? '') === 'recursive') {
+            $index = self::nextSignificant($tokens, $index);
+        }
+        while (true) {
+            // After the name, its column list
+            $index = self::nextSignificant($tokens, $index);
+            if (($tokens[$index] ?? '') === '(') {
+                $index = self::nextSignificant($tokens, self::skipParentheses($tokens, $index));
+            }
+            if (($tokens[$index] ?? '') !== 'as') {
+                return null;
+            }
+            $index = self::nextSignificant($tokens, $index);
+            if (($tokens[$index] ?? '') === 'not') {
+                $index = self::nextSignificant($tokens, $index);
+            }
+            if (($tokens[$index] ?? '') === 'materialized') {
+                $index = self::nextSignificant($tokens, $index);
+            }
+            if (($tokens[$index] ?? '') !== '(') {
+                return null;
+            }
+            $index = self::nextSignificant($tokens, self::skipParentheses($tokens, $index));
+            // SEARCH ... SET column, CYCLE ... USING column: their last keyword is followed by a column
+            foreach (['search' => 'set', 'cycle' => 'using'] as $clause => $last) {
+                if (($tokens[$index] ?? '') !== $clause) {
+                    continue;
+                }
+                while (isset($tokens[$index]) && $tokens[$index] !== $last) {
+                    $index = $tokens[$index] === '('
+                        ? self::nextSignificant($tokens, self::skipParentheses($tokens, $index))
+                        : self::nextSignificant($tokens, $index);
+                }
+                $index = self::nextSignificant($tokens, self::nextSignificant($tokens, $index));
+            }
+            if (!isset($tokens[$index])) {
+                return null;
+            }
+            if ($tokens[$index] !== ',') {
+                return $index;
+            }
+            $index = self::nextSignificant($tokens, $index);
+        }
+    }
+
+    /**
+     * Position of the parenthesis closing the one at $open, past the last token when it is never closed
+     *
+     * @param list<string> $tokens
+     */
+    private static function skipParentheses(array $tokens, int $open): int
+    {
+        $depth = 0;
+        for ($index = $open; isset($tokens[$index]); $index++) {
+            if ($tokens[$index] === '(') {
+                $depth++;
+            } elseif ($tokens[$index] === ')' && --$depth === 0) {
+                return $index;
             }
         }
 
-        return 0;
+        return $index;
     }
 
     /**
