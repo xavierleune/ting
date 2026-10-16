@@ -456,24 +456,29 @@ class Hydrator implements HydratorInterface
         $readColumns    = []; // Columns set on each entity created by this row
         $rawValues      = []; // Raw values of the mutable fields set on each entity created by this row
         foreach ($columns as $column) {
-            $column = $this->withColumnOfMetadata($column, $columns);
+            $table = $column['table'];
+            // The column under the name of its metadata: the same name in most cases, known without a call
+            if (\is_string($this->columnsOfMetadata[$table][$column['orgName']] ?? null) === false) {
+                $column = $this->withColumnOfMetadata($column, $columns);
+            }
+            $metadata = $this->metadataList[$table] ?? null;
 
             // Bypass if an entity has already been hydrated with this column
             if (
-                \array_key_exists($column['table'], $fromReferences)
-                && \array_key_exists($column['table'], $this->metadataList)
-                && $this->metadataList[$column['table']]->hasColumn($column['orgName'])
+                isset($fromReferences[$table])
+                && $metadata !== null
+                && $metadata->hasColumn($column['orgName'])
             ) {
                 continue;
             }
 
             // We have the information table, it's not a virtual column like COUNT(*)
-            if (isset($result[$column['table']]) === false && isset($this->metadataList[$column['table']]) === false) {
+            if ($metadata === null && isset($result[$table]) === false) {
                 $schema = $this->extractSchemaFromColumn($column);
                 $metadataRepository->findMetadataForTable(
                     $connectionName,
                     // objectDatabaseIs() applies to its alias only, not to the tables read after it
-                    $this->objectDatabase[$column['table']] ?? $database,
+                    $this->objectDatabase[$table] ?? $database,
                     $schema,
                     $column['orgTable'],
 
@@ -491,64 +496,57 @@ class Hydrator implements HydratorInterface
                     ]
                 );
                 $column = $this->withColumnOfMetadata($column, $columns);
+                $metadata = $this->metadataList[$table] ?? null;
             }
 
-            if (isset($this->metadataList[$column['table']])) {
+            $orgName = $column['orgName'];
+            $mapped = $metadata !== null && $metadata->hasColumn($orgName);
+            if ($metadata !== null) {
                 if (
-                    $this->identityMap
-                    && $this->metadataList[$column['table']]->hasColumn($column['orgName'])
-                    && ($ref = $rowReferences[$column['table']] ??= $this->referenceFromColumns($column['table'], $columns)) !== false
+                    $mapped
+                    && $this->identityMap
+                    && ($ref = $rowReferences[$table] ??= $this->referenceFromColumns($table, $columns)) !== false
                     && isset($this->references[$ref]) === true
                 ) {
                     // This entity was already created and stored into references
                     // If identityMap is enabled, reuse the same object
-                    $result[$column['table']] = $this->references[$ref];
-                    $validEntities[$column['table']]  = true;
-                    $fromReferences[$column['table']] = true;
-                    $this->keepPropertiesNotReadOfDetached($column['table'], $result[$column['table']], $columns);
+                    $result[$table] = $this->references[$ref];
+                    $validEntities[$table]  = true;
+                    $fromReferences[$table] = true;
+                    $this->keepPropertiesNotReadOfDetached($table, $result[$table], $columns);
                     continue;
                 }
 
-                if (isset($result[$column['table']]) === false) {
-                    $result[$column['table']]      = $this->metadataList[$column['table']]->createEntity();
-                    $tmpEntities[$column['table']] = [];
+                if (isset($result[$table]) === false) {
+                    $result[$table]      = $metadata->createEntity();
+                    $tmpEntities[$table] = [];
                 }
             }
 
             // We have a metadata defined for the column
-            if (isset($this->metadataList[$column['table']]) &&
-                $this->metadataList[$column['table']]->hasColumn($column['orgName']) === true
-            ) {
+            if ($mapped) {
                 // Column value is null or entity is still not marked as valid
-                if ($column['value'] === null && isset($validEntities[$column['table']]) === false) {
-                    $tmpEntities[$column['table']][$column['orgName']] = $result[$column['table']];
+                if ($column['value'] === null && isset($validEntities[$table]) === false) {
+                    $tmpEntities[$table][$orgName] = $result[$table];
                 } else {
                     // Entity was previously marked as a temporary entity, we set all previous columns retrieved
-                    if (isset($tmpEntities[$column['table']]) && $tmpEntities[$column['table']] !== []) {
-                        foreach ($tmpEntities[$column['table']] as $entityColumn => $entity) {
-                            $this->metadataList[$column['table']]->setEntityProperty(
-                                $entity,
-                                $entityColumn,
-                                null
-                            );
-                            $readColumns[$column['table']][$entityColumn] = true;
-                            if (isset($this->mutableColumns[$column['table']][$entityColumn])) {
-                                $rawValues[$column['table']][$this->mutableColumns[$column['table']][$entityColumn]] = null;
+                    if (isset($tmpEntities[$table]) && $tmpEntities[$table] !== []) {
+                        foreach ($tmpEntities[$table] as $entityColumn => $entity) {
+                            $metadata->setEntityProperty($entity, $entityColumn, null);
+                            $readColumns[$table][$entityColumn] = true;
+                            if (isset($this->mutableColumns[$table][$entityColumn])) {
+                                $rawValues[$table][$this->mutableColumns[$table][$entityColumn]] = null;
                             }
                         }
-                        unset($tmpEntities[$column['table']]);
+                        unset($tmpEntities[$table]);
                     }
 
-                    $validEntities[$column['table']] = true;
+                    $validEntities[$table] = true;
 
-                    $this->metadataList[$column['table']]->setEntityProperty(
-                        $result[$column['table']],
-                        $column['orgName'],
-                        $column['value']
-                    );
-                    $readColumns[$column['table']][$column['orgName']] = true;
-                    if (isset($this->mutableColumns[$column['table']][$column['orgName']])) {
-                        $rawValues[$column['table']][$this->mutableColumns[$column['table']][$column['orgName']]] = $column['value'];
+                    $metadata->setEntityProperty($result[$table], $orgName, $column['value']);
+                    $readColumns[$table][$orgName] = true;
+                    if (isset($this->mutableColumns[$table][$orgName])) {
+                        $rawValues[$table][$this->mutableColumns[$table][$orgName]] = $column['value'];
                     }
                 }
 
