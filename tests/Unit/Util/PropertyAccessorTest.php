@@ -31,6 +31,7 @@ use PHPUnit\Framework\Attributes\RequiresPhp;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\PropertyAccess\Exception\InvalidTypeException;
+use Symfony\Component\PropertyAccess\Exception\NoSuchPropertyException;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
 use tests\fixtures\model\AsymmetricVisibilityChild;
 use tests\fixtures\model\AsymmetricVisibilityEntity;
@@ -42,6 +43,7 @@ use tests\fixtures\model\ReadonlyPropertiesChild;
 use tests\fixtures\model\ReadonlyPropertiesEntity;
 use tests\fixtures\model\TrackedChild;
 use tests\fixtures\model\TypedMutatorsEntity;
+use tests\fixtures\model\VirtualDateHookEntity;
 
 class PropertyAccessorTest extends TestCase
 {
@@ -703,5 +705,88 @@ class PropertyAccessorTest extends TestCase
 
         $this->assertSame(['setTags', 'addTag'], $entity->calls);
         $this->assertSame(['one', 'two'], $entity->getTags());
+    }
+
+    /**
+     * A property written through __set(): the Symfony property accessor writes it, as before
+     */
+    public function testSetPropertyShouldWriteThroughTheMagicSetter()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            /** @var array<string, mixed> */
+            private array $data = [];
+
+            public function __set(string $name, mixed $value): void
+            {
+                $this->data[$name] = 'magic:' . $value;
+            }
+
+            public function __get(string $name): mixed
+            {
+                return $this->data[$name] ?? null;
+            }
+        };
+
+        $accessor->setValue($entity, 'name', 'bob', null);
+
+        $this->assertSame('magic:bob', $entity->name);
+    }
+
+    /**
+     * A private property without setter cannot be written: reported by the Symfony property accessor, as before
+     */
+    public function testSetPropertyShouldReportAPropertyItCannotWrite()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            private string $secret = '';
+        };
+
+        $this->assertThrows(
+            NoSuchPropertyException::class,
+            fn () => $accessor->setValue($entity, 'secret', 'value', null)
+        );
+    }
+
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSetPropertyShouldConvertADateForTheSetHookOfAVirtualProperty()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new VirtualDateHookEntity();
+
+        $accessor->setValue($entity, 'createdAt', new \DateTime('2026-10-16 12:00:00'), null);
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $entity->createdAt);
+        $this->assertSame(1, $entity->calls);
+    }
+
+    public function testSetPropertyShouldConvertADateForASetterDeclaredInAnotherCase()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TypedMutatorsEntity();
+
+        $accessor->setValue($entity, 'updatedAt', new \DateTimeImmutable('2026-10-16 12:00:00'), null);
+
+        $this->assertInstanceOf(\DateTime::class, $entity->createdAt);
+    }
+
+    /**
+     * A TypeError thrown by the setter itself, or by its return type, ran its code: rethrown without running it again
+     */
+    public function testSetPropertyShouldNotRunASetterAgainAfterItsOwnTypeError()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TypedMutatorsEntity();
+
+        $this->assertThrows(
+            \TypeError::class,
+            fn () => $accessor->setValue($entity, 'failing', 'value', null),
+            'Refused by the setter itself'
+        );
+        $this->assertSame(1, $entity->setAgeCalls);
+
+        $this->assertThrows(\TypeError::class, fn () => $accessor->setValue($entity, 'badReturn', 'value', null));
+        $this->assertSame(2, $entity->setAgeCalls);
     }
 }

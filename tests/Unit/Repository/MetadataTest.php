@@ -1624,6 +1624,39 @@ class MetadataTest extends TestCase
         $this->assertSame(json_encode(['USER', 'ADMIN']), $outerParams['v1_boo_roles']);
     }
 
+    /**
+     * A subclass overriding getEntityProperty() gives the values of an insert, as before
+     */
+    #[AllowMockObjectsWithoutExpectations]
+    public function testGenerateQueryForInsertShouldReadThroughAnOverriddenGetEntityProperty()
+    {
+        $services = new TingServices();
+
+        [$mockConnection, $mockQueryFactory] = $this->createInsertMocks($services, $outerParams);
+
+        $entity = new Bouh();
+        $entity->setName('bob');
+
+        $metadata = new class ($services->serializerFactory()) extends Metadata {
+            protected function getEntityProperty(object $entity, array $field): mixed
+            {
+                $value = parent::getEntityProperty($entity, $field);
+
+                return \is_string($value) ? strtoupper($value) : $value;
+            }
+        };
+        $metadata->setEntity(Bouh::class);
+        $metadata->setTable('bouh');
+        $metadata->addField([
+            'fieldName'  => 'name',
+            'columnName' => 'boo_name',
+            'type'       => 'string',
+        ]);
+        $metadata->generateQueryForInsert($mockConnection, $mockQueryFactory, $entity);
+
+        $this->assertSame(['v1_boo_name' => 'BOB'], $outerParams);
+    }
+
     #[AllowMockObjectsWithoutExpectations]
     public function testGenerateQueryForInsertShouldSkipUnitializedFields()
     {

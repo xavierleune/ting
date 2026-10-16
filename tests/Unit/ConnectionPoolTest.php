@@ -27,6 +27,7 @@
 namespace CCMBenchmark\Ting\Tests\Unit;
 
 use CCMBenchmark\Ting\ConnectionPool;
+use CCMBenchmark\Ting\Driver\DriverInterface;
 use CCMBenchmark\Ting\Driver\Mysqli\Driver as MysqliDriver;
 use CCMBenchmark\Ting\Driver\SphinxQL\Driver as SphinxQLDriver;
 use CCMBenchmark\Ting\Exceptions\ConfigException;
@@ -464,6 +465,59 @@ class ConnectionPoolTest extends TestCase
                 'primary' => ['host' => 'second', 'user' => 'test', 'password' => 'test', 'port' => 3306],
             ],
         ]);
+
+        $this->assertNotSame($first, $connectionPool->primary('main', 'db'));
+    }
+
+    /**
+     * A subclass overriding connect() is called for every primary(), as before
+     */
+    public function testPrimaryShouldCallTheConnectOfASubclassEachTime()
+    {
+        $connectionPool = new class () extends ConnectionPool {
+            public int $connects = 0;
+
+            protected function connect(array $config, string $driverClass, string $database, string $name, ?string $charset = null): DriverInterface
+            {
+                $this->connects++;
+                return parent::connect($config, $driverClass, $database, $name, $charset);
+            }
+        };
+        $connectionPool->setConfig([
+            'main' => [
+                'namespace' => '\tests\fixtures\FakeDriver',
+                'primary' => ['host' => 'first', 'user' => 'test', 'password' => 'test', 'port' => 3306],
+            ],
+        ]);
+
+        $connectionPool->primary('main', 'db');
+        $connectionPool->primary('main', 'db');
+        $connectionPool->primary('main', 'db');
+
+        $this->assertSame(3, $connectionPool->connects);
+    }
+
+    /**
+     * A configuration a subclass changes without setConfig() is connected, as before
+     */
+    public function testPrimaryShouldConnectTheConfigurationChangedByASubclass()
+    {
+        $connectionPool = new class () extends ConnectionPool {
+            public function moveTo(string $host): void
+            {
+                $this->connectionConfig['main']['primary']['host'] = $host;
+            }
+        };
+        $connectionPool->setConfig([
+            'main' => [
+                'namespace' => '\tests\fixtures\FakeDriver',
+                'primary' => ['host' => 'first', 'user' => 'test', 'password' => 'test', 'port' => 3306],
+            ],
+        ]);
+        $first = $connectionPool->primary('main', 'db');
+        $this->assertSame($first, $connectionPool->primary('main', 'db'));
+
+        $connectionPool->moveTo('second');
 
         $this->assertNotSame($first, $connectionPool->primary('main', 'db'));
     }

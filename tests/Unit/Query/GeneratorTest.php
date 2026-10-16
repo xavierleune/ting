@@ -627,4 +627,32 @@ class GeneratorTest extends TestCase
             $this->readQuery($generator->update(['name' => 'e', 'rank' => 1], ['id' => 7, 'lang' => 'fr']))
         );
     }
+
+    /**
+     * A subclass builds its own SQL: the SQL cached for this class is not used for it
+     */
+    public function testInsertAndUpdateOfASubclassShouldUseItsOwnSql()
+    {
+        $plain = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', []);
+        $tenant = new class ($this->mockConnection, $this->mockQueryFactory, '', 'table', []) extends Generator {
+            protected function getTarget(DriverInterface $driver): string
+            {
+                return 'tenant42.' . parent::getTarget($driver);
+            }
+        };
+
+        $this->assertSame('INSERT INTO `table` (`a`) VALUES (:v1_a)', $this->readQuery($plain->insert(['a' => 1]))[0]);
+        $this->assertSame(
+            'INSERT INTO tenant42.`table` (`a`) VALUES (:v1_a)',
+            $this->readQuery($tenant->insert(['a' => 1]))[0]
+        );
+        $this->assertSame(
+            'UPDATE `table` SET `a` = :v1_a WHERE `id` = :w1_id',
+            $this->readQuery($plain->update(['a' => 1], ['id' => 2]))[0]
+        );
+        $this->assertSame(
+            'UPDATE tenant42.`table` SET `a` = :v1_a WHERE `id` = :w1_id',
+            $this->readQuery($tenant->update(['a' => 1], ['id' => 2]))[0]
+        );
+    }
 }
