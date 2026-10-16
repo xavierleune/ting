@@ -425,4 +425,46 @@ class ConnectionPoolTest extends TestCase
 
         $this->assertInstanceOf('\tests\fixtures\FakeDriver\Driver', $connectionPool->primary('main', 'db'));
     }
+
+    /**
+     * A connection shared by several names is named and set on the database asked each time, the key of its primary
+     * kept or not
+     */
+    public function testPrimaryShouldNameTheSharedDriverEachTime()
+    {
+        $connectionPool = new ConnectionPool();
+        $server = ['host' => '127.0.0.1', 'user' => 'test', 'password' => 'test', 'port' => 3306];
+        $connectionPool->setConfig([
+            'connection1' => ['namespace' => '\tests\fixtures\FakeDriver', 'primary' => $server],
+            'connection2' => ['namespace' => '\tests\fixtures\FakeDriver', 'primary' => $server],
+        ]);
+
+        $driver = $connectionPool->primary('connection1', 'db');
+        $this->assertSame($driver, $connectionPool->primary('connection2', 'db'));
+        $this->assertSame('connection2', $driver->getName());
+        $this->assertSame($driver, $connectionPool->primary('connection1', 'db'));
+        $this->assertSame('connection1', $driver->getName());
+    }
+
+    public function testSetConfigShouldConnectThePrimaryOfTheNewConfiguration()
+    {
+        $connectionPool = new ConnectionPool();
+        $connectionPool->setConfig([
+            'main' => [
+                'namespace' => '\tests\fixtures\FakeDriver',
+                'primary' => ['host' => 'first', 'user' => 'test', 'password' => 'test', 'port' => 3306],
+            ],
+        ]);
+        $first = $connectionPool->primary('main', 'db');
+        $this->assertSame($first, $connectionPool->primary('main', 'db'));
+
+        $connectionPool->setConfig([
+            'main' => [
+                'namespace' => '\tests\fixtures\FakeDriver',
+                'primary' => ['host' => 'second', 'user' => 'test', 'password' => 'test', 'port' => 3306],
+            ],
+        ]);
+
+        $this->assertNotSame($first, $connectionPool->primary('main', 'db'));
+    }
 }

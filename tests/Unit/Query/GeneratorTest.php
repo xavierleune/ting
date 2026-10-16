@@ -549,4 +549,82 @@ class GeneratorTest extends TestCase
         );
         $this->assertPlaceholdersMatchParams($sql, $params);
     }
+
+    /**
+     * The SQL of an insert is built once for a driver, a table and its columns: each set of columns keeps its own
+     */
+    public function testInsertShouldBuildTheSqlOfEachTableAndColumnsOnItsOwn()
+    {
+        $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', []);
+        $other = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'other', []);
+
+        $this->assertSame(
+            ['INSERT INTO `table` (`a`, `b`) VALUES (:v1_a, :v2_b)', ['v1_a' => 1, 'v2_b' => 2]],
+            $this->readQuery($generator->insert(['a' => 1, 'b' => 2]))
+        );
+        $this->assertSame(
+            ['INSERT INTO `table` (`a`) VALUES (:v1_a)', ['v1_a' => 3]],
+            $this->readQuery($generator->insert(['a' => 3]))
+        );
+        $this->assertSame(
+            ['INSERT INTO `table` (`a`, `b`) VALUES (:v1_a, :v2_b)', ['v1_a' => 4, 'v2_b' => null]],
+            $this->readQuery($generator->insert(['a' => 4, 'b' => null]))
+        );
+        $this->assertSame(
+            ['INSERT INTO `other` (`a`, `b`) VALUES (:v1_a, :v2_b)', ['v1_a' => 5, 'v2_b' => 6]],
+            $this->readQuery($other->insert(['a' => 5, 'b' => 6]))
+        );
+    }
+
+    public function testInsertShouldQuoteTheColumnsAsTheDriverOfTheConnection()
+    {
+        $connectionClass = $this->mockConnection::class;
+        $pgsql = new $connectionClass($this->createStub(ConnectionPool::class), 'main', 'db', new PgsqlDriver());
+
+        [$mysqlSql] = $this->readQuery(
+            (new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', []))->insert(['a' => 1])
+        );
+        [$pgsqlSql] = $this->readQuery(
+            (new Generator($pgsql, $this->mockQueryFactory, '', 'table', []))->insert(['a' => 1])
+        );
+
+        $this->assertSame('INSERT INTO `table` (`a`) VALUES (:v1_a)', $mysqlSql);
+        $this->assertSame('INSERT INTO "table" ("a") VALUES (:v1_a)', $pgsqlSql);
+    }
+
+    /**
+     * The SQL of an update by a scalar primary key is built once; a null or a list in the primary key changes its
+     * condition, built each time
+     */
+    public function testUpdateShouldBuildTheConditionOfANullOrAListPrimaryEachTime()
+    {
+        $generator = new Generator($this->mockConnection, $this->mockQueryFactory, '', 'table', []);
+
+        $this->assertSame(
+            ['UPDATE `table` SET `name` = :v1_name WHERE `id` = :w1_id', ['v1_name' => 'a', 'w1_id' => 5]],
+            $this->readQuery($generator->update(['name' => 'a'], ['id' => 5]))
+        );
+        $this->assertSame(
+            ['UPDATE `table` SET `name` = :v1_name WHERE `id` IS NULL', ['v1_name' => 'b']],
+            $this->readQuery($generator->update(['name' => 'b'], ['id' => null]))
+        );
+        $this->assertSame(
+            [
+                'UPDATE `table` SET `name` = :v1_name WHERE `id` IN (:w1_id__1,:w1_id__2)',
+                ['v1_name' => 'c', 'w1_id__1' => 1, 'w1_id__2' => 2],
+            ],
+            $this->readQuery($generator->update(['name' => 'c'], ['id' => [1, 2]]))
+        );
+        $this->assertSame(
+            ['UPDATE `table` SET `name` = :v1_name WHERE `id` = :w1_id', ['v1_name' => 'd', 'w1_id' => 6]],
+            $this->readQuery($generator->update(['name' => 'd'], ['id' => 6]))
+        );
+        $this->assertSame(
+            [
+                'UPDATE `table` SET `name` = :v1_name, `rank` = :v2_rank WHERE `id` = :w1_id AND `lang` = :w2_lang',
+                ['v1_name' => 'e', 'v2_rank' => 1, 'w1_id' => 7, 'w2_lang' => 'fr'],
+            ],
+            $this->readQuery($generator->update(['name' => 'e', 'rank' => 1], ['id' => 7, 'lang' => 'fr']))
+        );
+    }
 }
