@@ -1362,9 +1362,14 @@ class Metadata
             }
             
             // Public typed properties non initialized is non-readable
-            // In this case we don't insert it, relying on database default value
-            if ($this->propertyAccessor->isReadable($entity, $field['fieldName'], $field['getter'] ?? null)) {
-                $values[$column] = $this->getEntityProperty($entity, $field);
+            // In this case we don't insert it, relying on database default value. Read once: checked and read
+            [$readable, $value] = $this->propertyAccessor->getValueIfReadable(
+                $entity,
+                $field['fieldName'],
+                $field['getter'] ?? null
+            );
+            if ($readable) {
+                $values[$column] = $this->serializeFieldValue($field, $value);
             }
         }
 
