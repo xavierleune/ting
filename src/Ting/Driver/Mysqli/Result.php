@@ -6,6 +6,7 @@
  * ==========================================
  *
  * Copyright (C) 2014 CCM Benchmark Group. (http://www.ccmbenchmark.com)
+ * Copyright (C) 2026 Xavier Leune
  *
  ***********************************************************************
  *
@@ -29,6 +30,7 @@ use CCMBenchmark\Ting\Driver\ResultInterface;
 
 /**
  * @phpstan-import-type Row from ResultInterface
+ * @phpstan-import-type Column from ResultInterface
  */
 class Result implements ResultInterface
 {
@@ -41,7 +43,15 @@ class Result implements ResultInterface
     protected ?object $result = null;
     /** @var array<int, object{name: string, orgname: string, table: string, orgtable: string, def: string, db: string, catalog: string, max_length: int, length: int, charsetnr: string, flags: int, type: int, decimals: int}> $fields  */
     protected array $fields = [];
+    private const CAST_NONE = 0;
+    private const CAST_INT = 1;
+    private const CAST_FLOAT = 2;
+    private const CAST_NULL = 3;
     protected int $iteratorOffset = 0;
+    /** @var array<int, Column>|null the columns of $fields without their value, see prepareColumnTemplates() */
+    private ?array $columnTemplates = null;
+    /** @var array<int, self::CAST_*> how to convert the value of each column */
+    private array $columnCasts = [];
     /** @var Row|null */
     protected ?array $iteratorCurrent = null;
 
@@ -65,6 +75,7 @@ class Result implements ResultInterface
     {
         $this->result = $result;
         $this->fields = $this->result->fetch_fields();
+        $this->columnTemplates = null;
         return $this;
     }
 
@@ -100,59 +111,63 @@ class Result implements ResultInterface
             return null;
         }
 
+        if (array_is_list($data) === false) {
+            $data = array_values($data);
+        }
+
         $columns = [];
-        $data = array_values($data);
-
-        foreach ($this->fields as $i => $rawField) {
+        foreach ($this->columnTemplates ??= $this->prepareColumnTemplates() as $i => $column) {
             $value = $data[$i];
-
             if (\is_string($value)) {
-                switch ($rawField->type) {
-                    case MYSQLI_TYPE_DECIMAL:
-                        // Decimal
-                        // Next lines are all mapped to float
-                    case MYSQLI_TYPE_DOUBLE:
-                        // Double
-                    case MYSQLI_TYPE_NEWDECIMAL:
-                        // Mysql 5.0.3 + : Decimal or numeric
-                    case MYSQLI_TYPE_FLOAT:
-                        // Float
-                        $value = (float)$value;
+                switch ($this->columnCasts[$i]) {
+                    case self::CAST_FLOAT:
+                        $value = (float) $value;
                         break;
-                    case MYSQLI_TYPE_TINY:
-                        // Tinyint
-                    case MYSQLI_TYPE_INT24:
-                        // MediumInt
-                    case MYSQLI_TYPE_LONG:
-                        // Int
-                    case MYSQLI_TYPE_SHORT:
-                        //SMALLINT
-                        $value = (int)$value;
+                    case self::CAST_INT:
+                        $value = (int) $value;
                         break;
-                    case MYSQLI_TYPE_NULL:
-                        // Type null
+                    case self::CAST_NULL:
                         $value = null;
-                        break;
-                    case MYSQLI_TYPE_LONGLONG:
-                        // Bigint, bigger than PHP_INT_MAX
-                        // These case is here as a reminder
-                        $value = (string)$value;
                         break;
                 }
             }
-
-            $column = [
-                'name'     => $rawField->name,
-                'orgName'  => $rawField->orgname,
-                'table'    => $rawField->table,
-                'orgTable' => $rawField->orgtable,
-                'value'    => $value
-            ];
-
+            $column['value'] = $value;
             $columns[] = $column;
         }
 
         return $columns;
+    }
+
+    /**
+     * The columns of a row without their value, and how to convert the value of each: read once per result instead of
+     * once per row
+     *
+     * @return array<int, Column>
+     */
+    private function prepareColumnTemplates(): array
+    {
+        $templates = [];
+        $this->columnCasts = [];
+        foreach ($this->fields as $i => $rawField) {
+            $templates[$i] = [
+                'name'     => $rawField->name,
+                'orgName'  => $rawField->orgname,
+                'table'    => $rawField->table,
+                'orgTable' => $rawField->orgtable,
+                'value'    => null,
+            ];
+            $this->columnCasts[$i] = match ($rawField->type) {
+                // Decimal, double, decimal or numeric (MySQL 5.0.3+), float: all mapped to float
+                MYSQLI_TYPE_DECIMAL, MYSQLI_TYPE_DOUBLE, MYSQLI_TYPE_NEWDECIMAL, MYSQLI_TYPE_FLOAT => self::CAST_FLOAT,
+                // Tinyint, mediumint, int, smallint
+                MYSQLI_TYPE_TINY, MYSQLI_TYPE_INT24, MYSQLI_TYPE_LONG, MYSQLI_TYPE_SHORT => self::CAST_INT,
+                MYSQLI_TYPE_NULL => self::CAST_NULL,
+                // Bigint (may be bigger than PHP_INT_MAX) and any other type: the string as it is
+                default => self::CAST_NONE,
+            };
+        }
+
+        return $templates;
     }
 
     /**

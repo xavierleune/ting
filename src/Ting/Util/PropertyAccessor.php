@@ -49,8 +49,10 @@ class PropertyAccessor
 
     /** @var array<string, self::WRITE_*> by class and property name, how to write the property */
     private array $writeModes = [];
-    /** @var array<string, array{0: string, 1: ReflectionProperty|string|null}> by class and property name, see getWriter() */
+    /** @var array<string, self::WRITE_*|self::WRITE_SETTER|self::WRITE_PROPERTY> by class and property name, see getWriter() */
     private array $writers = [];
+    /** @var array<string, string> by class and property name, the setter or property written by WRITE_SETTER or WRITE_PROPERTY */
+    private array $writerNames = [];
     /** @var array<string, ReflectionProperty> by class and property name */
     private array $reflectionProperties = [];
     private readonly PropertyAccessorInterface $propertyAccessor;
@@ -75,22 +77,23 @@ class PropertyAccessor
 
         $propertyPath = (string) $propertyPath;
         // Resolved once per class and property: the hydration writes every property of every row through here
-        [$mode, $writer] = $this->writers[$object::class.'..'.$propertyPath] ??= $this->getWriter($object, $propertyPath);
+        $key = $object::class.'..'.$propertyPath;
+        $mode = $this->writers[$key] ??= $this->getWriter($object, $propertyPath);
         switch ($mode) {
             case self::WRITE_RAW:
-                $writer->setRawValue($object, $value); // @phpstan-ignore method.notFound
+                $this->reflectionProperties[$key]->setRawValue($object, $value); // @phpstan-ignore method.notFound
                 return;
             case self::WRITE_REFLECTION:
-                $writer->setValue($object, $value);
+                $this->reflectionProperties[$key]->setValue($object, $value);
                 return;
             case self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW:
             case self::WRITE_ITERABLE_ACCESSOR_ELSE_REFLECTION:
                 // The Symfony property accessor only uses an adder and a remover for an iterable value
                 if (is_iterable($value) === false) {
                     if ($mode === self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW) {
-                        $writer->setRawValue($object, $value); // @phpstan-ignore method.notFound
+                        $this->reflectionProperties[$key]->setRawValue($object, $value); // @phpstan-ignore method.notFound
                     } else {
-                        $writer->setValue($object, $value);
+                        $this->reflectionProperties[$key]->setValue($object, $value);
                     }
                     return;
                 }
@@ -98,6 +101,7 @@ class PropertyAccessor
             case self::WRITE_SETTER:
                 // The setter the Symfony property accessor would call; an iterable value may go to an adder instead
                 if (is_iterable($value) === false) {
+                    $writer = $this->writerNames[$key];
                     try {
                         $object->$writer($value);
                         return;
@@ -113,6 +117,7 @@ class PropertyAccessor
                 break;
             case self::WRITE_PROPERTY:
                 if (is_iterable($value) === false) {
+                    $writer = $this->writerNames[$key];
                     try {
                         $object->$writer = $value;
                         return;
@@ -131,23 +136,25 @@ class PropertyAccessor
     }
 
     /**
-     * How setValue() writes the property: its write mode, with the reflection of the property when it is written by
-     * reflection; for the Symfony property accessor, the public setter or the public property it would write through
-     * (found as it finds them, magic methods coming after both) so that setValue() writes it directly
+     * How setValue() writes the property: its write mode, the reflection of the property kept when it is written by
+     * reflection; instead of the Symfony property accessor, the public setter or the public property it would write
+     * through (found as it finds them, magic methods coming after both), its name kept, so that setValue() writes it
+     * directly
      *
-     * @return array{0: self::WRITE_*|self::WRITE_SETTER|self::WRITE_PROPERTY, 1: ReflectionProperty|string|null}
+     * @return self::WRITE_*|self::WRITE_SETTER|self::WRITE_PROPERTY
      * @throws InvalidArgumentException
      */
-    private function getWriter(object $object, string $propertyPath): array
+    private function getWriter(object $object, string $propertyPath): string
     {
         $mode = $this->getWriteMode($object, $propertyPath);
         if ($mode !== self::WRITE_ACCESSOR) {
-            return [$mode, $this->getReflectionProperty($object, $propertyPath)];
+            $this->getReflectionProperty($object, $propertyPath);
+            return $mode;
         }
 
         // A path (a.b, [key]) or an object of dynamic properties: left to the Symfony property accessor
         if (strpbrk($propertyPath, '.[') !== false || $object instanceof \stdClass) {
-            return [$mode, null];
+            return $mode;
         }
 
         $this->writeInfoExtractor ??= new ReflectionExtractor(['set'], null, null, false);
@@ -162,14 +169,20 @@ class PropertyAccessor
             || $writeInfo->getVisibility() !== PropertyWriteInfo::VISIBILITY_PUBLIC
             || $writeInfo->isStatic()
         ) {
-            return [$mode, null];
+            return $mode;
         }
 
-        return match ($writeInfo->getType()) {
-            PropertyWriteInfo::TYPE_METHOD => [self::WRITE_SETTER, $writeInfo->getName()],
-            PropertyWriteInfo::TYPE_PROPERTY => [self::WRITE_PROPERTY, $writeInfo->getName()],
-            default => [$mode, null],
+        $direct = match ($writeInfo->getType()) {
+            PropertyWriteInfo::TYPE_METHOD => self::WRITE_SETTER,
+            PropertyWriteInfo::TYPE_PROPERTY => self::WRITE_PROPERTY,
+            default => null,
         };
+        if ($direct === null) {
+            return $mode;
+        }
+        $this->writerNames[$object::class.'..'.$propertyPath] = $writeInfo->getName();
+
+        return $direct;
     }
 
     public function getValue(object $object, PropertyPathInterface|string $propertyPath, ?string $getter = null): mixed
