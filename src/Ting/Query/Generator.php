@@ -36,9 +36,9 @@ class Generator
 {
     /**
      * @var \WeakMap<DriverInterface, array<string, array{0: string, 1: list<string>}>>|null by driver, then table and
-     *      columns: the SQL of an insert and the names of its parameters, see insert()
+     *      columns: the SQL of an insert or an update and the names of its parameters, see insert() and update()
      */
-    private static ?\WeakMap $insertStatements = null;
+    private static ?\WeakMap $writeStatements = null;
 
     /**
      * @param list<string> $fields column names of the table
@@ -298,13 +298,13 @@ class Generator
 
         // The SQL and the parameter names only depend on the driver, the table and the columns: built once for each
         $key = $this->schemaName . "\0" . $this->tableName . "\0" . implode("\0", array_keys($values));
-        self::$insertStatements ??= new \WeakMap();
-        $cached = self::$insertStatements[$driver][$key] ?? null;
+        self::$writeStatements ??= new \WeakMap();
+        $cached = self::$writeStatements[$driver][$key] ?? null;
         if ($cached === null) {
             $cached = $this->buildInsert(array_keys($values), $driver);
-            $statements = self::$insertStatements[$driver] ?? [];
+            $statements = self::$writeStatements[$driver] ?? [];
             $statements[$key] = $cached;
-            self::$insertStatements[$driver] = $statements;
+            self::$writeStatements[$driver] = $statements;
         }
         [$sql, $names] = $cached;
 
@@ -358,6 +358,47 @@ class Generator
     {
         $driver = $this->getDriver(true);
 
+        // A primary key of scalar values (the rule): the SQL and the parameter names only depend on the driver, the
+        // table and the columns, built once for each. A null or a list changes the condition: built each time
+        $scalarPrimaries = true;
+        foreach ($primariesValue as $value) {
+            if ($value === null || \is_array($value)) {
+                $scalarPrimaries = false;
+                break;
+            }
+        }
+        if ($scalarPrimaries && $values !== []) {
+            $key = "UPDATE\0" . $this->schemaName . "\0" . $this->tableName . "\0" . implode("\0", array_keys($values))
+                . "\0\0" . implode("\0", array_keys($primariesValue));
+            self::$writeStatements ??= new \WeakMap();
+            $cached = self::$writeStatements[$driver][$key] ?? null;
+            if ($cached === null) {
+                [$sql, $params] = $this->buildUpdate($values, $primariesValue, $driver);
+                $cached = [$sql, array_keys($params)];
+                $statements = self::$writeStatements[$driver] ?? [];
+                $statements[$key] = $cached;
+                self::$writeStatements[$driver] = $statements;
+            }
+            [$sql, $names] = $cached;
+            $params = array_combine($names, [...array_values($values), ...array_values($primariesValue)]);
+        } else {
+            [$sql, $params] = $this->buildUpdate($values, $primariesValue, $driver);
+        }
+
+        $query = $this->queryFactory->getPrepared($sql, $this->connection);
+        $query->setParams($params);
+
+        return $query;
+    }
+
+    /**
+     * @param array<string, mixed> $values         columnName => value
+     * @param array<string, mixed> $primariesValue columnName => value
+     * @return array{0: string, 1: array<string, mixed>} the SQL of the update and its parameters: the values, then the
+     *                                                   primary values
+     */
+    private function buildUpdate(array $values, array $primariesValue, DriverInterface $driver): array
+    {
         $sql = 'UPDATE ' . $this->getTarget($driver) . ' SET ';
         $set = [];
         $params = [];
@@ -378,10 +419,7 @@ class Generator
 
         $sql .= ' WHERE ' . implode(' AND ', $conditions);
 
-        $query = $this->queryFactory->getPrepared($sql, $this->connection);
-        $query->setParams($params);
-
-        return $query;
+        return [$sql, $params];
     }
 
     /**
