@@ -59,6 +59,12 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
      */
     protected array $connections = [];
 
+    /**
+     * @var array<string, array<string, string>> connection name => database => key in $connections of its primary,
+     *      once connected: primary() then skips building the key (every query asks for its driver)
+     */
+    private array $primaryKeys = [];
+
     public function __construct(protected ?DriverLoggerInterface $logger = null)
     {
     }
@@ -87,6 +93,7 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
         }
 
         $this->connectionConfig = $config;
+        $this->primaryKeys = [];
     }
 
     /**
@@ -104,6 +111,16 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
      */
     public function primary(string $name, string $database): DriverInterface
     {
+        $connectionKey = $this->primaryKeys[$name][$database] ?? null;
+        if ($connectionKey !== null && isset($this->connections[$connectionKey])) {
+            return $this->select(
+                $this->connections[$connectionKey],
+                $name,
+                $database,
+                $this->connectionConfig[$name]['charset'] ?? null
+            );
+        }
+
         if (isset($this->connectionConfig[$name]['primary']) === false) {
             throw new ConnectionException('Connection not found: ' . $name);
         }
@@ -117,7 +134,13 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
             $charset = $this->connectionConfig[$name]['charset'];
         }
 
-        return $this->connect($config, $driverClass, $database, $name, $charset);
+        $driver = $this->connect($config, $driverClass, $database, $name, $charset);
+        $connectionKey = $this->connectionKey($config, $driverClass, $database);
+        if (($this->connections[$connectionKey] ?? null) === $driver) {
+            $this->primaryKeys[$name][$database] = $connectionKey;
+        }
+
+        return $driver;
     }
 
     /**
@@ -176,8 +199,7 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
             $config['password'] = null;
         }
 
-        // Drivers of different classes never share a connection (e.g. Mysqli and SphinxQL on the same host and port)
-        $connectionKey = ltrim($driverClass, '\\') . "\0" . $driverClass::getConnectionKey($config, $database);
+        $connectionKey = $this->connectionKey($config, $driverClass, $database);
 
         if (isset($this->connections[$connectionKey]) === false) {
             /** @var DriverInterface $driver */
@@ -197,21 +219,43 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
             $this->connections[$connectionKey] = $driver;
         }
 
+        return $this->select($this->connections[$connectionKey], $name, $database, $charset);
+    }
+
+    /**
+     * @param ServerConfig $config
+     * @param class-string<DriverInterface> $driverClass
+     */
+    private function connectionKey(array $config, string $driverClass, string $database): string
+    {
+        $config['user'] ??= null;
+        $config['password'] ??= null;
+
+        // Drivers of different classes never share a connection (e.g. Mysqli and SphinxQL on the same host and port)
+        return ltrim($driverClass, '\\') . "\0" . $driverClass::getConnectionKey($config, $database);
+    }
+
+    /**
+     * The connection, named and set on the database, charset and timezone asked (a connection is shared by the
+     * connection names and databases of the same server)
+     */
+    private function select(DriverInterface $driver, string $name, string $database, ?string $charset): DriverInterface
+    {
         /*
          * Methods setDatabase, setCharset and setTimezone have no impact unless the parameter's value is different
          * than the staled value.
          */
-        $this->connections[$connectionKey]->setName($name);
-        $this->connections[$connectionKey]->setDatabase($database);
+        $driver->setName($name);
+        $driver->setDatabase($database);
 
         if ($charset !== null) {
-            $this->connections[$connectionKey]->setCharset($charset);
+            $driver->setCharset($charset);
         }
 
         $timezone = $this->databaseOptions[$database]['timezone'] ?? null;
-        $this->connections[$connectionKey]->setTimezone($timezone);
+        $driver->setTimezone($timezone);
 
-        return $this->connections[$connectionKey];
+        return $driver;
     }
 
     /**
