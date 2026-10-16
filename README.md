@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/packagist/l/xavierleune/ting)](LICENSE)
 
 **A data mapper for PHP that lets you write SQL.** Plain PHP objects, explicit mapping, a unit of work for writes, and
-no query language to learn: what you write is what your database runs.
+no query language to learn: you write the SQL, Ting maps the rows.
 
 ```php
 $cities = $cityRepository->getBy(['status' => CityStatus::Active], order: ['name' => 'ASC'], limit: 10);
@@ -16,12 +16,12 @@ $cities = $cityRepository->getBy(['status' => CityStatus::Active], order: ['name
 
 * **Your SQL, your database.** No abstraction layer and no DSL: write MySQL or PostgreSQL (or SphinxQL) as you would
   in a console, and get entities back.
-* **No magic objects.** Entities are plain PHP classes: no proxies, no lazy loading, no hidden queries when you read a
-  property.
+* **No magic objects.** Entities are plain PHP classes that notify their changes: no proxies, no lazy loading, no
+  hidden queries when you read a property.
 * **Everyday reads in one line.** `get`, `getBy`, `getOneBy`, `countBy`, `existsBy`: criteria, order and pagination
   without writing SQL for the simple cases.
-* **Writes you control.** A unit of work tracks the properties you change and writes only those; `transactional()`
-  wraps your changes in a transaction.
+* **Writes you control.** A unit of work tracks the changes your entities notify and writes only those;
+  `transactional()` wraps them in a transaction.
 * **Joins without an object graph.** Ting is not an ORM: there are no relations to configure. Write the join, and the
   hydrators give you every object of the row.
 * **Typed parameters.** Dates, backed enums and arrays (`IN` lists) are passed as they are.
@@ -35,15 +35,17 @@ composer require xavierleune/ting
 ```
 
 With Symfony, install [ting_bundle](https://github.com/xavierleune/ting_bundle): it wires Ting in the container and
-lets you map your entities with attributes, as below. Without a framework, see
-[Getting started](docs/getting-started.md), which maps them in PHP.
+lets you map your entities with attributes, as below: follow its
+[getting started](https://github.com/xavierleune/ting_bundle/blob/main/docs/getting-started.md) for the configuration.
+Without a framework, see [Getting started](docs/getting-started.md), which maps them in PHP.
 
 ## Quick tour
 
 ### Map an entity
 
 With ting_bundle, an entity is a class with attributes, and the type of each column comes from the type of its
-property. Ting writes the properties whose changes are notified: here with PHP 8.4 property hooks, setters work too.
+property. Ting writes the properties whose changes are notified: each mapped property calls `propertyChanged()`, here
+in a PHP 8.4 property hook (a setter works too), see [Unit of work](docs/unit-of-work.md).
 
 ```php
 use CCMBenchmark\Ting\Entity\NotifyProperty;
