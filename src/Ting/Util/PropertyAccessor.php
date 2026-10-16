@@ -233,6 +233,10 @@ class PropertyAccessor
 
             return true;
         }
+        if (\is_object($objectOrArray) && \is_string($propertyPath) && strpbrk($propertyPath, '.[') === false) {
+            // As the Symfony property accessor answers (it reads the value too), without parsing a property path
+            return $this->getValueIfReadable($objectOrArray, $propertyPath, null)[0];
+        }
         return $this->propertyAccessor->isReadable($objectOrArray, $propertyPath);
     }
 
