@@ -778,7 +778,9 @@ class Hydrator implements HydratorInterface
             foreach ($columns as $column) {
                 if (
                     $column['table'] === $table
-                    && $this->withColumnOfMetadata($column, $columns)['orgName'] === $columnName
+                    && (\is_string($this->columnsOfMetadata[$table][$column['orgName']] ?? null)
+                        ? $column['orgName']
+                        : $this->withColumnOfMetadata($column, $columns)['orgName']) === $columnName
                 ) {
                     $values[$columnName] = $column['value'];
                     break;
