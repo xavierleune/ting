@@ -1,4 +1,4 @@
-4.0.0 (unreleased):
+4.0.0 (2026-10-16):
     * BC PHP 8.2 minimum (PHP 8.1 dropped); Symfony 7 and 8 supported (Symfony 6 dropped)
     * BC Remove the Services container, ContainerInterface and the pimple/pimple suggestion: wiring belongs to the integration (ting_bundle)
     * BC Rename master/slave to primary/replica: ConnectionPool(Interface)::primary() / replica(), Connection::primary() / replica(), QueryInterface::selectPrimary() (now declared by the interface), Repository::pingPrimary(), $forcePrimary parameters, "primary" / "replicas" configuration keys; the names deprecated in 3.14 are removed, the old keys throw a ConfigException
