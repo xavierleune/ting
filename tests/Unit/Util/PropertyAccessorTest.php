@@ -30,6 +30,7 @@ use CCMBenchmark\Ting\Util\PropertyAccessor;
 use PHPUnit\Framework\Attributes\RequiresPhp;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\CacheItem;
+use Symfony\Component\PropertyAccess\Exception\InvalidTypeException;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
 use tests\fixtures\model\AsymmetricVisibilityChild;
 use tests\fixtures\model\AsymmetricVisibilityEntity;
@@ -40,6 +41,7 @@ use tests\fixtures\model\PublicPropertiesEntity;
 use tests\fixtures\model\ReadonlyPropertiesChild;
 use tests\fixtures\model\ReadonlyPropertiesEntity;
 use tests\fixtures\model\TrackedChild;
+use tests\fixtures\model\TypedMutatorsEntity;
 
 class PropertyAccessorTest extends TestCase
 {
@@ -576,5 +578,130 @@ class PropertyAccessorTest extends TestCase
                 return parent::getItem($key);
             }
         };
+    }
+
+    /**
+     * The setter is called directly: a value it refuses is reported as the Symfony property accessor reports it,
+     * without running the setter
+     */
+    public function testSetPropertyShouldReportAValueTheSetterRefusesAsTheSymfonyAccessor()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TypedMutatorsEntity();
+
+        $accessor->setValue($entity, 'age', 7, null);
+        $this->assertThrows(
+            InvalidTypeException::class,
+            fn () => $accessor->setValue($entity, 'age', 'seven', null),
+            'Expected argument of type "int", "string" given at property path "age".'
+        );
+
+        $this->assertSame(7, $entity->getAge());
+        $this->assertSame(1, $entity->setAgeCalls);
+    }
+
+    /**
+     * As the Symfony property accessor, a DateTimeImmutable is given as a DateTime to a setter of a DateTime (and the
+     * other way round)
+     */
+    public function testSetPropertyShouldConvertADateForTheSetterAsTheSymfonyAccessor()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TypedMutatorsEntity();
+
+        $accessor->setValue($entity, 'created', new \DateTimeImmutable('2026-10-16 12:00:00'), null);
+
+        $this->assertInstanceOf(\DateTime::class, $entity->createdAt);
+        $this->assertSame('2026-10-16 12:00:00', $entity->createdAt->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * A TypeError thrown by the code of the setter is not a value refused: thrown as it is, the setter run once
+     */
+    public function testSetPropertyShouldRethrowATypeErrorOfTheSetterWithoutRunningItAgain()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            public int $calls = 0;
+
+            public function setLabel(string $label): void
+            {
+                $this->calls++;
+                strlen([]); // @phpstan-ignore argument.type
+            }
+        };
+
+        $this->assertThrows(
+            \TypeError::class,
+            fn () => $accessor->setValue($entity, 'label', 'value', null),
+            'strlen(): Argument #1 ($string) must be of type string, array given'
+        );
+        $this->assertSame(1, $entity->calls);
+    }
+
+    /**
+     * A public property is assigned directly: a value of another type is reported as the Symfony property accessor
+     * reports it, a date converted as it converts it
+     */
+    public function testSetPropertyShouldWriteAPublicPropertyAsTheSymfonyAccessor()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new TypedMutatorsEntity();
+
+        $accessor->setValue($entity, 'count', 3, null);
+        $this->assertSame(3, $entity->count);
+
+        $this->assertThrows(
+            InvalidTypeException::class,
+            fn () => $accessor->setValue($entity, 'count', 'three', null),
+            'Expected argument of type "int", "string" given at property path "count".'
+        );
+        $this->assertSame(3, $entity->count);
+
+        $accessor->setValue($entity, 'date', new \DateTimeImmutable('2026-10-16 12:00:00'), null);
+        $this->assertInstanceOf(\DateTime::class, $entity->date);
+    }
+
+    /**
+     * An iterable value goes through the adder and the remover, as the Symfony property accessor writes it; another
+     * value of the same property through the setter
+     */
+    public function testSetPropertyShouldWriteAnIterableValueThroughTheAdderAndRemover()
+    {
+        $accessor = new PropertyAccessor();
+        $entity = new class () {
+            /** @var list<string> */
+            public array $calls = [];
+            /** @var list<string> */
+            private array $tags = [];
+
+            public function getTags(): array
+            {
+                return $this->tags;
+            }
+
+            public function setTags(array|string $tags): void
+            {
+                $this->calls[] = 'setTags';
+                $this->tags = (array) $tags;
+            }
+
+            public function addTag(string $tag): void
+            {
+                $this->calls[] = 'addTag';
+                $this->tags[] = $tag;
+            }
+
+            public function removeTag(string $tag): void
+            {
+                $this->calls[] = 'removeTag';
+            }
+        };
+
+        $accessor->setValue($entity, 'tags', 'one', null);
+        $accessor->setValue($entity, 'tags', ['one', 'two'], null);
+
+        $this->assertSame(['setTags', 'addTag'], $entity->calls);
+        $this->assertSame(['one', 'two'], $entity->getTags());
     }
 }
