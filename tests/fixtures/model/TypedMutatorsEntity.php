@@ -52,4 +52,22 @@ class TypedMutatorsEntity
     {
         $this->createdAt = $createdAt;
     }
+
+    /** Declared in lower case: PHP methods are case-insensitive, the accessor finds it as setUpdatedAt() */
+    public function setupdatedat(\DateTime $updatedAt): void // phpcs:ignore
+    {
+        $this->createdAt = $updatedAt;
+    }
+
+    public function setFailing(string $value): void
+    {
+        $this->setAgeCalls++;
+        throw new \TypeError('Refused by the setter itself');
+    }
+
+    public function setBadReturn(string $value): static
+    {
+        $this->setAgeCalls++;
+        return $value; // @phpstan-ignore return.type
+    }
 }

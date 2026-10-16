@@ -297,16 +297,21 @@ class Generator
         $driver = $this->getDriver(true);
 
         // The SQL and the parameter names only depend on the driver, the table and the columns: built once for each
-        $key = $this->schemaName . "\0" . $this->tableName . "\0" . implode("\0", array_keys($values));
-        self::$writeStatements ??= new \WeakMap();
-        $cached = self::$writeStatements[$driver][$key] ?? null;
-        if ($cached === null) {
-            $cached = $this->buildInsert(array_keys($values), $driver);
-            $statements = self::$writeStatements[$driver] ?? [];
-            $statements[$key] = $cached;
-            self::$writeStatements[$driver] = $statements;
+        // (by this class only: a subclass may build them otherwise)
+        if (static::class !== self::class) {
+            [$sql, $names] = $this->buildInsert(array_keys($values), $driver);
+        } else {
+            $key = $this->schemaName . "\0" . $this->tableName . "\0" . implode("\0", array_keys($values));
+            self::$writeStatements ??= new \WeakMap();
+            $cached = self::$writeStatements[$driver][$key] ?? null;
+            if ($cached === null) {
+                $cached = $this->buildInsert(array_keys($values), $driver);
+                $statements = self::$writeStatements[$driver] ?? [];
+                $statements[$key] = $cached;
+                self::$writeStatements[$driver] = $statements;
+            }
+            [$sql, $names] = $cached;
         }
-        [$sql, $names] = $cached;
 
         $query = $this->queryFactory->getPrepared($sql, $this->connection);
 
@@ -359,7 +364,8 @@ class Generator
         $driver = $this->getDriver(true);
 
         // A primary key of scalar values (the rule): the SQL and the parameter names only depend on the driver, the
-        // table and the columns, built once for each. A null or a list changes the condition: built each time
+        // table and the columns, built once for each (by this class only). A null or a list changes the condition:
+        // built each time
         $scalarPrimaries = true;
         foreach ($primariesValue as $value) {
             if ($value === null || \is_array($value)) {
@@ -367,7 +373,7 @@ class Generator
                 break;
             }
         }
-        if ($scalarPrimaries && $values !== []) {
+        if ($scalarPrimaries && $values !== [] && static::class === self::class) {
             $key = "UPDATE\0" . $this->schemaName . "\0" . $this->tableName . "\0" . implode("\0", array_keys($values))
                 . "\0\0" . implode("\0", array_keys($primariesValue));
             self::$writeStatements ??= new \WeakMap();

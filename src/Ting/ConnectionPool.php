@@ -60,10 +60,14 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
     protected array $connections = [];
 
     /**
-     * @var array<string, array<string, string>> connection name => database => key in $connections of its primary,
-     *      once connected: primary() then skips building the key (every query asks for its driver)
+     * @var array<string, array<string, array{0: string, 1: ServerConfig}>> connection name => database => key in
+     *      $connections of its primary and the configuration it was connected with: primary() then skips building the
+     *      key (every query asks for its driver)
      */
     private array $primaryKeys = [];
+
+    /** Whether a subclass overrides connect(): primary() then always calls it */
+    private ?bool $connectOverridden = null;
 
     public function __construct(protected ?DriverLoggerInterface $logger = null)
     {
@@ -111,8 +115,13 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
      */
     public function primary(string $name, string $database): DriverInterface
     {
-        $connectionKey = $this->primaryKeys[$name][$database] ?? null;
-        if ($connectionKey !== null && isset($this->connections[$connectionKey])) {
+        [$connectionKey, $connectedConfig] = $this->primaryKeys[$name][$database] ?? [null, null];
+        if (
+            $connectionKey !== null
+            && isset($this->connections[$connectionKey])
+            // The configuration may have been changed since by a subclass, without setConfig()
+            && ($this->connectionConfig[$name]['primary'] ?? null) === $connectedConfig
+        ) {
             return $this->select(
                 $this->connections[$connectionKey],
                 $name,
@@ -135,9 +144,11 @@ class ConnectionPool implements ConnectionPoolInterface, ResetInterface
         }
 
         $driver = $this->connect($config, $driverClass, $database, $name, $charset);
+        $this->connectOverridden ??= (new \ReflectionMethod($this, 'connect'))->getDeclaringClass()->getName()
+            !== self::class;
         $connectionKey = $this->connectionKey($config, $driverClass, $database);
-        if (($this->connections[$connectionKey] ?? null) === $driver) {
-            $this->primaryKeys[$name][$database] = $connectionKey;
+        if ($this->connectOverridden === false && ($this->connections[$connectionKey] ?? null) === $driver) {
+            $this->primaryKeys[$name][$database] = [$connectionKey, $config];
         }
 
         return $driver;

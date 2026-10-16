@@ -110,9 +110,14 @@ class PropertyAccessor
                         return;
                     } catch (\TypeError $error) {
                         // A value the setter does not accept, refused before running it: the Symfony property
-                        // accessor converts it (DateTime and DateTimeImmutable) or reports it (InvalidTypeException)
+                        // accessor converts it (DateTime and DateTimeImmutable) or reports it (InvalidTypeException).
+                        // Any other TypeError (thrown by the code of the setter, its return type) ran it: not again
                         $frame = $error->getTrace()[0] ?? [];
-                        if (($frame['file'] ?? null) !== __FILE__ || ($frame['function'] ?? null) !== $writer) {
+                        if (
+                            ($frame['file'] ?? null) !== __FILE__
+                            || strcasecmp((string) ($frame['function'] ?? ''), $writer) !== 0
+                            || stripos($error->getMessage(), '::' . $writer . '(): Argument #1 (') === false
+                        ) {
                             throw $error;
                         }
                     }
@@ -167,21 +172,28 @@ class PropertyAccessor
             'enable_constructor_extraction' => false,
             'enable_adder_remover_extraction' => false,
         ]);
+        // Only a public setter or a public property is written directly: any other way (magic methods, none) is left
+        // to the Symfony property accessor. getVisibility() throws on a mutator of type none: the type comes first
+        $direct = match ($writeInfo?->getType()) {
+            PropertyWriteInfo::TYPE_METHOD => self::WRITE_SETTER,
+            PropertyWriteInfo::TYPE_PROPERTY => self::WRITE_PROPERTY,
+            default => null,
+        };
         if (
-            $writeInfo === null
+            $direct === null
+            || $writeInfo === null
             || $writeInfo->getVisibility() !== PropertyWriteInfo::VISIBILITY_PUBLIC
             || $writeInfo->isStatic()
         ) {
             return $mode;
         }
-
-        $direct = match ($writeInfo->getType()) {
-            PropertyWriteInfo::TYPE_METHOD => self::WRITE_SETTER,
-            PropertyWriteInfo::TYPE_PROPERTY => self::WRITE_PROPERTY,
-            default => null,
-        };
-        if ($direct === null) {
-            return $mode;
+        // A virtual property with a set hook: its hook refuses a value with an error of its own, which the Symfony
+        // property accessor converts or reports. Left to it
+        if ($direct === self::WRITE_PROPERTY && \PHP_VERSION_ID >= 80400) {
+            $reflection = new ReflectionProperty($object, $writeInfo->getName());
+            if ($reflection->getHook(PropertyHookType::Set) !== null) { // @phpstan-ignore method.notFound, class.notFound
+                return $mode;
+            }
         }
         $this->writerNames[$object::class][$propertyPath] = $writeInfo->getName();
 

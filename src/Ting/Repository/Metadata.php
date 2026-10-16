@@ -132,6 +132,9 @@ class Metadata
     private ?array $columnsOfAnyCase = null;
     public PropertyAccessor $propertyAccessor;
 
+    /** Whether a subclass overrides getEntityProperty(): generateQueryForInsert() then reads through it */
+    private ?bool $getEntityPropertyOverridden = null;
+
     /**
      * @param Serializer\SerializerFactoryInterface $serializerFactory
      */
@@ -1355,6 +1358,8 @@ class Metadata
         object $entity
     ): PreparedQuery {
         $values = [];
+        $this->getEntityPropertyOverridden ??= (new \ReflectionMethod($this, 'getEntityProperty'))
+            ->getDeclaringClass()->getName() !== self::class;
 
         foreach ($this->fields as $column => $field) {
             if ($field['autoincrement'] ?? false) {
@@ -1362,7 +1367,14 @@ class Metadata
             }
             
             // Public typed properties non initialized is non-readable
-            // In this case we don't insert it, relying on database default value. Read once: checked and read
+            // In this case we don't insert it, relying on database default value
+            if ($this->getEntityPropertyOverridden) {
+                if ($this->propertyAccessor->isReadable($entity, $field['fieldName'], $field['getter'] ?? null)) {
+                    $values[$column] = $this->getEntityProperty($entity, $field);
+                }
+                continue;
+            }
+            // Read once: checked and read
             [$readable, $value] = $this->propertyAccessor->getValueIfReadable(
                 $entity,
                 $field['fieldName'],
