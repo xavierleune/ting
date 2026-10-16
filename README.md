@@ -5,8 +5,8 @@
 [![PHP](https://img.shields.io/packagist/dependency-v/xavierleune/ting/php)](composer.json)
 [![License](https://img.shields.io/packagist/l/xavierleune/ting)](LICENSE)
 
-**A data mapper for PHP that lets you write SQL.** Plain PHP objects, explicit mapping, a unit of work for writes, and
-no query language to learn: you write the SQL, Ting maps the rows.
+**A data mapper for PHP built around your SQL.** Plain PHP objects, explicit mapping and a unit of work for writes: you
+write the SQL, Ting maps the rows.
 
 ```php
 $cities = $cityRepository->getBy(['status' => CityStatus::Active], order: ['name' => 'ASC'], limit: 10);
@@ -14,16 +14,16 @@ $cities = $cityRepository->getBy(['status' => CityStatus::Active], order: ['name
 
 ## Why Ting
 
-* **Your SQL, your database.** No abstraction layer and no DSL: write MySQL or PostgreSQL (or SphinxQL) as you would
-  in a console, and get entities back.
-* **No magic objects.** Entities are plain PHP classes that notify their changes: no proxies, no lazy loading, no
-  hidden queries when you read a property.
-* **Everyday reads in one line.** `get`, `getBy`, `getOneBy`, `countBy`, `existsBy`: criteria, order and pagination
-  without writing SQL for the simple cases.
-* **Writes you control.** A unit of work tracks the changes your entities notify and writes only those;
-  `transactional()` wraps them in a transaction.
-* **Joins without an object graph.** Ting is not an ORM: there are no relations to configure. Write the join, and the
-  hydrators give you every object of the row.
+* **Fast and light.** Rows are hydrated straight into plain PHP objects, prepared statements are reused, and only the
+  properties you change are written.
+* **Your SQL, your database.** Write MySQL, PostgreSQL or SphinxQL as you would in a console, and get entities back.
+* **Plain PHP objects.** Your entities are your own classes with typed properties: dates, enums and JSON columns arrive
+  as PHP values.
+* **Everyday reads in one line.** `get`, `getBy`, `getOneBy`, `countBy`, `existsBy`, with criteria, order and
+  pagination.
+* **Writes you control.** The unit of work writes the changes your entities notify; `transactional()` wraps them in a
+  transaction.
+* **Joins your way.** Write the join, and the hydrators give you every object of the row.
 * **Typed parameters.** Dates, backed enums and arrays (`IN` lists) are passed as they are.
 
 Ting needs PHP 8.2 or later, with the `mysqli` or `pgsql` extension.
