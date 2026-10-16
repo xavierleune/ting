@@ -35,6 +35,12 @@ use CCMBenchmark\Ting\Repository\CollectionFactoryInterface;
 class Generator
 {
     /**
+     * @var \WeakMap<DriverInterface, array<string, array{0: string, 1: list<string>}>>|null by driver, then table and
+     *      columns: the SQL of an insert and the names of its parameters, see insert()
+     */
+    private static ?\WeakMap $insertStatements = null;
+
+    /**
      * @param list<string> $fields column names of the table
      *
      * @internal
@@ -289,15 +295,42 @@ class Generator
     public function insert(array $values): PreparedQuery
     {
         $driver = $this->getDriver(true);
-        $fields = $this->escapeFields(array_keys($values), $driver);
 
-        $params = [];
+        // The SQL and the parameter names only depend on the driver, the table and the columns: built once for each
+        $key = $this->schemaName . "\0" . $this->tableName . "\0" . implode("\0", array_keys($values));
+        self::$insertStatements ??= new \WeakMap();
+        $cached = self::$insertStatements[$driver][$key] ?? null;
+        if ($cached === null) {
+            $cached = $this->buildInsert(array_keys($values), $driver);
+            $statements = self::$insertStatements[$driver] ?? [];
+            $statements[$key] = $cached;
+            self::$insertStatements[$driver] = $statements;
+        }
+        [$sql, $names] = $cached;
+
+        $query = $this->queryFactory->getPrepared($sql, $this->connection);
+
+        $query->setParams($names === [] ? [] : array_combine($names, array_values($values)));
+
+        return $query;
+    }
+
+    /**
+     * @param list<string> $columns
+     * @return array{0: string, 1: list<string>} the SQL of the insert, the names of its parameters in the order of the
+     *                                           columns
+     */
+    private function buildInsert(array $columns, DriverInterface $driver): array
+    {
+        $fields = $this->escapeFields($columns, $driver);
+
+        $names = [];
         $i = 0;
-        foreach ($values as $column => $value) {
-            $params[$this->parameterName('v', ++$i, $column)] = $value;
+        foreach ($columns as $column) {
+            $names[] = $this->parameterName('v', ++$i, $column);
         }
 
-        if ($values === []) {
+        if ($columns === []) {
             // Only default values: an entity with only an autoincrement field, or with no field initialized
             $clause = $driver instanceof DefaultValuesInsertDriverInterface
                 ? $driver->getDefaultValuesInsertClause()
@@ -306,14 +339,10 @@ class Generator
         } else {
             $sql = 'INSERT INTO ' . $this->getTarget($driver) . ' ('
                 . implode(', ', $fields) . ') VALUES ('
-                . implode(', ', array_map(fn (string $name): string => ':' . $name, array_keys($params))) . ')';
+                . implode(', ', array_map(fn (string $name): string => ':' . $name, $names)) . ')';
         }
 
-        $query = $this->queryFactory->getPrepared($sql, $this->connection);
-
-        $query->setParams($params);
-
-        return $query;
+        return [$sql, $names];
     }
 
     /**
