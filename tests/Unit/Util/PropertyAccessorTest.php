@@ -30,7 +30,7 @@ use CCMBenchmark\Ting\Util\PropertyAccessor;
 use PHPUnit\Framework\Attributes\RequiresPhp;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\CacheItem;
-use Symfony\Component\PropertyAccess\Exception\InvalidTypeException;
+use Symfony\Component\PropertyAccess\Exception\InvalidArgumentException;
 use Symfony\Component\PropertyAccess\Exception\NoSuchPropertyException;
 use Symfony\Component\PropertyAccess\Exception\UninitializedPropertyException;
 use tests\fixtures\model\AsymmetricVisibilityChild;
@@ -592,8 +592,9 @@ class PropertyAccessorTest extends TestCase
         $entity = new TypedMutatorsEntity();
 
         $accessor->setValue($entity, 'age', 7, null);
+        // InvalidTypeException since symfony/property-access 7.1, its parent InvalidArgumentException before
         $this->assertThrows(
-            InvalidTypeException::class,
+            InvalidArgumentException::class,
             fn () => $accessor->setValue($entity, 'age', 'seven', null),
             'Expected argument of type "int", "string" given at property path "age".'
         );
@@ -653,8 +654,9 @@ class PropertyAccessorTest extends TestCase
         $accessor->setValue($entity, 'count', 3, null);
         $this->assertSame(3, $entity->count);
 
+        // InvalidTypeException since symfony/property-access 7.1, its parent InvalidArgumentException before
         $this->assertThrows(
-            InvalidTypeException::class,
+            InvalidArgumentException::class,
             fn () => $accessor->setValue($entity, 'count', 'three', null),
             'Expected argument of type "int", "string" given at property path "count".'
         );
