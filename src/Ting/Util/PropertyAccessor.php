@@ -49,9 +49,11 @@ class PropertyAccessor
 
     /** @var array<string, self::WRITE_*> by class and property name, how to write the property */
     private array $writeModes = [];
-    /** @var array<string, self::WRITE_*|self::WRITE_SETTER|self::WRITE_PROPERTY> by class and property name, see getWriter() */
+    /** @var array<string, array<string, self::WRITE_*|self::WRITE_SETTER|self::WRITE_PROPERTY>> by class, then property name, see getWriter() */
     private array $writers = [];
-    /** @var array<string, string> by class and property name, the setter or property written by WRITE_SETTER or WRITE_PROPERTY */
+    /** @var array<string, array<string, ReflectionProperty>> by class, then property name, the property written by reflection */
+    private array $writerReflections = [];
+    /** @var array<string, array<string, string>> by class, then property name, the setter or property written by WRITE_SETTER or WRITE_PROPERTY */
     private array $writerNames = [];
     /** @var array<string, ReflectionProperty> by class and property name */
     private array $reflectionProperties = [];
@@ -77,23 +79,24 @@ class PropertyAccessor
 
         $propertyPath = (string) $propertyPath;
         // Resolved once per class and property: the hydration writes every property of every row through here
-        $key = $object::class.'..'.$propertyPath;
-        $mode = $this->writers[$key] ??= $this->getWriter($object, $propertyPath);
+        // By class then property: no key to build for each value written
+        $class = $object::class;
+        $mode = $this->writers[$class][$propertyPath] ??= $this->getWriter($object, $propertyPath);
         switch ($mode) {
             case self::WRITE_RAW:
-                $this->reflectionProperties[$key]->setRawValue($object, $value); // @phpstan-ignore method.notFound
+                $this->writerReflections[$class][$propertyPath]->setRawValue($object, $value); // @phpstan-ignore method.notFound
                 return;
             case self::WRITE_REFLECTION:
-                $this->reflectionProperties[$key]->setValue($object, $value);
+                $this->writerReflections[$class][$propertyPath]->setValue($object, $value);
                 return;
             case self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW:
             case self::WRITE_ITERABLE_ACCESSOR_ELSE_REFLECTION:
                 // The Symfony property accessor only uses an adder and a remover for an iterable value
                 if (is_iterable($value) === false) {
                     if ($mode === self::WRITE_ITERABLE_ACCESSOR_ELSE_RAW) {
-                        $this->reflectionProperties[$key]->setRawValue($object, $value); // @phpstan-ignore method.notFound
+                        $this->writerReflections[$class][$propertyPath]->setRawValue($object, $value); // @phpstan-ignore method.notFound
                     } else {
-                        $this->reflectionProperties[$key]->setValue($object, $value);
+                        $this->writerReflections[$class][$propertyPath]->setValue($object, $value);
                     }
                     return;
                 }
@@ -101,7 +104,7 @@ class PropertyAccessor
             case self::WRITE_SETTER:
                 // The setter the Symfony property accessor would call; an iterable value may go to an adder instead
                 if (is_iterable($value) === false) {
-                    $writer = $this->writerNames[$key];
+                    $writer = $this->writerNames[$class][$propertyPath];
                     try {
                         $object->$writer($value);
                         return;
@@ -117,7 +120,7 @@ class PropertyAccessor
                 break;
             case self::WRITE_PROPERTY:
                 if (is_iterable($value) === false) {
-                    $writer = $this->writerNames[$key];
+                    $writer = $this->writerNames[$class][$propertyPath];
                     try {
                         $object->$writer = $value;
                         return;
@@ -148,7 +151,7 @@ class PropertyAccessor
     {
         $mode = $this->getWriteMode($object, $propertyPath);
         if ($mode !== self::WRITE_ACCESSOR) {
-            $this->getReflectionProperty($object, $propertyPath);
+            $this->writerReflections[$object::class][$propertyPath] = $this->getReflectionProperty($object, $propertyPath);
             return $mode;
         }
 
@@ -180,7 +183,7 @@ class PropertyAccessor
         if ($direct === null) {
             return $mode;
         }
-        $this->writerNames[$object::class.'..'.$propertyPath] = $writeInfo->getName();
+        $this->writerNames[$object::class][$propertyPath] = $writeInfo->getName();
 
         return $direct;
     }
